@@ -3,7 +3,7 @@
 server:
   backend:
     host: "0.0.0.0"
-    port: 8000
+    port: 9000
     mode: "debug"
     read_timeout: 30s
     write_timeout: 30s
@@ -24,7 +24,7 @@ database:
     port: 5432
     database: "cloudops"
     username: "cloudops"
-    password: "${POSTGRES_PASSWORD}"
+    password: "cloudops123"
     ssl_mode: "disable"
     max_connections: 100
     max_idle: 10
