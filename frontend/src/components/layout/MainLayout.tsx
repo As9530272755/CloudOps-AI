@@ -3,23 +3,18 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Box,
   Drawer,
-  AppBar,
-  Toolbar,
   List,
   Typography,
-  IconButton,
   ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
   Avatar,
-  Menu,
-  MenuItem,
   Divider,
   useTheme,
   useMediaQuery,
-  alpha,
 } from '@mui/material'
+import { alpha } from '@mui/material/styles'
 import {
   Dashboard as DashboardIcon,
   CloudQueue as ClusterIcon,
@@ -31,14 +26,9 @@ import {
   People as UsersIcon,
   Business as TenantsIcon,
   Settings as SettingsIcon,
-  Logout as LogoutIcon,
-  ChevronLeft as ChevronLeftIcon,
-  Menu as MenuIcon,
-  Notifications as NotificationsIcon,
-  Search as SearchIcon,
 } from '@mui/icons-material'
-import { useLogout, useProfile } from '../../lib/api'
-import { glassEffect, glassEffectDark } from '../../theme/theme'
+import { useProfile } from '../../lib/api'
+import { glassEffect } from '../../theme/theme'
 
 const DRAWER_WIDTH = 280
 
@@ -59,29 +49,15 @@ export default function MainLayout() {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'))
   const [open, setOpen] = useState(!isMobile)
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const { data: user } = useProfile()
-  const logoutMutation = useLogout()
 
   const handleDrawerToggle = () => setOpen(!open)
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget)
-  const handleMenuClose = () => setAnchorEl(null)
-  
-  const handleLogout = () => {
-    handleMenuClose()
-    logoutMutation.mutate()
-  }
 
   const handleNavigate = (path: string) => {
     navigate(path)
     if (isMobile) setOpen(false)
-  }
-
-  const currentGroup = (path: string) => {
-    const item = menuItems.find(m => m.path === path || (path !== '/' && path.startsWith(m.path)))
-    return item?.group
   }
 
   // 分组菜单

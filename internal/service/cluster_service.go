@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -24,11 +23,11 @@ type ClusterService struct {
 }
 
 // NewClusterService 创建集群服务
-func NewClusterService(db *gorm.DB, encryptor *crypto.AES256Encrypt) *ClusterService {
+func NewClusterService(db *gorm.DB, encryptor *crypto.AES256Encrypt, k8sManager *K8sManager) *ClusterService {
 	return &ClusterService{
 		db:         db,
 		encryptor:  encryptor,
-		k8sManager: NewK8sManager(),
+		k8sManager: k8sManager,
 	}
 }
 
@@ -124,16 +123,35 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 	go s.testClusterConnection(cluster.ID)
 
 	// 7. 记录审计日志
-	s.logAudit(ctx, userID, tenantID, cluster.ID, req.Name, "create", "cluster", 
+	s.logAudit(ctx, userID, tenantID, &cluster.ID, req.Name, "create", "cluster", 
 		fmt.Sprintf("%d", cluster.ID), "", "success", "", 0)
 
 	return cluster, nil
 }
 
-// ListClusters 获取集群列表
-func (s *ClusterService) ListClusters(ctx context.Context, tenantID uint) ([]model.Cluster, error) {
+// ListClusters 获取集群列表（支持筛选）
+func (s *ClusterService) ListClusters(ctx context.Context, tenantID uint, keyword, status, authType string) ([]model.Cluster, error) {
 	var clusters []model.Cluster
-	if err := s.db.Preload("Metadata").Where("tenant_id = ?", tenantID).Find(&clusters).Error; err != nil {
+	db := s.db.Preload("Metadata").Where("tenant_id = ?", tenantID)
+
+	if keyword != "" {
+		db = db.Where("name LIKE ? OR display_name LIKE ? OR server LIKE ?",
+			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	if authType != "" {
+		db = db.Where("auth_type = ?", authType)
+	}
+
+	if status != "" {
+		// 通过子查询筛选 metadata 中的 health_status
+		db = db.Where("EXISTS (?)",
+			s.db.Select("1").Table("cluster_metadata").
+				Where("cluster_metadata.cluster_id = clusters.id").
+				Where("cluster_metadata.health_status = ?", status))
+	}
+
+	if err := db.Find(&clusters).Error; err != nil {
 		return nil, err
 	}
 	return clusters, nil
@@ -211,6 +229,9 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 	}
 
 	s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Updates(metadata)
+
+	// 启动 Informer
+	go s.k8sManager.StartCluster(context.Background(), clusterID)
 
 	// 记录审计日志
 	s.logAudit(context.Background(), 0, 0, &clusterID, "", "health_check", "cluster", 

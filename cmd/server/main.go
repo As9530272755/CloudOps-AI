@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/cloudops/platform/internal/api"
+	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/auth"
 	"github.com/cloudops/platform/internal/pkg/config"
 	"github.com/cloudops/platform/internal/pkg/crypto"
@@ -42,8 +43,8 @@ func main() {
 
 	// 自动迁移新表
 	if err := db.AutoMigrate(
-		&service.AuditLog{},
-		&service.ClusterPermission{},
+		&model.AuditLog{},
+		&model.ClusterPermission{},
 	); err != nil {
 		log.Printf("⚠️ 数据库迁移警告: %v", err)
 	}
@@ -53,11 +54,20 @@ func main() {
 	jwtManager := auth.NewJWTManager(&cfg.Security)
 
 	// 创建加密器
-	encryptor := crypto.NewAES256Encrypt(cfg.Security.JWTSecret)
+	encryptor := crypto.NewAES256Encrypt(cfg.Security.JWT.Secret)
+
+	// 创建 K8s 管理器并初始化所有活跃集群的 Informer
+	k8sManager := service.NewK8sManager(db, encryptor)
+	go k8sManager.InitClusters()
+	log.Println("✅ K8s 管理器初始化完成，正在启动集群 Informer...")
 
 	// 创建集群服务
-	clusterService := service.NewClusterService(db, encryptor)
+	clusterService := service.NewClusterService(db, encryptor, k8sManager)
 	log.Println("✅ 集群服务初始化完成")
+
+	// 创建 K8s 资源服务
+	k8sService := service.NewK8sResourceService(k8sManager)
+	log.Println("✅ K8s 资源服务初始化完成")
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
@@ -99,7 +109,7 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 

@@ -27,6 +27,7 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material'
+import { useNavigate } from 'react-router-dom'
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -35,7 +36,7 @@ import {
   ArrowForward as EnterIcon,
 } from '@mui/icons-material'
 import { glassEffect } from '../theme/theme'
-import { clusterAPI, Cluster, CreateClusterRequest } from '../../lib/cluster-api'
+import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest } from '../lib/cluster-api'
 
 // 状态颜色映射
 const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -53,6 +54,7 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function Clusters() {
+  const navigate = useNavigate()
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [loading, setLoading] = useState(false)
   const [openDialog, setOpenDialog] = useState(false)
@@ -67,13 +69,22 @@ export default function Clusters() {
     server: '',
   })
   const [error, setError] = useState('')
-  const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null)
+  const [filters, setFilters] = useState<ClusterListParams>({
+    keyword: '',
+    status: '',
+    auth_type: '',
+  })
 
   // 加载集群列表
   const loadClusters = async () => {
     setLoading(true)
     try {
-      const result = await clusterAPI.getClusters()
+      const params: ClusterListParams = {}
+      if (filters.keyword?.trim()) params.keyword = filters.keyword.trim()
+      if (filters.status) params.status = filters.status
+      if (filters.auth_type) params.auth_type = filters.auth_type
+
+      const result = await clusterAPI.getClusters(params)
       if (result.success) {
         setClusters(result.data)
       }
@@ -170,6 +181,72 @@ export default function Clusters() {
         </Alert>
       )}
 
+      {/* 筛选栏 */}
+      <Card sx={{ mb: 3, ...glassEffect }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+            <TextField
+              label="搜索"
+              placeholder="名称 / 显示名 / Server"
+              size="small"
+              value={filters.keyword}
+              onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
+              sx={{ minWidth: 220 }}
+            />
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>状态</InputLabel>
+              <Select
+                value={filters.status || ''}
+                label="状态"
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              >
+                <MenuItem value="">全部</MenuItem>
+                <MenuItem value="healthy">正常</MenuItem>
+                <MenuItem value="warning">警告</MenuItem>
+                <MenuItem value="error">异常</MenuItem>
+                <MenuItem value="pending">检测中</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>认证方式</InputLabel>
+              <Select
+                value={filters.auth_type || ''}
+                label="认证方式"
+                onChange={(e) => setFilters({ ...filters, auth_type: e.target.value })}
+              >
+                <MenuItem value="">全部</MenuItem>
+                <MenuItem value="kubeconfig">Kubeconfig</MenuItem>
+                <MenuItem value="token">Token</MenuItem>
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setFilters({ keyword: '', status: '', auth_type: '' })
+                // 重置后自动刷新
+                setTimeout(() => loadClusters(), 0)
+              }}
+            >
+              重置
+            </Button>
+            <Button
+              variant="contained"
+              onClick={loadClusters}
+              disabled={loading}
+              sx={{
+                background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
+                color: 'white',
+                borderRadius: '12px',
+                textTransform: 'none',
+                fontWeight: 600,
+              }}
+            >
+              查询
+            </Button>
+          </Box>
+        </CardContent>
+      </Card>
+
       {/* 集群列表 */}
       <Card sx={{ ...glassEffect }}>
         <CardContent>
@@ -205,7 +282,6 @@ export default function Clusters() {
                     <TableRow
                       key={cluster.id}
                       hover
-                      onClick={() => setSelectedCluster(cluster)}
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>
@@ -224,20 +300,20 @@ export default function Clusters() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        {cluster.version || '-'}
+                        {cluster.metadata?.version || '-'}
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={statusLabels[cluster.status || 'pending']}
-                          color={statusColors[cluster.status || 'pending']}
+                          label={statusLabels[cluster.metadata?.health_status || 'pending']}
+                          color={statusColors[cluster.metadata?.health_status || 'pending']}
                           size="small"
                           sx={{ borderRadius: '6px' }}
                         />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {cluster.node_count !== undefined ? `${cluster.node_count} 节点` : '-'}
-                          {cluster.pod_count !== undefined && ` / ${cluster.pod_count} Pod`}
+                          {cluster.metadata?.node_count !== undefined ? `${cluster.metadata.node_count} 节点` : '-'}
+                          {cluster.metadata?.pod_count !== undefined && ` / ${cluster.metadata.pod_count} Pod`}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
@@ -246,7 +322,7 @@ export default function Clusters() {
                             size="small"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setSelectedCluster(cluster)
+                              navigate(`/clusters/${cluster.id}`)
                             }}
                           >
                             <EnterIcon />

@@ -1,14 +1,20 @@
-import api from './api'
+import { apiClient as api } from './api'
+
+export interface ClusterMetadata {
+  health_status?: string
+  version?: string
+  node_count?: number
+  pod_count?: number
+  namespace_count?: number
+  last_synced_at?: string
+}
 
 export interface Cluster {
   id: number
   name: string
   display_name?: string
-  status?: string
-  version?: string
-  node_count?: number
-  pod_count?: number
   server?: string
+  metadata?: ClusterMetadata
 }
 
 export interface CreateClusterRequest {
@@ -21,9 +27,15 @@ export interface CreateClusterRequest {
   server?: string
 }
 
+export interface ClusterListParams {
+  keyword?: string
+  status?: string
+  auth_type?: string
+}
+
 export const clusterAPI = {
-  getClusters: async () => {
-    const response = await api.get('/clusters')
+  getClusters: async (params?: ClusterListParams) => {
+    const response = await api.get('/clusters', { params })
     return response.data
   },
   

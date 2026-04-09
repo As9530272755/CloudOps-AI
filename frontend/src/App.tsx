@@ -5,6 +5,7 @@ import MainLayout from './components/layout/MainLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Clusters from './pages/Clusters'
+import ClusterDetail from './pages/ClusterDetail'
 import Inspection from './pages/Inspection'
 import Data from './pages/Data'
 import Logs from './pages/Logs'
@@ -50,7 +51,8 @@ function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="clusters" element={<Clusters />} />
-        <Route path="clusters/:clusterId/*" element={<Clusters />} />
+        <Route path="clusters/:clusterId" element={<ClusterDetail />} />
+        <Route path="clusters/:clusterId/*" element={<ClusterDetail />} />
         <Route path="inspection" element={<Inspection />} />
         <Route path="data" element={<Data />} />
         <Route path="logs" element={<Logs />} />

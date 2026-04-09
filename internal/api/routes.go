@@ -13,14 +13,16 @@ import (
 type Router struct {
 	authHandler    *handlers.AuthHandler
 	clusterHandler *handlers.ClusterHandler
+	k8sHandler     *handlers.K8sHandler
 	jwtManager     *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService) *Router {
 	return &Router{
 		authHandler:    handlers.NewAuthHandler(jwtManager),
 		clusterHandler: handlers.NewClusterHandler(clusterService),
+		k8sHandler:     handlers.NewK8sHandler(k8sService),
 		jwtManager:     jwtManager,
 	}
 }
@@ -52,6 +54,14 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				clusters.GET("/:id", r.clusterHandler.GetCluster)
 				clusters.DELETE("/:id", r.clusterHandler.DeleteCluster)
 			}
+
+			// K8s 资源管理
+			protected.GET("/clusters/:id/namespaces", r.k8sHandler.GetNamespaces)
+			protected.GET("/clusters/:id/stats", r.k8sHandler.GetClusterStats)
+			protected.POST("/clusters/:id/refresh", r.k8sHandler.RefreshCluster)
+			protected.GET("/clusters/:id/resources/:kind", r.k8sHandler.ListResources)
+			protected.GET("/clusters/:id/resources/:kind/:name/yaml", r.k8sHandler.GetResourceYAML)
+			protected.GET("/clusters/:id/resources/:kind/:name", r.k8sHandler.GetResource)
 
 			// TODO: 添加更多路由
 			// 巡检中心

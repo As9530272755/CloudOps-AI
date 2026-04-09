@@ -29,8 +29,8 @@ func (h *ClusterHandler) CreateCluster(c *gin.Context) {
 	}
 
 	// 从上下文获取用户信息
-	userID, _ := c.Get("userID")
-	tenantID, _ := c.Get("tenantID")
+	userID, _ := c.Get("user_id")
+	tenantID, _ := c.Get("tenant_id")
 
 	cluster, err := h.clusterService.CreateCluster(c.Request.Context(), 
 		userID.(uint), tenantID.(uint), &req)
@@ -47,9 +47,13 @@ func (h *ClusterHandler) CreateCluster(c *gin.Context) {
 
 // ListClusters 集群列表
 func (h *ClusterHandler) ListClusters(c *gin.Context) {
-	tenantID, _ := c.Get("tenantID")
+	tenantID, _ := c.Get("tenant_id")
 
-	clusters, err := h.clusterService.ListClusters(c.Request.Context(), tenantID.(uint))
+	keyword := c.Query("keyword")
+	status := c.Query("status")
+	authType := c.Query("auth_type")
+
+	clusters, err := h.clusterService.ListClusters(c.Request.Context(), tenantID.(uint), keyword, status, authType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -89,8 +93,8 @@ func (h *ClusterHandler) DeleteCluster(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("userID")
-	tenantID, _ := c.Get("tenantID")
+	userID, _ := c.Get("user_id")
+	tenantID, _ := c.Get("tenant_id")
 
 	if err := h.clusterService.DeleteCluster(c.Request.Context(), 
 		userID.(uint), tenantID.(uint), uint(id)); err != nil {
