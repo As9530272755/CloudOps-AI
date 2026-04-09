@@ -259,7 +259,7 @@ export default function MainLayout() {
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {/* 侧边栏 */}
       <Drawer
-        variant={isMobile ? 'temporary' : 'persistent'}
+        variant={isMobile ? 'temporary' : 'permanent'}
         open={open}
         onClose={handleDrawerToggle}
         sx={{
