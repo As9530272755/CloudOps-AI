@@ -157,3 +157,52 @@ type LoginLog struct {
 func (LoginLog) TableName() string {
 	return "login_logs"
 }
+
+// AuditLog 审计日志模型 - 操作审计
+ type AuditLog struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	UserID      uint           `gorm:"index" json:"user_id"`
+	Username    string         `gorm:"size:50" json:"username"`
+	TenantID    uint           `gorm:"index" json:"tenant_id"`
+	ClusterID   *uint          `gorm:"index" json:"cluster_id,omitempty"`
+	ClusterName string         `gorm:"size:100" json:"cluster_name"`
+	Action      string         `gorm:"size:50;not null" json:"action"`      // create/update/delete/view
+	Resource    string         `gorm:"size:100;not null" json:"resource"`   // cluster/pod/deployment
+	ResourceID  string         `gorm:"size:100" json:"resource_id"`         // 资源ID/名称
+	Namespace   string         `gorm:"size:100" json:"namespace"`           // K8s命名空间
+	Details     string         `gorm:"type:text" json:"details"`            // 操作详情(JSON)
+	Status      string         `gorm:"size:20;default:'success'" json:"status"` // success/failed
+	ErrorMsg    string         `gorm:"type:text" json:"error_msg"`          // 错误信息
+	IPAddress   string         `gorm:"size:50" json:"ip_address"`
+	UserAgent   string         `gorm:"size:255" json:"user_agent"`
+	Duration    int64          `json:"duration"`                              // 操作耗时(ms)
+	CreatedAt   time.Time      `gorm:"index" json:"created_at"`
+}
+
+// TableName 指定表名
+func (AuditLog) TableName() string {
+	return "audit_logs"
+}
+
+// ClusterPermission 集群权限模型 - 用户集群访问控制
+ type ClusterPermission struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	UserID      uint           `gorm:"uniqueIndex:idx_user_cluster;not null" json:"user_id"`
+	ClusterID   uint           `gorm:"uniqueIndex:idx_user_cluster;not null" json:"cluster_id"`
+	Role        string         `gorm:"size:20;not null" json:"role"`          // admin/viewer/operator
+	Namespaces  string         `gorm:"type:text" json:"namespaces"`           // JSON数组["default","kube-system"]
+	CanExec     bool           `gorm:"default:false" json:"can_exec"`         // 是否允许exec进容器
+	CanEdit     bool           `gorm:"default:false" json:"can_edit"`         // 是否允许编辑资源
+	CanDelete   bool           `gorm:"default:false" json:"can_delete"`       // 是否允许删除资源
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	
+	// 关联
+	User    *User    `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Cluster *Cluster `gorm:"foreignKey:ClusterID" json:"cluster,omitempty"`
+}
+
+// TableName 指定表名
+func (ClusterPermission) TableName() string {
+	return "cluster_permissions"
+}

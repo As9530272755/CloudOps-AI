@@ -5,17 +5,20 @@ import (
 	"log"
 	"os"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/cloudops/platform/internal/api"
 	"github.com/cloudops/platform/internal/pkg/auth"
 	"github.com/cloudops/platform/internal/pkg/config"
+	"github.com/cloudops/platform/internal/pkg/crypto"
 	"github.com/cloudops/platform/internal/pkg/database"
-	"github.com/gin-gonic/gin"
+	"github.com/cloudops/platform/internal/service"
 )
 
 // @title CloudOps Platform API
 // @version 2.0
 // @description 云原生运维管理平台 API
-// @host localhost:8000
+// @host localhost:9000
 // @BasePath /api/v1
 func main() {
 	// 加载配置
@@ -31,13 +34,30 @@ func main() {
 	log.Println("✅ 配置加载成功")
 
 	// 初始化数据库
-	_, err = database.InitDB(cfg)
+	db, err := database.InitDB(cfg)
 	if err != nil {
 		log.Fatalf("❌ 数据库初始化失败: %v", err)
 	}
+	log.Println("✅ 数据库连接成功")
+
+	// 自动迁移新表
+	if err := db.AutoMigrate(
+		&service.AuditLog{},
+		&service.ClusterPermission{},
+	); err != nil {
+		log.Printf("⚠️ 数据库迁移警告: %v", err)
+	}
+	log.Println("✅ 数据库迁移完成")
 
 	// 创建 JWT 管理器
 	jwtManager := auth.NewJWTManager(&cfg.Security)
+
+	// 创建加密器
+	encryptor := crypto.NewAES256Encrypt(cfg.Security.JWTSecret)
+
+	// 创建集群服务
+	clusterService := service.NewClusterService(db, encryptor)
+	log.Println("✅ 集群服务初始化完成")
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
@@ -79,13 +99,15 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager)
+	apiRouter := api.NewRouter(jwtManager, clusterService)
 	apiRouter.RegisterRoutes(router)
+	log.Println("✅ API 路由注册完成")
 
 	// 启动服务
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Backend.Host, cfg.Server.Backend.Port)
 	log.Printf("🚀 CloudOps Backend 启动在 %s", addr)
 	log.Printf("📖 API 文档: http://%s/docs", addr)
+	log.Println("🔗 集群管理 API: /api/v1/clusters")
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("❌ 启动失败: %v", err)
 	}
