@@ -1,0 +1,109 @@
+# CloudOps Platform v2.0 配置文件
+
+server:
+  backend:
+    host: "0.0.0.0"
+    port: 8000
+    mode: "debug"
+    read_timeout: 30s
+    write_timeout: 30s
+    max_connections: 10000
+  
+  frontend:
+    host: "0.0.0.0"
+    port: 3000
+  
+  ai_service:
+    host: "0.0.0.0"
+    port: 8001
+    enabled: true
+
+database:
+  postgres:
+    host: "localhost"
+    port: 5432
+    database: "cloudops"
+    username: "cloudops"
+    password: "${POSTGRES_PASSWORD}"
+    ssl_mode: "disable"
+    max_connections: 100
+    max_idle: 10
+  
+  redis:
+    host: "localhost"
+    port: 6379
+    password: "${REDIS_PASSWORD}"
+    db: 0
+    pool_size: 100
+
+kubernetes:
+  connection_pool:
+    max_size: 50
+    idle_timeout: 10m
+    health_check: 30s
+  
+  terminal:
+    enabled: true
+    max_sessions: 100
+    session_timeout: 30m
+    recording_enabled: true
+    recording_path: "/var/lib/cloudops/recordings"
+    allowed_shells:
+      - "/bin/sh"
+      - "/bin/bash"
+
+ai:
+  openclaw:
+    enabled: true
+    api_url: "${OPENCLAW_URL:http://localhost:8080}"
+    api_key: "${OPENCLAW_API_KEY}"
+    timeout: 60s
+    max_tokens: 4096
+  
+  knowledge_base:
+    enabled: true
+    vector_db: "chroma"
+    embedding_model: "text-embedding-3-small"
+
+security:
+  jwt:
+    secret: "${JWT_SECRET}"
+    access_expire: 1h
+    refresh_expire: 24h
+  
+  encryption:
+    algorithm: "AES-256-GCM"
+    key_id: "default"
+    key: "${ENCRYPTION_KEY}"
+  
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+    burst: 20
+  
+  audit:
+    enabled: true
+    log_path: "/var/log/cloudops/audit.log"
+    retention_days: 90
+
+tenant:
+  enabled: true
+  max_tenants: 100
+  default_tenant: "default"
+  
+  quotas:
+    max_clusters: 20
+    max_users: 100
+    max_terminal_sessions: 50
+    storage_quota_gb: 100
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file:
+    path: "/var/log/cloudops/app.log"
+    max_size_mb: 100
+    max_backups: 10
+    max_age_days: 30
+    compress: true
