@@ -63,26 +63,7 @@ const resourceUsage = [
 
 export default function Dashboard() {
   return (
-    <Box>
-      {/* 页面标题 */}
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="h4"
-          sx={{
-            fontWeight: 700,
-            mb: 1,
-            background: 'linear-gradient(135deg, #1D2939 0%, #475467 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
-          仪表盘
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          欢迎使用 CloudOps 云原生运维管理平台
-        </Typography>
-      </Box>
-
+    <Box sx={{ p: 3 }}>
       {/* 统计卡片 */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {stats.map((stat, index) => (

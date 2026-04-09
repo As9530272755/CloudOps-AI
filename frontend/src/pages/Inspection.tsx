@@ -1,14 +1,19 @@
-import { Box, Typography } from '@mui/material'
+import { Box, Typography, Card, CardContent } from '@mui/material'
+import { glassEffect } from '../theme/theme'
 
 export default function Inspection() {
   return (
-    <Box>
-      <Typography variant="h4" fontWeight={700} gutterBottom>
-        巡检中心
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        功能开发中，敬请期待...
-      </Typography>
+    <Box sx={{ p: 3 }}>
+      <Card sx={{ ...glassEffect }}>
+        <CardContent sx={{ p: 4 }}>
+          <Typography variant="h5" fontWeight={600} gutterBottom>
+            巡检中心
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            功能开发中，敬请期待...
+          </Typography>
+        </CardContent>
+      </Card>
     </Box>
   )
 }

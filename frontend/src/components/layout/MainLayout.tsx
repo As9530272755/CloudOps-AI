@@ -298,35 +298,23 @@ export default function MainLayout() {
             borderBottom: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
           }}
         >
-          <Toolbar sx={{ gap: 2 }}>
-            <IconButton
-              edge="start"
-              onClick={handleDrawerToggle}
-              sx={{
-                color: 'text.primary',
-                bgcolor: alpha(theme.palette.primary.main, 0.08),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.primary.main, 0.12),
-                },
-              }}
-            >
-              {open ? <ChevronLeftIcon /> : <MenuIcon />}
-            </IconButton>
-
-            <Typography
-              variant="h5"
-              sx={{
-                flexGrow: 1,
-                fontWeight: 600,
-                color: 'text.primary',
-              }}
-            >
-              {menuItems.find(
-                (item) =>
-                  item.path === location.pathname ||
-                  (item.path !== '/' && location.pathname.startsWith(item.path))
-              )?.label || 'CloudOps'}
-            </Typography>
+          <Toolbar sx={{ gap: 2, px: 3 }}>
+            {/* 移动端菜单按钮 */}
+            {isMobile && (
+              <IconButton
+                edge="start"
+                onClick={handleDrawerToggle}
+                sx={{
+                  color: 'text.primary',
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
+                  '&:hover': {
+                    bgcolor: alpha(theme.palette.primary.main, 0.12),
+                  },
+                }}
+              >
+                <MenuIcon />
+              </IconButton>
+            )}
 
             {/* 搜索按钮 */}
             <IconButton
@@ -402,13 +390,14 @@ export default function MainLayout() {
           </Toolbar>
         </AppBar>
 
-        {/* 内容区 */}
+        {/* 内容区 - 无缝填充满 */}
         <Box
           component="main"
           sx={{
             flexGrow: 1,
-            p: 3,
+            p: 0,
             minHeight: 'calc(100vh - 64px)',
+            bgcolor: 'transparent',
           }}
         >
           <Outlet />
