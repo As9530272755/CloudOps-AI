@@ -61,3 +61,6 @@ coverage/
 
 # Generated
 *.generated.go
+
+# Local
+.env.local
