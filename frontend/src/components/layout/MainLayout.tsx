@@ -282,7 +282,7 @@ export default function MainLayout() {
           flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
-          ml: open && !isMobile ? `${DRAWER_WIDTH}px` : 0,
+          
           transition: theme.transitions.create('margin', {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,

@@ -9,7 +9,7 @@ import {
 } from '@mui/icons-material'
 import { glassEffect } from '../theme/theme'
 
-// 统计数据
+// 统计数据 - v0.4.2 更新标识
 const stats = [
   { 
     label: '集群数量', 
