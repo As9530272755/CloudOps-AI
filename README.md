@@ -60,21 +60,39 @@ cloudops-v2/
 
 - Go 1.21+
 - Node.js 18+
-- PostgreSQL 15+
-- Redis 7+
+- PostgreSQL 15+ (可选，默认使用SQLite)
+- Redis 7+ (可选)
 
 ### 本地运行
 
 ```bash
-# 后端
+# 后端 (端口 8000)
 cd cloudops-v2
 go mod tidy
 go run cmd/server/main.go
 
-# 前端
+# 前端 (端口 18000)
 cd frontend
 npm install
 npm run dev
+```
+
+### 访问地址
+
+- **前端**: http://localhost:18000
+- **后端API**: http://localhost:8000/docs
+- **默认账号**: admin / admin
+
+### 端口配置
+
+在 `config/config.yaml` 中修改：
+
+```yaml
+server:
+  backend:
+    port: 8000  # 后端端口
+  frontend:
+    port: 18000  # 前端端口
 ```
 
 ## 开发计划
