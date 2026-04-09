@@ -5,8 +5,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/gin-gonic/gin"
+	"github.com/cloudops/platform/internal/api"
+	"github.com/cloudops/platform/internal/pkg/auth"
 	"github.com/cloudops/platform/internal/pkg/config"
+	"github.com/cloudops/platform/internal/pkg/database"
+	"github.com/gin-gonic/gin"
 )
 
 // @title CloudOps Platform API
@@ -23,8 +26,18 @@ func main() {
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		log.Fatalf("❌ 加载配置失败: %v", err)
 	}
+	log.Println("✅ 配置加载成功")
+
+	// 初始化数据库
+	_, err = database.InitDB(cfg)
+	if err != nil {
+		log.Fatalf("❌ 数据库初始化失败: %v", err)
+	}
+
+	// 创建 JWT 管理器
+	jwtManager := auth.NewJWTManager(&cfg.Security)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
@@ -35,6 +48,18 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+
+	// CORS 中间件
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -53,10 +78,15 @@ func main() {
 		})
 	})
 
+	// 注册 API 路由
+	apiRouter := api.NewRouter(jwtManager)
+	apiRouter.RegisterRoutes(router)
+
 	// 启动服务
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Backend.Host, cfg.Server.Backend.Port)
 	log.Printf("🚀 CloudOps Backend 启动在 %s", addr)
+	log.Printf("📖 API 文档: http://%s/docs", addr)
 	if err := router.Run(addr); err != nil {
-		log.Fatalf("启动失败: %v", err)
+		log.Fatalf("❌ 启动失败: %v", err)
 	}
 }
