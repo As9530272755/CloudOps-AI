@@ -96,11 +96,14 @@ export default function ChartPanel({
   const [error, setError] = useState('')
   const [statValue, setStatValue] = useState<number | null>(null)
   const [tableData, setTableData] = useState<{ columns: string[]; rows: any[] } | null>(null)
+  const [chartData, setChartData] = useState<any>(null)
 
+  // 1. 拉取数据
   const loadData = useCallback(async () => {
     if (!dataSourceId || !query) return
     setLoading(true)
     setError('')
+    setChartData(null)
     try {
       const req: any = { query }
       if (start && end) {
@@ -113,8 +116,7 @@ export default function ChartPanel({
         setError(result.error || result.message || 'Query failed')
         return
       }
-      // 后端返回的是 ProxyQueryResponse { status, data, error }
-      // 真正的 Prometheus 数据在 result.data.data
+      // 后端返回结构: { success, data: { status, data: { result } } }
       const promData = result.data?.data
       const formatted = formatPrometheusData({ data: promData }, type)
       if (type === 'table' && formatted) {
@@ -122,7 +124,10 @@ export default function ChartPanel({
       } else {
         setTableData(null)
       }
-      renderChart(formatted)
+      if (type === 'stat' && formatted && formatted.value !== undefined) {
+        setStatValue(formatted.value)
+      }
+      setChartData(formatted)
     } catch (err: any) {
       setError(err.message || '加载数据失败')
     } finally {
@@ -130,16 +135,38 @@ export default function ChartPanel({
     }
   }, [dataSourceId, query, type, start, end, step])
 
-  const renderChart = useCallback((formatted: any) => {
-    if (!chartInstance.current || !formatted) return
+  // 2. 初始化 ECharts + ResizeObserver
+  useEffect(() => {
+    if (!chartRef.current) return
+    if (!chartInstance.current) {
+      chartInstance.current = echarts.init(chartRef.current)
+    }
+
+    const ro = new ResizeObserver(() => chartInstance.current?.resize())
+    ro.observe(chartRef.current)
+
+    const handleWinResize = () => chartInstance.current?.resize()
+    window.addEventListener('resize', handleWinResize)
+
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', handleWinResize)
+      chartInstance.current?.dispose()
+      chartInstance.current = null
+    }
+  }, [])
+
+  // 3. 数据或类型变化时重新拉取
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  // 4. chartData 准备好后绘制（此时 DOM 一定存在）
+  useEffect(() => {
+    if (!chartInstance.current || !chartData) return
+    if (type === 'stat' || type === 'table') return
 
     const colors = options.colors || ['#007AFF', '#5856D6', '#34C759', '#FF9500', '#FF3B30', '#AF52DE']
-
-    if (type === 'stat') {
-      setStatValue(formatted.value)
-      chartInstance.current.clear()
-      return
-    }
 
     const baseOption: echarts.EChartsOption = {
       color: colors,
@@ -156,7 +183,7 @@ export default function ChartPanel({
           ...option,
           xAxis: {
             type: 'category',
-            data: formatted.times || [],
+            data: chartData.times || [],
             axisLine: { lineStyle: { color: '#888' } },
           },
           yAxis: {
@@ -164,7 +191,7 @@ export default function ChartPanel({
             axisLine: { lineStyle: { color: '#888' } },
             splitLine: { lineStyle: { color: '#eee' } },
           },
-          series: formatted.series.map((s: any) => ({
+          series: chartData.series.map((s: any) => ({
             name: s.name,
             type,
             data: s.data,
@@ -181,7 +208,7 @@ export default function ChartPanel({
           series: [{
             type: 'pie',
             radius: ['40%', '70%'],
-            data: formatted.data || [],
+            data: chartData.data || [],
             label: { show: true, formatter: '{b}: {c}' },
           }],
         }
@@ -194,51 +221,17 @@ export default function ChartPanel({
             min: options.min ?? 0,
             max: options.max ?? 100,
             detail: { formatter: '{value}' },
-            data: [{ value: formatted.value, name: formatted.name }],
+            data: [{ value: chartData.value, name: chartData.name }],
             axisLine: { lineStyle: { width: 10, color: [
               [0.3, '#34C759'], [0.7, '#FF9500'], [1, '#FF3B30']
             ] } },
           }],
         }
         break
-      case 'table':
-        chartInstance.current?.clear()
-        return
     }
 
     chartInstance.current.setOption(option, true)
-  }, [type, options])
-
-  useEffect(() => {
-    if (!chartRef.current) return
-
-    // 初始化 ECharts
-    if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current)
-    }
-
-    loadData()
-
-    // ResizeObserver：容器尺寸变化时自动 resize + 重绘
-    const ro = new ResizeObserver(() => {
-      chartInstance.current?.resize()
-      // 如果之前因尺寸为0没画出来，现在retry
-      if (chartRef.current && chartRef.current.clientWidth > 0 && chartRef.current.clientHeight > 0) {
-        chartInstance.current?.resize()
-      }
-    })
-    ro.observe(chartRef.current)
-
-    const handleWinResize = () => chartInstance.current?.resize()
-    window.addEventListener('resize', handleWinResize)
-
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', handleWinResize)
-      chartInstance.current?.dispose()
-      chartInstance.current = null
-    }
-  }, [loadData])
+  }, [chartData, type, options])
 
   return (
     <Paper
@@ -261,55 +254,50 @@ export default function ChartPanel({
         </Typography>
       </Box>
 
-      {loading && (
-        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
-
-      {error && !loading && (
-        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography variant="caption" color="error">{error}</Typography>
-        </Box>
-      )}
-
-      {!loading && !error && type === 'stat' && (
-        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-          <Typography variant="h3" sx={{ fontWeight: 700, color: '#007AFF' }}>
-            {statValue !== null ? statValue.toFixed(options.decimals ?? 1) : '-'}
-          </Typography>
-          {options.unit && (
-            <Typography variant="caption" color="text.secondary">{options.unit}</Typography>
-          )}
-        </Box>
-      )}
-
-      {!loading && !error && type === 'table' && tableData && (
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-            <Box component="thead">
-              <Box component="tr">
-                {tableData.columns.map((h) => (
-                  <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: '1px solid #eee', color: '#666' }}>{h}</Box>
+      {/* 图表区：始终保留 DOM，loading/error 用 overlay */}
+      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {type === 'stat' ? (
+          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#007AFF' }}>
+              {statValue !== null ? statValue.toFixed(options.decimals ?? 1) : '-'}
+            </Typography>
+            {options.unit && (
+              <Typography variant="caption" color="text.secondary">{options.unit}</Typography>
+            )}
+          </Box>
+        ) : type === 'table' ? (
+          <Box sx={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
+            <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <Box component="thead">
+                <Box component="tr">
+                  {['Time', 'Metric', 'Value'].map((h) => (
+                    <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: '1px solid #eee', color: '#666' }}>{h}</Box>
+                  ))}
+                </Box>
+              </Box>
+              <Box component="tbody">
+                {tableData?.rows.map((row: any, idx: number) => (
+                  <Box component="tr" key={idx}>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0' }}>{row.time}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0' }}>{row.value}</Box>
+                  </Box>
                 ))}
               </Box>
             </Box>
-            <Box component="tbody">
-              {tableData.rows.map((row: any, idx: number) => (
-                <Box component="tr" key={idx}>
-                  <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0' }}>{row.time}</Box>
-                  <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
-                  <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0' }}>{row.value}</Box>
-                </Box>
-              ))}
-            </Box>
           </Box>
-        </Box>
-      )}
+        ) : (
+          <Box ref={chartRef} sx={{ position: 'absolute', inset: 0 }} />
+        )}
 
-      {!loading && !error && type !== 'stat' && type !== 'table' && (
-        <Box ref={chartRef} sx={{ flex: 1, minHeight: 0 }} />
-      )}
+        {/* loading / error overlay */}
+        {(loading || error) && type !== 'stat' && (
+          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.7)' }}>
+            {loading && <CircularProgress size={24} />}
+            {error && !loading && <Typography variant="caption" color="error">{error}</Typography>}
+          </Box>
+        )}
+      </Box>
     </Paper>
   )
 }
