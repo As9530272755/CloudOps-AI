@@ -13,6 +13,9 @@ import {
   Divider,
   useTheme,
   useMediaQuery,
+  IconButton,
+  AppBar,
+  Toolbar,
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
 import {
@@ -26,9 +29,12 @@ import {
   People as UsersIcon,
   Business as TenantsIcon,
   Settings as SettingsIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
+  Menu as MenuIcon,
 } from '@mui/icons-material'
 import { useProfile } from '../../lib/api'
-import { glassEffect } from '../../theme/theme'
+import { useColorMode } from '../../context/ColorModeContext'
 
 const DRAWER_WIDTH = 280
 
@@ -52,6 +58,8 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { data: user } = useProfile()
+  const { mode, toggleColorMode } = useColorMode()
+  const isDark = mode === 'dark'
 
   const handleDrawerToggle = () => setOpen(!open)
 
@@ -60,7 +68,6 @@ export default function MainLayout() {
     if (isMobile) setOpen(false)
   }
 
-  // 分组菜单
   const groupedItems = menuItems.reduce((acc, item) => {
     if (!acc[item.group]) acc[item.group] = []
     acc[item.group].push(item)
@@ -244,8 +251,8 @@ export default function MainLayout() {
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            ...glassEffect,
             borderRight: 'none',
+            bgcolor: 'background.paper',
           },
         }}
       >
@@ -258,7 +265,6 @@ export default function MainLayout() {
           flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
-          
           transition: theme.transitions.create('margin', {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
@@ -266,8 +272,53 @@ export default function MainLayout() {
         }}
       >
         {/* 顶部栏 */}
+        <AppBar
+          position="static"
+          elevation={0}
+          sx={{
+            bgcolor: 'background.paper',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            display: { lg: isMobile ? 'flex' : 'none' },
+          }}
+        >
+          <Toolbar sx={{ justifyContent: 'space-between' }}>
+            <IconButton edge="start" onClick={handleDrawerToggle} sx={{ color: 'text.primary' }}>
+              <MenuIcon />
+            </IconButton>
+            <IconButton onClick={toggleColorMode} sx={{ color: 'text.primary' }}>
+              {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+            </IconButton>
+          </Toolbar>
+        </AppBar>
 
-        {/* 内容区 - 无缝填充满 */}
+        {/* 桌面端顶部快捷栏：主题切换 + 面包屑占位 */}
+        <Box
+          sx={{
+            display: { xs: 'none', lg: 'flex' },
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            px: 3,
+            py: 1.5,
+            gap: 1,
+          }}
+        >
+          <IconButton
+            onClick={toggleColorMode}
+            sx={{
+              color: 'text.primary',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: '10px',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+            title={isDark ? '切换亮色模式' : '切换暗色模式'}
+          >
+            {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
+        </Box>
+
+        {/* 内容区 */}
         <Box
           component="main"
           sx={{

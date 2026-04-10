@@ -1,10 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { ThemeProvider, CssBaseline } from '@mui/material'
+import { CssBaseline } from '@mui/material'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
-import { theme } from './theme/theme'
+import { ColorModeProvider } from './context/ColorModeContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,11 +19,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <ThemeProvider theme={theme}>
+        <ColorModeProvider>
           <CssBaseline />
           <App />
-        </ThemeProvider>
+        </ColorModeProvider>
       </BrowserRouter>
     </QueryClientProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 )
