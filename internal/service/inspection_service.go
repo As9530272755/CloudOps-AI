@@ -465,6 +465,123 @@ func (s *InspectionService) TriggerJob(taskID uint) error {
 	return nil
 }
 
+// QuickInspect 一键快速巡检所有活跃集群（无需预先创建任务）
+func (s *InspectionService) QuickInspect(ctx context.Context) (*model.InspectionJob, error) {
+	var clusters []model.Cluster
+	if err := s.db.Where("is_active = ?", true).Find(&clusters).Error; err != nil {
+		return nil, err
+	}
+	if len(clusters) == 0 {
+		return nil, fmt.Errorf("没有可用的活跃集群")
+	}
+
+	// 创建临时 Job 记录
+	job := model.InspectionJob{
+		TaskID:        0, // 0 表示快速巡检
+		Status:        "running",
+		TriggerType:   "manual",
+		StartedAt:     ptrTime(time.Now()),
+		TotalClusters: len(clusters),
+	}
+	if err := s.db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	// 在后台执行巡检
+	go func() {
+		var clusterIDs []uint
+		for _, c := range clusters {
+			clusterIDs = append(clusterIDs, c.ID)
+		}
+		task := model.InspectionTask{
+			ClusterIDs: marshalUintArray(clusterIDs),
+		}
+		s.runJobWithTask(job.ID, task)
+	}()
+
+	return &job, nil
+}
+
+func (s *InspectionService) runJobWithTask(jobID uint, task model.InspectionTask) {
+	ctx := context.Background()
+
+	var clusterIDs []uint
+	_ = json.Unmarshal([]byte(task.ClusterIDs), &clusterIDs)
+	if len(clusterIDs) == 0 {
+		var clusters []model.Cluster
+		if err := s.db.Where("is_active = ?", true).Find(&clusters).Error; err == nil {
+			for _, c := range clusters {
+				clusterIDs = append(clusterIDs, c.ID)
+			}
+		}
+	}
+
+	var wg sync.WaitGroup
+	resultCh := make(chan *model.InspectionResult, len(clusterIDs))
+
+	for _, cid := range clusterIDs {
+		wg.Add(1)
+		go func(clusterID uint) {
+			defer wg.Done()
+			res := s.inspectCluster(ctx, clusterID, task)
+			res.JobID = jobID
+			resultCh <- res
+		}(cid)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	var successCount, failedCount int
+	var totalScore int
+	maxRisk := 0
+	riskMap := map[string]int{"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+	for res := range resultCh {
+		if res.Status == "success" {
+			successCount++
+			totalScore += res.Score
+			if riskMap[res.RiskLevel] > maxRisk {
+				maxRisk = riskMap[res.RiskLevel]
+			}
+		} else {
+			failedCount++
+		}
+		s.db.Create(res)
+	}
+
+	var job model.InspectionJob
+	if err := s.db.First(&job, jobID).Error; err != nil {
+		return
+	}
+
+	now := time.Now()
+	job.FinishedAt = &now
+	job.SuccessCount = successCount
+	job.FailedCount = failedCount
+	if successCount > 0 {
+		job.ScoreAvg = totalScore / successCount
+	}
+	riskLevels := []string{"low", "medium", "high", "critical"}
+	job.RiskLevel = riskLevels[maxRisk]
+
+	if failedCount == 0 && successCount > 0 {
+		job.Status = "success"
+	} else if successCount > 0 {
+		job.Status = "partial"
+	} else {
+		job.Status = "failed"
+	}
+	s.db.Save(&job)
+}
+
+func marshalUintArray(ids []uint) string {
+	b, _ := json.Marshal(ids)
+	return string(b)
+}
+
 // ==================== 辅助函数 ====================
 
 func ptrTime(t time.Time) *time.Time {

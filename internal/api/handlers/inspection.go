@@ -95,6 +95,16 @@ func (h *InspectionHandler) TriggerTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "巡检任务已触发"})
 }
 
+// QuickInspect 一键快速巡检所有活跃集群
+func (h *InspectionHandler) QuickInspect(c *gin.Context) {
+	job, err := h.inspectionService.QuickInspect(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": job, "message": "一键巡检已触发"})
+}
+
 // ==================== 执行记录与报告 ====================
 
 // ListJobs 执行历史

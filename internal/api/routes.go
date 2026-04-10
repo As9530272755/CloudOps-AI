@@ -108,6 +108,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				inspection.PUT("/tasks/:id", r.inspectionHandler.UpdateTask)
 				inspection.DELETE("/tasks/:id", r.inspectionHandler.DeleteTask)
 				inspection.POST("/tasks/:id/trigger", r.inspectionHandler.TriggerTask)
+				inspection.POST("/quick", r.inspectionHandler.QuickInspect)
 
 				inspection.GET("/jobs", r.inspectionHandler.ListJobs)
 				inspection.GET("/jobs/:id", r.inspectionHandler.GetJob)

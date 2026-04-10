@@ -44,6 +44,12 @@ export interface InspectionResultItem {
 }
 
 export const inspectionAPI = {
+  // 一键快速巡检
+  quickInspect: async () => {
+    const res = await api.post('/inspection/quick')
+    return res.data as { success: boolean; data?: InspectionJob; message?: string; error?: string }
+  },
+
   // 任务管理
   listTasks: async () => {
     const res = await api.get('/inspection/tasks')

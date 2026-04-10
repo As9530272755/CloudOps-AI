@@ -37,6 +37,7 @@ import {
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
   Assessment as ReportIcon,
+  FlashOn as QuickIcon,
 } from '@mui/icons-material'
 
 import { inspectionAPI, InspectionTask, InspectionJob, InspectionResultItem } from '../lib/inspection-api'
@@ -163,6 +164,23 @@ export default function Inspection() {
     setTimeout(() => loadJobs(), 500)
   }
 
+  const handleQuickInspect = async () => {
+    setLoading(true)
+    try {
+      const res = await inspectionAPI.quickInspect()
+      if (res.success) {
+        setActiveTab(1)
+        setTimeout(() => loadJobs(), 500)
+      } else {
+        setError(res.error || '一键巡检失败')
+      }
+    } catch (err: any) {
+      setError(err.message || '一键巡检失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const openReport = async (job: InspectionJob) => {
     const res = await inspectionAPI.getJob(job.id)
     if (res.success && res.data) {
@@ -231,20 +249,31 @@ export default function Inspection() {
         <CardContent>
           {activeTab === 0 && (
             <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
                 <Typography variant="h6" fontWeight={600}>巡检任务</Typography>
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => {
-                    setEditingTask(null)
-                    setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
-                    setTaskDialog(true)
-                  }}
-                  sx={{ background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)', color: 'white', borderRadius: '12px', textTransform: 'none' }}
-                >
-                  新建任务
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1.5 }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<QuickIcon />}
+                    onClick={handleQuickInspect}
+                    disabled={loading}
+                    sx={{ background: 'linear-gradient(135deg, #FF9500 0%, #FFCC00 100%)', color: 'white', borderRadius: '12px', textTransform: 'none', fontWeight: 600 }}
+                  >
+                    一键巡检
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={() => {
+                      setEditingTask(null)
+                      setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
+                      setTaskDialog(true)
+                    }}
+                    sx={{ background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)', color: 'white', borderRadius: '12px', textTransform: 'none' }}
+                  >
+                    新建任务
+                  </Button>
+                </Box>
               </Box>
 
               <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
