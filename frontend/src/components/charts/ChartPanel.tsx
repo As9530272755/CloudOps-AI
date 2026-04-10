@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Box, Typography, CircularProgress, Paper, IconButton, Menu, MenuItem } from '@mui/material'
+import { Box, Typography, CircularProgress, Paper, IconButton, Menu, MenuItem, useTheme } from '@mui/material'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import * as echarts from 'echarts'
 import { ChartType, PanelOptions } from './types'
 import { datasourceAPI } from '../../lib/datasource-api'
 
-// Sci-fi neon palette inspired by Datadog / VictoriaMetrics / modern cyberpunk dashboards
-const SCI_FI_COLORS = [
+// Dark mode: sci-fi neon palette
+const DARK_COLORS = [
   '#00f0ff', '#ff00aa', '#00ff88', '#facc15', '#a855f7',
   '#f472b6', '#38bdf8', '#fb923c', '#ef4444', '#22d3ee',
   '#c084fc', '#34d399', '#fbbf24', '#f87171', '#60a5fa',
+]
+
+// Light mode: professional clean palette (Apple/Datadog inspired)
+const LIGHT_COLORS = [
+  '#007AFF', '#34C759', '#FF9500', '#5856D6', '#FF3B30',
+  '#5AC8FA', '#AF52DE', '#FFCC00', '#A2845E', '#00C7BE',
+  '#64D2FF', '#FF6482', '#BF5AF2', '#FFD60A', '#30B0C7',
 ]
 
 // Grafana-style default field config
@@ -108,12 +115,18 @@ function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: n
 function CustomLegend({
   series,
   placement,
+  isDark,
 }: {
   series: Array<{ name: string }>
   placement: 'bottom' | 'left' | 'right'
+  isDark: boolean
 }) {
   const isHorizontal = placement === 'bottom'
   const maxWidth = isHorizontal ? 180 : 190
+  const borderColor = isDark ? 'rgba(59,130,246,0.15)' : 'rgba(0,0,0,0.08)'
+  const hoverBg = isDark ? 'rgba(59,130,246,0.08)' : 'rgba(0,0,0,0.04)'
+  const textColor = isDark ? '#94a3b8' : '#475569'
+  const palette = isDark ? DARK_COLORS : LIGHT_COLORS
 
   return (
     <Box
@@ -124,11 +137,11 @@ function CustomLegend({
         gap: '5px 14px',
         overflow: 'auto',
         ...(isHorizontal
-          ? { maxHeight: 68, pt: 1, borderTop: '1px solid rgba(59,130,246,0.15)' }
-          : { maxWidth: 210, pl: 1.5, borderLeft: '1px solid rgba(59,130,246,0.15)' }),
+          ? { maxHeight: 68, pt: 1, borderTop: `1px solid ${borderColor}` }
+          : { maxWidth: 210, pl: 1.5, borderLeft: `1px solid ${borderColor}` }),
         scrollbarWidth: 'thin',
         '&::-webkit-scrollbar': { width: '4px', height: '4px' },
-        '&::-webkit-scrollbar-thumb': { background: 'rgba(59,130,246,0.25)', borderRadius: '2px' },
+        '&::-webkit-scrollbar-thumb': { background: isDark ? 'rgba(59,130,246,0.25)' : 'rgba(0,0,0,0.15)', borderRadius: '2px' },
       }}
     >
       {series.map((s, idx) => (
@@ -143,7 +156,7 @@ function CustomLegend({
             py: 0.2,
             borderRadius: '4px',
             transition: 'background 0.2s',
-            '&:hover': { background: 'rgba(59,130,246,0.08)' },
+            '&:hover': { background: hoverBg },
           }}
           title={s.name}
         >
@@ -152,8 +165,8 @@ function CustomLegend({
               width: 7,
               height: 7,
               borderRadius: '50%',
-              background: SCI_FI_COLORS[idx % SCI_FI_COLORS.length],
-              boxShadow: `0 0 6px ${SCI_FI_COLORS[idx % SCI_FI_COLORS.length]}`,
+              background: palette[idx % palette.length],
+              boxShadow: isDark ? `0 0 6px ${palette[idx % palette.length]}` : 'none',
               flexShrink: 0,
             }}
           />
@@ -161,7 +174,7 @@ function CustomLegend({
             noWrap
             sx={{
               fontSize: '11px',
-              color: '#94a3b8',
+              color: textColor,
               maxWidth,
               fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
             }}
@@ -199,6 +212,10 @@ export function ChartPanel({
   onDuplicate?: () => void
   showMenu?: boolean
 }) {
+  const theme = useTheme()
+  const isDark = theme.palette.mode === 'dark'
+  const palette = isDark ? DARK_COLORS : LIGHT_COLORS
+
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
   const [chartData, setChartData] = useState<any>(null)
@@ -247,7 +264,7 @@ export function ChartPanel({
   useEffect(() => {
     if (!chartRef.current) return
     if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current, 'dark')
+      chartInstance.current = echarts.init(chartRef.current, isDark ? 'dark' : undefined, { renderer: 'canvas' })
     }
 
     const ro = new ResizeObserver(() => chartInstance.current?.resize())
@@ -262,7 +279,7 @@ export function ChartPanel({
       chartInstance.current?.dispose()
       chartInstance.current = null
     }
-  }, [])
+  }, [isDark])
 
   // 外部 width/height 变化时重绘
   useEffect(() => {
@@ -281,8 +298,6 @@ export function ChartPanel({
     if (type === 'stat' || type === 'table') return
 
     const legendPlacement = options?.legendPlacement ?? 'bottom'
-    const showLegend = options?.legend !== false && legendPlacement !== 'hidden'
-    const chartWidth = chartRef.current?.clientWidth || 400
 
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
@@ -298,18 +313,19 @@ export function ChartPanel({
     const pointSize = resolveOption(options, 'pointSize')
     const lineInterpolation = resolveOption(options, 'lineInterpolation')
 
-    // Sci-fi dark theme colors (hardcoded for consistent aesthetic)
-    const axisColor = '#1e3a5f'
-    const labelColor = '#64748b'
-    const splitColor = '#0f172a'
-    const tooltipBg = 'rgba(11,17,32,0.95)'
-    const tooltipBorder = 'rgba(0,240,255,0.25)'
-    const tooltipText = '#e2e8f0'
+    // Theme-aware chart colors
+    const axisColor = isDark ? '#1e3a5f' : '#d1d5db'
+    const labelColor = isDark ? '#64748b' : '#6b7280'
+    const splitColor = isDark ? '#0f172a' : '#f3f4f6'
+    const tooltipBg = isDark ? 'rgba(11,17,32,0.95)' : '#ffffff'
+    const tooltipBorder = isDark ? 'rgba(0,240,255,0.25)' : 'rgba(0,0,0,0.1)'
+    const tooltipText = isDark ? '#e2e8f0' : '#1f2937'
+    const tooltipTitle = isDark ? '#00f0ff' : '#007AFF'
 
     // Custom DOM legend means we don't need grid to reserve legend space
-    const gridRight = legendPlacement === 'right' && showLegend ? 16 : 16
-    const gridLeft = legendPlacement === 'left' && showLegend ? 16 : 48
-    const gridBottom = legendPlacement === 'bottom' && showLegend ? 16 : 24
+    const gridRight = legendPlacement === 'right' ? 16 : 16
+    const gridLeft = legendPlacement === 'left' ? 16 : 48
+    const gridBottom = legendPlacement === 'bottom' ? 16 : 24
     const gridTop = 24
 
     let option: echarts.EChartsOption = {}
@@ -322,11 +338,11 @@ export function ChartPanel({
           const dataLength = chartData.timestamps?.length || 1
           const symbol = drawStyle === 'points'
             ? 'circle'
-            : shouldShowPoints(showPoints, chartWidth, dataLength)
+            : shouldShowPoints(showPoints, chartRef.current?.clientWidth || 400, dataLength)
 
           option = {
             backgroundColor: 'transparent',
-            color: SCI_FI_COLORS,
+            color: palette,
             grid: {
               top: gridTop,
               right: gridRight,
@@ -340,22 +356,27 @@ export function ChartPanel({
               borderColor: tooltipBorder,
               borderWidth: 1,
               textStyle: { color: tooltipText, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
-              axisPointer: { type: 'cross', label: { backgroundColor: '#0b1120', color: '#00f0ff' }, lineStyle: { color: 'rgba(0,240,255,0.4)' }, crossStyle: { color: 'rgba(0,240,255,0.2)' } },
+              axisPointer: {
+                type: 'cross',
+                label: { backgroundColor: isDark ? '#0b1120' : '#f3f4f6', color: isDark ? '#00f0ff' : '#007AFF' },
+                lineStyle: { color: isDark ? 'rgba(0,240,255,0.4)' : 'rgba(0,122,255,0.3)' },
+                crossStyle: { color: isDark ? 'rgba(0,240,255,0.2)' : 'rgba(0,122,255,0.15)' },
+              },
               confine: true,
               order: 'valueDesc',
               enterable: true,
-              extraCssText: 'max-height: 260px; overflow-y: auto; backdrop-filter: blur(6px);',
+              extraCssText: isDark ? 'max-height: 260px; overflow-y: auto; backdrop-filter: blur(6px);' : 'max-height: 260px; overflow-y: auto;',
               formatter: (params: any) => {
                 if (!Array.isArray(params) || params.length === 0) return ''
                 const t = new Date(params[0].axisValue)
                 const timeLabel = `${(t.getMonth() + 1).toString().padStart(2, '0')}/${t.getDate().toString().padStart(2, '0')} ${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`
-                let html = `<div style="font-weight:600;margin-bottom:6px;color:#00f0ff;font-size:12px;">${timeLabel}</div>`
+                let html = `<div style="font-weight:600;margin-bottom:6px;color:${tooltipTitle};font-size:12px;">${timeLabel}</div>`
                 for (let i = 0; i < params.length; i++) {
                   const p = params[i]
-                  html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;white-space:nowrap;color:#e2e8f0;font-size:11px;">`
-                  html += `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${p.color};box-shadow:0 0 5px ${p.color};"></span>`
+                  html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;white-space:nowrap;color:${tooltipText};font-size:11px;">`
+                  html += `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${p.color};${isDark ? `box-shadow:0 0 5px ${p.color};` : ''}"></span>`
                   html += `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;max-width:260px;">${p.seriesName}</span>`
-                  html += `<span style="font-weight:600;margin-left:8px;color:#fff;">${p.value}</span>`
+                  html += `<span style="font-weight:600;margin-left:8px;color:${isDark ? '#fff' : '#111827'};">${p.value}</span>`
                   html += `</div>`
                 }
                 return html
@@ -380,7 +401,7 @@ export function ChartPanel({
             series: chartData.series.map((s: any, idx: number) => {
               const isLine = effectiveType === 'line'
               const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
-              const c = SCI_FI_COLORS[idx % SCI_FI_COLORS.length]
+              const c = palette[idx % palette.length]
 
               return {
                 name: s.name,
@@ -389,11 +410,11 @@ export function ChartPanel({
                 smooth: lineInterpolation === 'smooth',
                 symbol: symbol,
                 symbolSize: symbol === 'circle' ? pointSize : undefined,
-                lineStyle: isLine ? { width: lineWidth, shadowBlur: 8, shadowColor: c } : undefined,
+                lineStyle: isLine ? { width: lineWidth, shadowBlur: isDark ? 8 : 0, shadowColor: c } : undefined,
                 itemStyle: { color: c },
                 areaStyle: areaOpacity > 0 ? { opacity: areaOpacity, color: new (echarts as any).graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: c }, { offset: 1, color: 'transparent' }]) } : undefined,
                 emphasis: {
-                  lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined, shadowBlur: 12, shadowColor: c },
+                  lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined, shadowBlur: isDark ? 12 : 0, shadowColor: c },
                 },
               }
             }),
@@ -405,7 +426,7 @@ export function ChartPanel({
           const showPieLabel = pieCount <= 10
           option = {
             backgroundColor: 'transparent',
-            color: SCI_FI_COLORS,
+            color: palette,
             tooltip: {
               trigger: 'item',
               backgroundColor: tooltipBg,
@@ -419,9 +440,9 @@ export function ChartPanel({
               radius: ['35%', '65%'],
               center: ['50%', '50%'],
               data: chartData.data || [],
-              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 10, color: '#94a3b8' },
+              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 10, color: isDark ? '#94a3b8' : '#475569' },
               emphasis: {
-                itemStyle: { shadowBlur: 14, shadowOffsetX: 0, shadowColor: 'rgba(0, 240, 255, 0.6)' },
+                itemStyle: { shadowBlur: isDark ? 14 : 8, shadowOffsetX: 0, shadowColor: isDark ? 'rgba(0, 240, 255, 0.6)' : 'rgba(0,0,0,0.2)' },
               },
             }],
           }
@@ -441,15 +462,15 @@ export function ChartPanel({
               type: 'gauge',
               min: options?.min ?? 0,
               max: options?.max ?? 100,
-              detail: { formatter: '{value}', fontSize: 26, color: '#e2e8f0', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
+              detail: { formatter: '{value}', fontSize: 26, color: isDark ? '#e2e8f0' : '#1f2937', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
               data: [{ value: chartData.value, name: chartData.name }],
               axisLine: { lineStyle: { width: 12, color: [
-                [0.3, '#00f0ff'], [0.7, '#facc15'], [1, '#ff00aa']
+                [0.3, isDark ? '#00f0ff' : '#007AFF'], [0.7, isDark ? '#facc15' : '#FF9500'], [1, isDark ? '#ff00aa' : '#FF3B30']
               ] } },
-              splitLine: { length: 12, lineStyle: { color: '#1e3a5f' } },
-              axisTick: { length: 8, lineStyle: { color: '#1e3a5f' } },
-              axisLabel: { fontSize: 10, color: '#64748b' },
-              title: { fontSize: 12, color: '#64748b', offsetCenter: [0, '70%'] },
+              splitLine: { length: 12, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
+              axisTick: { length: 8, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
+              axisLabel: { fontSize: 10, color: labelColor },
+              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '70%'] },
             }],
           }
           break
@@ -459,10 +480,13 @@ export function ChartPanel({
     } catch (e) {
       console.error('ECharts render error:', e)
     }
-  }, [chartData, type, options])
+  }, [chartData, type, options, isDark, palette])
 
   const legendPlacement = options?.legendPlacement ?? 'bottom'
   const showCustomLegend = options?.legend !== false && legendPlacement !== 'hidden' && (type === 'line' || type === 'bar' || type === 'pie')
+
+  const titleColor = isDark ? '#00f0ff' : theme.palette.primary.main
+  const titleShadow = isDark ? '0 0 8px rgba(0,240,255,0.35)' : 'none'
 
   return (
     <Paper
@@ -474,13 +498,18 @@ export function ChartPanel({
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        background: 'linear-gradient(145deg, rgba(13,20,36,0.95) 0%, rgba(8,12,22,0.98) 100%)',
-        border: '1px solid rgba(59,130,246,0.12)',
-        boxShadow: '0 0 0 1px rgba(0,0,0,0.3), 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)',
+        bgcolor: theme.palette.background.paper,
+        border: '1px solid',
+        borderColor: theme.palette.divider,
+        boxShadow: isDark
+          ? '0 0 0 1px rgba(0,0,0,0.3), 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)'
+          : '0 2px 12px rgba(0,0,0,0.06)',
         transition: 'box-shadow 0.3s, border-color 0.3s',
         '&:hover': {
-          borderColor: 'rgba(59,130,246,0.25)',
-          boxShadow: '0 0 0 1px rgba(0,0,0,0.3), 0 12px 40px rgba(0,0,0,0.45), 0 0 18px rgba(0,240,255,0.06), inset 0 1px 0 rgba(255,255,255,0.03)',
+          borderColor: isDark ? 'rgba(59,130,246,0.25)' : theme.palette.primary.main + '40',
+          boxShadow: isDark
+            ? '0 0 0 1px rgba(0,0,0,0.3), 0 12px 40px rgba(0,0,0,0.45), 0 0 18px rgba(0,240,255,0.06), inset 0 1px 0 rgba(255,255,255,0.03)'
+            : '0 4px 20px rgba(0,0,0,0.1)',
         },
       }}
       elevation={0}
@@ -491,8 +520,8 @@ export function ChartPanel({
           sx={{
             fontWeight: 500,
             fontSize: '0.8125rem',
-            color: '#00f0ff',
-            textShadow: '0 0 8px rgba(0,240,255,0.35)',
+            color: titleColor,
+            textShadow: titleShadow,
             letterSpacing: '0.02em',
           }}
         >
@@ -500,7 +529,7 @@ export function ChartPanel({
         </Typography>
         {showMenu && (
           <>
-            <IconButton size="small" className="grid-drag-cancel" onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: '#94a3b8' }}>
+            <IconButton size="small" className="grid-drag-cancel" onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: 'text.secondary' }}>
               <MoreVertIcon fontSize="small" />
             </IconButton>
             <Menu
@@ -509,11 +538,11 @@ export function ChartPanel({
               onClose={() => setMenuAnchor(null)}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-              PaperProps={{ sx: { bgcolor: 'rgba(11,17,32,0.98)', border: '1px solid rgba(59,130,246,0.25)', color: '#e2e8f0' } }}
+              PaperProps={{ sx: { bgcolor: theme.palette.background.paper, border: '1px solid', borderColor: theme.palette.divider } }}
             >
-              {onEdit && <MenuItem onClick={() => { setMenuAnchor(null); onEdit() }} sx={{ color: '#e2e8f0', fontSize: 13 }}>编辑</MenuItem>}
-              {onDuplicate && <MenuItem onClick={() => { setMenuAnchor(null); onDuplicate() }} sx={{ color: '#e2e8f0', fontSize: 13 }}>复制</MenuItem>}
-              {onDelete && <MenuItem onClick={() => { setMenuAnchor(null); onDelete() }} sx={{ color: '#ff00aa', fontSize: 13 }}>删除</MenuItem>}
+              {onEdit && <MenuItem onClick={() => { setMenuAnchor(null); onEdit() }} sx={{ fontSize: 13 }}>编辑</MenuItem>}
+              {onDuplicate && <MenuItem onClick={() => { setMenuAnchor(null); onDuplicate() }} sx={{ fontSize: 13 }}>复制</MenuItem>}
+              {onDelete && <MenuItem onClick={() => { setMenuAnchor(null); onDelete() }} sx={{ color: 'error.main', fontSize: 13 }}>删除</MenuItem>}
             </Menu>
           </>
         )}
@@ -534,33 +563,45 @@ export function ChartPanel({
                 variant="h3"
                 sx={{
                   fontWeight: 700,
-                  color: options?.thresholds ? options.thresholds[0]?.color : '#e2e8f0',
+                  color: options?.thresholds ? options.thresholds[0]?.color : 'text.primary',
                   fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-                  textShadow: '0 0 14px rgba(0,240,255,0.25)',
+                  textShadow: isDark ? '0 0 14px rgba(0,240,255,0.25)' : 'none',
                 }}
               >
                 {statValue !== null ? statValue.toFixed(options?.decimals ?? 1) : '-'}
               </Typography>
               {options?.unit && (
-                <Typography variant="caption" sx={{ color: '#64748b', mt: 0.5 }}>{options.unit}</Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5 }}>{options.unit}</Typography>
               )}
             </Box>
           ) : type === 'table' ? (
             <Box sx={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
-              <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: '#e2e8f0' }}>
+              <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: 'text.primary' }}>
                 <Box component="thead">
                   <Box component="tr">
                     {['Time', 'Metric', 'Value'].map((h) => (
-                      <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.75, borderBottom: '1px solid rgba(59,130,246,0.2)', color: '#00f0ff', fontSize: 10, fontWeight: 600 }}>{h}</Box>
+                      <Box
+                        component="th"
+                        key={h}
+                        sx={{
+                          textAlign: 'left',
+                          p: 0.75,
+                          borderBottom: '1px solid',
+                          borderColor: theme.palette.divider,
+                          color: isDark ? '#00f0ff' : theme.palette.primary.main,
+                          fontSize: 10,
+                          fontWeight: 600,
+                        }}
+                      >{h}</Box>
                     ))}
                   </Box>
                 </Box>
                 <Box component="tbody">
                   {tableData?.rows.map((row: any, idx: number) => (
-                    <Box component="tr" key={idx} sx={{ '&:hover': { background: 'rgba(59,130,246,0.06)' } }}>
-                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid rgba(30,58,95,0.4)', color: '#94a3b8', fontSize: 10 }}>{row.time}</Box>
-                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid rgba(30,58,95,0.4)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 10 }}>{row.metric}</Box>
-                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid rgba(30,58,95,0.4)', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace', fontSize: 10 }}>{row.value}</Box>
+                    <Box component="tr" key={idx} sx={{ '&:hover': { background: theme.palette.action.hover } }}>
+                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid', borderColor: theme.palette.divider, color: 'text.secondary', fontSize: 10 }}>{row.time}</Box>
+                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid', borderColor: theme.palette.divider, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 10 }}>{row.metric}</Box>
+                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid', borderColor: theme.palette.divider, fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace', fontSize: 10 }}>{row.value}</Box>
                     </Box>
                   ))}
                 </Box>
@@ -575,21 +616,21 @@ export function ChartPanel({
           )}
 
           {(loading || error) && type !== 'stat' && (
-            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(8,12,22,0.7)' }}>
-              {loading && <CircularProgress size={24} sx={{ color: '#00f0ff' }} />}
-              {error && !loading && <Typography variant="caption" sx={{ color: '#ff00aa' }}>{error}</Typography>}
+            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: theme.palette.mode === 'dark' ? 'rgba(8,12,22,0.7)' : 'rgba(255,255,255,0.85)' }}>
+              {loading && <CircularProgress size={24} sx={{ color: isDark ? '#00f0ff' : theme.palette.primary.main }} />}
+              {error && !loading && <Typography variant="caption" color="error">{error}</Typography>}
             </Box>
           )}
         </Box>
 
         {showCustomLegend && chartData?.series && legendPlacement === 'bottom' && (
-          <CustomLegend series={chartData.series} placement="bottom" />
+          <CustomLegend series={chartData.series} placement="bottom" isDark={isDark} />
         )}
         {showCustomLegend && chartData?.series && legendPlacement === 'right' && (
-          <CustomLegend series={chartData.series} placement="right" />
+          <CustomLegend series={chartData.series} placement="right" isDark={isDark} />
         )}
         {showCustomLegend && chartData?.series && legendPlacement === 'left' && (
-          <CustomLegend series={chartData.series} placement="left" />
+          <CustomLegend series={chartData.series} placement="left" isDark={isDark} />
         )}
       </Box>
     </Paper>
