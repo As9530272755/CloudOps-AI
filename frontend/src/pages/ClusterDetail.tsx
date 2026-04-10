@@ -44,7 +44,7 @@ import {
   Folder as FolderIcon,
   EventNote as EventIcon,
 } from '@mui/icons-material'
-import { glassEffect } from '../theme/theme'
+
 import { k8sAPI, resourceCategories, resourceLabels, ClusterStats } from '../lib/k8s-api'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 
@@ -308,7 +308,7 @@ export default function ClusterDetail() {
   return (
     <Box sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 顶部面包屑与操作 */}
-      <Card sx={{ mb: 2, ...glassEffect }}>
+      <Card sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
         <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Button startIcon={<BackIcon />} onClick={() => navigate('/clusters')} variant="outlined" size="small">
@@ -341,7 +341,7 @@ export default function ClusterDetail() {
       )}
 
       {/* 主体：左侧 Tabs + 右侧内容 */}
-      <Card sx={{ flex: 1, display: 'flex', overflow: 'hidden', ...glassEffect }}>
+      <Card sx={{ flex: 1, display: 'flex', overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
         <Tabs
           orientation="vertical"
           value={activeCategory}
@@ -361,7 +361,7 @@ export default function ClusterDetail() {
               <Grid container spacing={3}>
                 {stats && Object.entries(stats).map(([key, value]) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={key}>
-                    <Card sx={{ ...glassEffect, textAlign: 'center', p: 2 }}>
+                    <Card sx={{ border: '1px solid', borderColor: 'divider', textAlign: 'center', p: 2 }}>
                       <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>{value}</Typography>
                       <Typography variant="body2" color="text.secondary">{resourceLabels[key] || key}</Typography>
                     </Card>
@@ -459,7 +459,7 @@ export default function ClusterDetail() {
       </Card>
 
       {/* 详情弹窗 */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px', ...glassEffect } }}>
+      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
         <DialogTitle sx={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{detailItem?.name || '资源详情'}</span>
           {yamlMode && (

@@ -1,10 +1,10 @@
 import { Box, Typography, Card, CardContent } from '@mui/material'
-import { glassEffect } from '../theme/theme'
+
 
 export default function Terminal() {
   return (
     <Box sx={{ p: 3 }}>
-      <Card sx={{ ...glassEffect }}>
+      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
         <CardContent sx={{ p: 4 }}>
           <Typography variant="h5" fontWeight={600} gutterBottom>
             Web终端

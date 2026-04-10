@@ -14,7 +14,7 @@ import {
 } from '@mui/material'
 import { CloudQueue as CloudIcon } from '@mui/icons-material'
 import { useLogin } from '../lib/api'
-import { glassEffect } from '../theme/theme'
+
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -86,7 +86,7 @@ export default function Login() {
           maxWidth: 420,
           mx: 2,
           borderRadius: '24px',
-          ...glassEffect,
+          bgcolor: 'background.paper',
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
           position: 'relative',
           zIndex: 1,
@@ -133,7 +133,7 @@ export default function Login() {
               sx={{
                 mb: 3,
                 borderRadius: '12px',
-                ...glassEffect,
+                bgcolor: 'background.paper',
               }}
             >
               {error}

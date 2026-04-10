@@ -335,6 +335,7 @@ export default function Dashboard() {
         p: 3,
         minHeight: '100vh',
         bgcolor: theme.palette.background.default,
+        overflowX: 'hidden',
       }}
     >
       {/* === Header toolbar === */}
@@ -444,9 +445,9 @@ export default function Dashboard() {
           {(panels.length > 0 || editMode) && (
             <div
               ref={gridRootRef}
-              style={{ flex: '1 1 auto', position: 'relative', zIndex: 1 }}
+              style={{ width: '100%', position: 'relative', zIndex: 1, overflow: 'hidden' }}
             >
-              <div style={{ width: gridWidth, height: '100%' }} ref={gridWrapperRef}>
+              <div style={{ width: gridWidth, maxWidth: '100%', height: '100%' }} ref={gridWrapperRef}>
                 <ReactGridLayout
                   width={gridWidth}
                   isDraggable={editMode}

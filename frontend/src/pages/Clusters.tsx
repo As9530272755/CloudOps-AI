@@ -35,7 +35,7 @@ import {
   CloudQueue as ClusterIcon,
   ArrowForward as EnterIcon,
 } from '@mui/icons-material'
-import { glassEffect } from '../theme/theme'
+
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest } from '../lib/cluster-api'
 
 // 状态颜色映射
@@ -138,7 +138,7 @@ export default function Clusters() {
   return (
     <Box sx={{ p: 3 }}>
       {/* 页面标题 */}
-      <Card sx={{ mb: 3, ...glassEffect }}>
+      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
         <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
@@ -182,7 +182,7 @@ export default function Clusters() {
       )}
 
       {/* 筛选栏 */}
-      <Card sx={{ mb: 3, ...glassEffect }}>
+      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
         <CardContent>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
             <TextField
@@ -248,7 +248,7 @@ export default function Clusters() {
       </Card>
 
       {/* 集群列表 */}
-      <Card sx={{ ...glassEffect }}>
+      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
         <CardContent>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -358,7 +358,6 @@ export default function Clusters() {
         fullWidth
         PaperProps={{
           sx: {
-            ...glassEffect,
             borderRadius: '16px',
           },
         }}

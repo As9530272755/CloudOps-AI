@@ -313,6 +313,7 @@ export default function MainLayout() {
           flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
+          minWidth: 0,
           transition: theme.transitions.create('margin', {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
