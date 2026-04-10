@@ -279,61 +279,6 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
               )}
             />
 
-            {type === 'gauge' && (() => {
-              const parsed: any = parsedOptions
-              const defaultGaugeColors = theme.palette.mode === 'dark'
-                ? ['#00f0ff', '#facc15', '#ff00aa']
-                : ['#007AFF', '#FF9500', '#FF3B30']
-              const colors = parsed.gaugeColors || defaultGaugeColors
-              const setOpt = (patch: any) => {
-                try { const next = { ...parsed, ...patch }; setOptions(JSON.stringify(next)) } catch {}
-              }
-              return (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 500, color: 'text.secondary' }}>仪表盘颜色</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    {['低段', '中段', '高段'].map((label, idx) => (
-                      <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <input
-                          type="color"
-                          value={colors[idx] || defaultGaugeColors[idx]}
-                          onChange={(e) => {
-                            const next = [...colors]
-                            next[idx] = e.target.value
-                            setOpt({ gaugeColors: next })
-                          }}
-                          style={{ width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer', background: 'transparent' }}
-                        />
-                        <Typography variant="caption" color="text.secondary">{label}</Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>发光圆环</InputLabel>
-                    <Select
-                      value={parsed.gaugeGlow === false ? 'off' : 'on'}
-                      label="发光圆环"
-                      onChange={(e) => setOpt({ gaugeGlow: e.target.value === 'on' })}
-                    >
-                      <MenuItem value="on">开启</MenuItem>
-                      <MenuItem value="off">关闭</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>粒子特效</InputLabel>
-                    <Select
-                      value={parsed.gaugeParticles === false ? 'off' : 'on'}
-                      label="粒子特效"
-                      onChange={(e) => setOpt({ gaugeParticles: e.target.value === 'on' })}
-                    >
-                      <MenuItem value="on">开启</MenuItem>
-                      <MenuItem value="off">关闭</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Box>
-              )
-            })()}
-
             <TextField
               label="网格位置 (JSON)"
               value={position}

@@ -121,466 +121,6 @@ function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: n
   return chartWidth / dataLength > 8 ? 'circle' : 'none'
 }
 
-function hexToRgba(hex: string, alpha: number) {
-  const c = hex.replace('#', '')
-  const r = parseInt(c.substring(0, 2), 16)
-  const g = parseInt(c.substring(2, 4), 16)
-  const b = parseInt(c.substring(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
-function GaugeCanvasParticles({
-  active,
-  colors,
-  isDark,
-}: {
-  active: boolean
-  colors?: string[]
-  isDark: boolean
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const animationRef = useRef<number>()
-  const sizeRef = useRef({ w: 0, h: 0 })
-
-  useEffect(() => {
-    if (!active) return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const resize = () => {
-      const rect = canvas.parentElement?.getBoundingClientRect()
-      if (!rect) return
-      const dpr = window.devicePixelRatio || 1
-      canvas.width = Math.floor(rect.width * dpr)
-      canvas.height = Math.floor(rect.height * dpr)
-      canvas.style.width = `${rect.width}px`
-      canvas.style.height = `${rect.height}px`
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      sizeRef.current = { w: rect.width, h: rect.height }
-    }
-    resize()
-    const ro = new ResizeObserver(resize)
-    if (canvas.parentElement) ro.observe(canvas.parentElement)
-
-    const defaultColors = isDark ? ['#00f0ff', '#facc15', '#ff00aa'] : ['#007AFF', '#FF9500', '#FF3B30']
-    const palette = colors?.length ? colors : defaultColors
-
-    interface Bubble {
-      angle: number
-      radiusPct: number
-      angleSpeed: number
-      radiusSpeed: number
-      baseSize: number
-      color: string
-      life: number
-      maxLife: number
-      bobOffset: number
-      bobSpeed: number
-      z: number // pseudo-depth for parallax size
-    }
-
-    const bubbles: Bubble[] = []
-    const maxBubbles = 36
-    const startAngle = (225 * Math.PI) / 180
-
-    const spawn = () => {
-      if (bubbles.length >= maxBubbles) return
-      const angle = startAngle - Math.random() * 1.5 * Math.PI
-      const isOrbiter = Math.random() > 0.5
-      bubbles.push({
-        angle,
-        radiusPct: isOrbiter ? 0.48 + Math.random() * 0.22 : 0.2 + Math.random() * 0.32,
-        angleSpeed: isOrbiter
-          ? (Math.random() > 0.5 ? 0.0025 : -0.0025) * (0.7 + Math.random())
-          : (Math.random() - 0.5) * 0.0012,
-        radiusSpeed: isOrbiter ? 0 : (Math.random() - 0.5) * 0.0015,
-        baseSize: isOrbiter ? 2.2 + Math.random() * 3 : 1.6 + Math.random() * 2.2,
-        color: palette[Math.floor(Math.random() * palette.length)],
-        life: 0,
-        maxLife: 180 + Math.random() * 220,
-        bobOffset: Math.random() * Math.PI * 2,
-        bobSpeed: 0.02 + Math.random() * 0.03,
-        z: Math.random(),
-      })
-    }
-
-    let lastSpawn = 0
-    let t = 0
-
-    function drawSphere(
-      c2d: CanvasRenderingContext2D,
-      cx: number,
-      cy: number,
-      r: number,
-      color: string,
-      alpha: number,
-      lightX: number,
-      lightY: number
-    ) {
-      // Outer soft atmospheric glow
-      const glow = c2d.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 3)
-      glow.addColorStop(0, hexToRgba(color, alpha * 0.5))
-      glow.addColorStop(0.5, hexToRgba(color, alpha * 0.15))
-      glow.addColorStop(1, 'rgba(0,0,0,0)')
-      c2d.fillStyle = glow
-      c2d.beginPath()
-      c2d.arc(cx, cy, r * 3, 0, Math.PI * 2)
-      c2d.fill()
-
-      // Main 3D sphere body
-      const body = c2d.createRadialGradient(
-        cx + r * lightX * 0.25,
-        cy + r * lightY * 0.25,
-        0,
-        cx,
-        cy,
-        r
-      )
-      body.addColorStop(0, hexToRgba('#ffffff', 0.9))
-      body.addColorStop(0.25, hexToRgba(color, alpha))
-      body.addColorStop(0.65, hexToRgba(color, alpha * 0.8))
-      body.addColorStop(1, hexToRgba(color, alpha * 0.25))
-      c2d.fillStyle = body
-      c2d.beginPath()
-      c2d.arc(cx, cy, r, 0, Math.PI * 2)
-      c2d.fill()
-
-      // Sharp specular highlight
-      const spec = c2d.createRadialGradient(
-        cx - r * lightX * 0.35,
-        cy - r * lightY * 0.35,
-        0,
-        cx - r * lightX * 0.35,
-        cy - r * lightY * 0.35,
-        r * 0.4
-      )
-      spec.addColorStop(0, 'rgba(255,255,255,0.85)')
-      spec.addColorStop(0.5, hexToRgba(color, 0.35))
-      spec.addColorStop(1, 'rgba(255,255,255,0)')
-      c2d.fillStyle = spec
-      c2d.beginPath()
-      c2d.arc(cx - r * lightX * 0.35, cy - r * lightY * 0.35, r * 0.55, 0, Math.PI * 2)
-      c2d.fill()
-    }
-
-    const draw = (now: number) => {
-      t += 1
-      const { w, h } = sizeRef.current
-      ctx.clearRect(0, 0, w, h)
-      if (w === 0 || h === 0) {
-        animationRef.current = requestAnimationFrame(draw)
-        return
-      }
-
-      const cx = w * 0.5
-      const cy = h * 0.55
-      const r = Math.min(w, h) * 0.9 * 0.5
-
-      if (now - lastSpawn > 60 + Math.random() * 50) {
-        spawn()
-        if (Math.random() > 0.55) spawn()
-        lastSpawn = now
-      }
-
-      const lightDir = {
-        x: Math.cos(t * 0.01),
-        y: Math.sin(t * 0.013),
-      }
-
-      // Update bubbles
-      for (let i = bubbles.length - 1; i >= 0; i--) {
-        const b = bubbles[i]
-        b.angle += b.angleSpeed
-        b.radiusPct += b.radiusSpeed
-        if (b.radiusPct < 0.12 || b.radiusPct > 0.78) b.radiusSpeed *= -1
-        b.life++
-        if (b.life > b.maxLife) {
-          bubbles.splice(i, 1)
-        }
-      }
-
-      // Draw soft connector lines between near bubbles
-      ctx.globalCompositeOperation = 'screen'
-      ctx.lineWidth = 0.8
-      for (let i = 0; i < bubbles.length; i++) {
-        for (let j = i + 1; j < bubbles.length; j++) {
-          const a = bubbles[i]
-          const b = bubbles[j]
-          const ax = cx + Math.cos(a.angle) * (r * a.radiusPct)
-          const ay = cy - Math.sin(a.angle) * (r * a.radiusPct)
-          const bx = cx + Math.cos(b.angle) * (r * b.radiusPct)
-          const by = cy - Math.sin(b.angle) * (r * b.radiusPct)
-          const dx = ax - bx
-          const dy = ay - by
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < 28) {
-            const lineAlpha = (1 - dist / 28) * 0.25
-            const grad = ctx.createLinearGradient(ax, ay, bx, by)
-            grad.addColorStop(0, hexToRgba(a.color, lineAlpha))
-            grad.addColorStop(1, hexToRgba(b.color, lineAlpha))
-            ctx.strokeStyle = grad
-            ctx.beginPath()
-            ctx.moveTo(ax, ay)
-            ctx.lineTo(bx, by)
-            ctx.stroke()
-          }
-        }
-      }
-
-      // Draw bubbles (back-to-front by z)
-      const sorted = [...bubbles].sort((a, b) => a.z - b.z)
-      ctx.globalCompositeOperation = 'lighter'
-      for (let i = 0; i < sorted.length; i++) {
-        const b = sorted[i]
-        const lifeAlpha = Math.min(1, b.life / 40) * Math.min(1, (b.maxLife - b.life) / 40)
-        const bob = Math.sin(t * b.bobSpeed + b.bobOffset) * 3
-        const pr = r * b.radiusPct + bob
-        const x = cx + Math.cos(b.angle) * pr
-        const y = cy - Math.sin(b.angle) * pr
-        const depthScale = 0.75 + b.z * 0.5
-        const size = b.baseSize * depthScale
-        drawSphere(ctx, x, y, size, b.color, lifeAlpha, lightDir.x, lightDir.y)
-      }
-
-      ctx.globalCompositeOperation = 'source-over'
-      animationRef.current = requestAnimationFrame(draw)
-    }
-
-    animationRef.current = requestAnimationFrame(draw)
-
-    return () => {
-      ro.disconnect()
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
-  }, [active, colors, isDark])
-
-  if (!active) return null
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none',
-        zIndex: 1,
-      }}
-    />
-  )
-}
-
-function SciFiGauge({
-  value,
-  name,
-  min,
-  max,
-  colors,
-  isDark,
-}: {
-  value: number
-  name: string
-  min: number
-  max: number
-  colors?: string[]
-  isDark: boolean
-}) {
-  const pct = Math.max(0, Math.min(1, (value - min) / (max - min || 1)))
-  const pointerAngle = 225 - pct * 270
-
-  const c1 = colors?.[0] || (isDark ? '#00f0ff' : '#007AFF')
-  const c2 = colors?.[1] || colors?.[0] || (isDark ? '#facc15' : '#FF9500')
-  const c3 = colors?.[2] || colors?.[1] || colors?.[0] || (isDark ? '#ff00aa' : '#FF3B30')
-
-  const bgGradient = isDark
-    ? 'radial-gradient(circle at 50% 55%, rgba(11,26,47,0.9) 0%, rgba(2,6,23,0.95) 60%)'
-    : 'radial-gradient(circle at 50% 55%, rgba(255,255,255,0.9) 0%, rgba(243,244,246,0.95) 60%)'
-
-  const textColor = isDark ? '#e2e8f0' : '#1f2937'
-  const subTextColor = isDark ? '#94a3b8' : '#6b7280'
-  const glowFilter = isDark ? 'url(#sf-glow)' : 'url(#sf-glow-light)'
-
-  const describeArc = (cx: number, cy: number, r: number, start: number, end: number) => {
-    const toRad = (a: number) => (a * Math.PI) / 180
-    const x1 = cx + r * Math.cos(toRad(start))
-    const y1 = cy - r * Math.sin(toRad(start))
-    const x2 = cx + r * Math.cos(toRad(end))
-    const y2 = cy - r * Math.sin(toRad(end))
-    const largeArc = Math.abs(end - start) <= 180 ? 0 : 1
-    const sweep = end > start ? 0 : 1
-    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} ${sweep} ${x2.toFixed(2)} ${y2.toFixed(2)}`
-  }
-
-  const seg1Path = describeArc(100, 100, 90, 225, 144)
-  const seg2Path = describeArc(100, 100, 90, 144, 36)
-  const seg3Path = describeArc(100, 100, 90, 36, -45)
-
-  const blockTicks = Array.from({ length: 41 }).map((_, i) => {
-    const angle = 225 - i * (270 / 40)
-    const rad = (angle * Math.PI) / 180
-    const isMajor = i % 5 === 0
-    const r = 88
-    const x = 100 + r * Math.cos(rad)
-    const y = 100 - r * Math.sin(rad)
-    return { angle, x, y, isMajor }
-  })
-
-  const segInner1 = describeArc(100, 100, 80, 225, 144)
-  const segInner2 = describeArc(100, 100, 80, 144, 36)
-  const segInner3 = describeArc(100, 100, 80, 36, -45)
-
-  return (
-    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      <Box sx={{ position: 'absolute', inset: 0, background: bgGradient }} />
-      <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', position: 'relative', zIndex: 2 }}>
-        <defs>
-          <filter id="sf-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="sf-glow-strong" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="sf-glow-light" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <linearGradient id="scan-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={c1} stopOpacity={0} />
-            <stop offset="50%" stopColor={c1} stopOpacity={0.5} />
-            <stop offset="100%" stopColor={c1} stopOpacity={0} />
-          </linearGradient>
-          <linearGradient id="fast-ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={c2} stopOpacity={0.1} />
-            <stop offset="30%" stopColor={c2} stopOpacity={0.9} />
-            <stop offset="70%" stopColor={c1} stopOpacity={0.9} />
-            <stop offset="100%" stopColor={c1} stopOpacity={0.1} />
-          </linearGradient>
-        </defs>
-
-        <style>{`
-          @keyframes sf-spin { 100% { transform: rotate(360deg); } }
-          @keyframes sf-scan { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          .sf-outer { transform-origin: 100px 100px; animation: sf-spin 10s linear infinite; }
-          .sf-mid { transform-origin: 100px 100px; animation: sf-spin 3s linear infinite reverse; }
-          .sf-inner { transform-origin: 100px 100px; animation: sf-spin 14s linear infinite; }
-          .sf-scan { transform-origin: 100px 100px; animation: sf-scan 2s linear infinite; }
-        `}</style>
-
-        {/* outer dashed ring */}
-        <g className="sf-outer">
-          <circle cx="100" cy="100" r="96" fill="none" stroke={c1} strokeWidth="1" strokeDasharray="3 5" opacity={isDark ? 0.5 : 0.3} filter={glowFilter} />
-        </g>
-
-        {/* mid fast rotating light ring + rays */}
-        <g className="sf-mid">
-          <circle cx="100" cy="100" r="86" fill="none" stroke="url(#fast-ring-grad)" strokeWidth="3" strokeDasharray="18 36" opacity={0.9} filter="url(#sf-glow-strong)" />
-          {Array.from({ length: 12 }).map((_, i) => {
-            const a = i * 30
-            return (
-              <line key={i} x1="100" y1="14" x2="100" y2="22" stroke={i % 2 === 0 ? c1 : c2} strokeWidth="1.5" transform={`rotate(${a} 100 100)`} opacity={0.8} filter={glowFilter} />
-            )
-          })}
-        </g>
-
-        {/* main colored scale arc (outer) */}
-        <g filter={glowFilter}>
-          <path d={seg1Path} fill="none" stroke={c1} strokeWidth="6" strokeLinecap="butt" opacity={0.95} />
-          <path d={seg2Path} fill="none" stroke={c2} strokeWidth="6" strokeLinecap="butt" opacity={0.95} />
-          <path d={seg3Path} fill="none" stroke={c3} strokeWidth="6" strokeLinecap="butt" opacity={0.95} />
-        </g>
-
-        {/* inner dashed progress arc */}
-        <g filter={glowFilter} opacity={0.85}>
-          <path d={segInner1} fill="none" stroke={c1} strokeWidth="3" strokeDasharray="3 2" />
-          <path d={segInner2} fill="none" stroke={c2} strokeWidth="3" strokeDasharray="3 2" />
-          <path d={segInner3} fill="none" stroke={c3} strokeWidth="3" strokeDasharray="3 2" />
-        </g>
-
-        {/* block ticks */}
-        <g filter={glowFilter}>
-          {blockTicks.map((t, i) => {
-            const w = t.isMajor ? 2.4 : 1.2
-            const h = t.isMajor ? 7 : 4
-            return (
-              <rect
-                key={i}
-                x={t.x - w / 2}
-                y={t.y - h / 2}
-                width={w}
-                height={h}
-                rx={0.3}
-                fill={isDark ? '#e2e8f0' : '#1f2937'}
-                transform={`rotate(${90 - t.angle} ${t.x} ${t.y})`}
-                opacity={t.isMajor ? 0.95 : 0.65}
-              />
-            )
-          })}
-        </g>
-
-        {/* scan beam wedge */}
-        <g className="sf-scan" opacity={isDark ? 0.6 : 0.35}>
-          <path d="M 100 100 L 198 84 L 198 116 Z" fill="url(#scan-grad)" filter="url(#sf-glow-strong)" />
-        </g>
-
-        {/* inner dashed ring */}
-        <g className="sf-inner">
-          <circle cx="100" cy="100" r="68" fill="none" stroke={c2} strokeWidth="0.5" strokeDasharray="2 3" opacity={isDark ? 0.35 : 0.2} filter={glowFilter} />
-        </g>
-
-        {/* pointer */}
-        <g transform={`rotate(${90 - pointerAngle} 100 100)`} style={{ transition: 'transform 0.55s cubic-bezier(0.22,1,0.36,1)' }}>
-          <rect x="99.5" y="50" width="1" height="50" rx="0.5" fill={c1} filter="url(#sf-glow-strong)" />
-          <circle cx="100" cy="100" r="3.5" fill={c1} filter="url(#sf-glow-strong)" opacity="0.9" />
-        </g>
-
-        {/* center 3D ring */}
-        <g>
-          <ellipse cx="100" cy="100" rx="16" ry="9" fill="none" stroke={c1} strokeWidth="2" opacity={0.7} filter={glowFilter} />
-          <ellipse cx="100" cy="103" rx="16" ry="9" fill="none" stroke={c2} strokeWidth="1" opacity={0.35} filter={glowFilter} />
-        </g>
-
-        {/* center display screen */}
-        <g>
-          <rect x="70" y="110" width="60" height="40" rx="10" fill={isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)'} stroke={c1} strokeWidth="1.5" filter={glowFilter} opacity="0.95" />
-          <rect x="73" y="113" width="54" height="34" rx="7" fill="none" stroke={c1} strokeWidth="0.5" opacity={0.4} filter={glowFilter} />
-          <text x="100" y="135" textAnchor="middle" fontSize="20" fontWeight="700" fill={textColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace'>
-            {value.toFixed(1)}
-          </text>
-          <text x="100" y="145" textAnchor="middle" fontSize="8" fill={subTextColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' opacity={0.9}>
-            {name || ''}
-          </text>
-        </g>
-
-        {/* right side LED bars */}
-        <g>
-          {Array.from({ length: 10 }).map((_, i) => {
-            const y = 78 + i * 7
-            const active = i / 10 <= pct
-            const color = i < 4 ? c1 : i < 7 ? c2 : c3
-            return (
-              <rect
-                key={i}
-                x="168"
-                y={y}
-                width={active ? 10 : 8}
-                height={active ? 4 : 2.5}
-                rx="1"
-                fill={active ? color : (isDark ? '#0f172a' : '#cbd5e1')}
-                opacity={active ? 0.95 : 0.2}
-                filter={active ? glowFilter : undefined}
-              />
-            )
-          })}
-        </g>
-      </svg>
-    </Box>
-  )
-}
-
 function CustomLegend({
   series,
   placement,
@@ -737,7 +277,6 @@ export function ChartPanel({
 
   // 初始化 ECharts + ResizeObserver
   useEffect(() => {
-    if (type === 'gauge' || type === 'stat' || type === 'table' || type === 'text') return
     if (!chartRef.current) return
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current, isDark ? 'dark' : undefined, { renderer: 'canvas' })
@@ -771,14 +310,16 @@ export function ChartPanel({
   // chartData 准备好后绘制
   useEffect(() => {
     if (!chartInstance.current || !chartData) return
-    if (type === 'stat' || type === 'table' || type === 'text' || type === 'gauge') return
+    if (type === 'stat' || type === 'table' || type === 'text') return
 
     const legendPlacement = options?.legendPlacement ?? 'bottom'
 
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
+    const hasGaugeData = chartData.value !== undefined
     if ((type === 'line' || type === 'bar' || type === 'area' || type === 'scatter' || type === 'heatmap') && !hasSeries) return
     if (type === 'pie' && !hasPieData) return
+    if (type === 'gauge' && !hasGaugeData) return
 
     const drawStyle = resolveOption(options, 'drawStyle')
     const lineWidth = resolveOption(options, 'lineWidth')
@@ -993,7 +534,32 @@ export function ChartPanel({
           }
           break
         }
-
+        case 'gauge':
+          option = {
+            backgroundColor: 'transparent',
+            tooltip: {
+              trigger: 'item',
+              backgroundColor: tooltipBg,
+              borderColor: tooltipBorder,
+              borderWidth: 1,
+              textStyle: { color: tooltipText },
+            },
+            series: [{
+              type: 'gauge',
+              min: options?.min ?? 0,
+              max: options?.max ?? 100,
+              detail: { formatter: '{value}', fontSize: 26, color: isDark ? '#e2e8f0' : '#1f2937', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
+              data: [{ value: chartData.value, name: chartData.name }],
+              axisLine: { lineStyle: { width: 12, color: [
+                [0.3, isDark ? '#00f0ff' : '#007AFF'], [0.7, isDark ? '#facc15' : '#FF9500'], [1, isDark ? '#ff00aa' : '#FF3B30']
+              ] } },
+              splitLine: { length: 12, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
+              axisTick: { length: 8, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
+              axisLabel: { fontSize: 10, color: labelColor },
+              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '70%'] },
+            }],
+          }
+          break
       }
 
       chartInstance.current.setOption(option, { notMerge: true })
@@ -1144,28 +710,12 @@ export function ChartPanel({
                 {chartData?.text || options?.textContent || query || '请输入文本内容'}
               </Typography>
             </Box>
-          ) : type === 'gauge' ? (
-            <Box sx={{ position: 'absolute', inset: 0 }}>
-              <SciFiGauge
-                value={Number.isFinite(chartData?.value) ? (chartData as any).value : 0}
-                name={(chartData as any)?.name ?? ''}
-                min={options?.min ?? 0}
-                max={options?.max ?? 100}
-                colors={options?.gaugeColors}
-                isDark={isDark}
-              />
-              {options?.gaugeParticles !== false && (
-                <GaugeCanvasParticles active={!(!chartData)} colors={options?.gaugeColors} isDark={isDark} />
-              )}
-            </Box>
           ) : (
-            <Box sx={{ position: 'absolute', inset: 0 }}>
-              <Box
-                className="grid-drag-cancel"
-                ref={chartRef}
-                sx={{ position: 'absolute', inset: 0 }}
-              />
-            </Box>
+            <Box
+              className="grid-drag-cancel"
+              ref={chartRef}
+              sx={{ position: 'absolute', inset: 0 }}
+            />
           )}
 
           {(loading || error) && type !== 'stat' && (
