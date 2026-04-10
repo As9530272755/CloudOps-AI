@@ -223,10 +223,12 @@ export function ChartPanel({
     function buildLegend() {
       if (!showLegend) return undefined
       const common = { type: 'scroll', textStyle: { color: theme.palette.text.primary, fontSize: 11 }, tooltip: { show: true } }
-      if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect' } as any
-      if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 0, top: 'middle', icon: 'roundRect' } as any
-      if (legendPlacement === 'right') return { ...common, orient: 'vertical', right: 0, top: 'middle', icon: 'roundRect' } as any
-      return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect' } as any
+      const maxLen = 32
+      const fmt = (name: string) => name.length > maxLen ? name.slice(0, maxLen) + '...' : name
+      if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect', height: 40, formatter: fmt } as any
+      if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 0, top: 'middle', icon: 'roundRect', width: 200, formatter: fmt } as any
+      if (legendPlacement === 'right') return { ...common, orient: 'vertical', right: 0, top: 'middle', icon: 'roundRect', width: 200, formatter: fmt } as any
+      return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect', height: 40, formatter: fmt } as any
     }
 
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
@@ -262,9 +264,9 @@ export function ChartPanel({
             ? 'circle'
             : shouldShowPoints(showPoints, chartWidth, dataLength)
 
-          const gridRight = legendPlacement === 'right' ? (showLegend ? 120 : 16) : 16
-          const gridLeft = legendPlacement === 'left' ? (showLegend ? 120 : 16) : 56
-          const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 56 : 24) : 24
+          const gridRight = legendPlacement === 'right' ? (showLegend ? 220 : 16) : 16
+          const gridLeft = legendPlacement === 'left' ? (showLegend ? 220 : 16) : 56
+          const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 64 : 24) : 24
 
           option = {
             backgroundColor: 'transparent',

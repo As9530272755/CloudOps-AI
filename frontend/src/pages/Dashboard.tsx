@@ -9,16 +9,12 @@ import {
   ToggleButtonGroup,
   IconButton,
   Tooltip,
-  Fab,
-  Chip,
 } from '@mui/material'
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Save as SaveIcon,
   Refresh as RefreshIcon,
-  Delete as DeleteIcon,
-  ContentCopy as CopyIcon,
 } from '@mui/icons-material'
 import ReactGridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -381,6 +377,11 @@ export default function Dashboard() {
             >
               {editMode ? '保存布局' : '编辑'}
             </Button>
+            {editMode && (
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddPanel}>
+                添加面板
+              </Button>
+            )}
           </Box>
         </CardContent>
       </Card>
@@ -404,57 +405,7 @@ export default function Dashboard() {
         ))}
       </Box>
 
-      {/* === Edit mode management bar === */}
-      {editMode && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                面板管理
-              </Typography>
-              <Button variant="outlined" size="small" onClick={() => setEditMode(false)}>
-                退出编辑
-              </Button>
-            </Box>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {panels.map((panel) => (
-                <Card
-                  key={panel.id}
-                  sx={{
-                    px: 2,
-                    py: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    borderRadius: 1,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    {panel.title}
-                  </Typography>
-                  <Chip label={panel.type} size="small" variant="outlined" />
-                  <IconButton size="small" onClick={() => handleEditPanel(panel)}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" onClick={() => handleDuplicatePanel(panel)}>
-                    <CopyIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" color="error" onClick={() => handleDeletePanel(panel)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Card>
-              ))}
-              {panels.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  当前无面板，点击下方按钮添加
-                </Typography>
-              )}
-            </Box>
-          </CardContent>
-        </Card>
-      )}
+      {/* === Edit mode: no top management bar, panel actions are via ⋮ menu === */}
 
       {/* === Dashboard Grid (Grafana style) === */}
       {!dashboard && !editMode ? (
@@ -510,15 +461,7 @@ export default function Dashboard() {
         </Box>
       )}
 
-      {editMode && (
-        <Fab
-          color="primary"
-          sx={{ position: 'fixed', bottom: 24, right: 24 }}
-          onClick={handleAddPanel}
-        >
-          <AddIcon />
-        </Fab>
-      )}
+      {/* === Add panel button moved to top toolbar === */}
 
       {/* === Grafana-style Panel Editor (full screen takeover) === */}
       <PanelEditor
