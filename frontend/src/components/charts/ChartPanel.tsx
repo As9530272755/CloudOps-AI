@@ -413,25 +413,23 @@ function SciFiGauge({
     return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} ${sweep} ${x2.toFixed(2)} ${y2.toFixed(2)}`
   }
 
-  const ticks: Array<{ x1: number; y1: number; x2: number; y2: number; major: boolean }> = []
-  for (let i = 0; i <= 30; i++) {
-    const a = 225 - i * 9
-    const rad = (a * Math.PI) / 180
-    const isMajor = i % 5 === 0
-    const r1 = 90
-    const r2 = isMajor ? 83 : 86
-    ticks.push({
-      x1: 100 + r1 * Math.cos(rad),
-      y1: 100 - r1 * Math.sin(rad),
-      x2: 100 + r2 * Math.cos(rad),
-      y2: 100 - r2 * Math.sin(rad),
-      major: isMajor,
-    })
-  }
-
   const seg1Path = describeArc(100, 100, 90, 225, 144)
   const seg2Path = describeArc(100, 100, 90, 144, 36)
   const seg3Path = describeArc(100, 100, 90, 36, -45)
+
+  const blockTicks = Array.from({ length: 41 }).map((_, i) => {
+    const angle = 225 - i * (270 / 40)
+    const rad = (angle * Math.PI) / 180
+    const isMajor = i % 5 === 0
+    const r = 88
+    const x = 100 + r * Math.cos(rad)
+    const y = 100 - r * Math.sin(rad)
+    return { angle, x, y, isMajor }
+  })
+
+  const segInner1 = describeArc(100, 100, 80, 225, 144)
+  const segInner2 = describeArc(100, 100, 80, 144, 36)
+  const segInner3 = describeArc(100, 100, 80, 36, -45)
 
   return (
     <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
@@ -439,26 +437,27 @@ function SciFiGauge({
       <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', position: 'relative', zIndex: 2 }}>
         <defs>
           <filter id="sf-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feGaussianBlur stdDeviation="3" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id="sf-glow-strong" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feGaussianBlur stdDeviation="5" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id="sf-glow-light" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="1.5" result="blur" />
+            <feGaussianBlur stdDeviation="2" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
-          <radialGradient id="center-pivot">
-            <stop offset="0%" stopColor={c1} stopOpacity={1} />
-            <stop offset="60%" stopColor={c2} stopOpacity={0.8} />
-            <stop offset="100%" stopColor={c3} stopOpacity={0.4} />
-          </radialGradient>
           <linearGradient id="scan-grad" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor={c1} stopOpacity={0} />
-            <stop offset="50%" stopColor={c1} stopOpacity={0.35} />
+            <stop offset="50%" stopColor={c1} stopOpacity={0.5} />
             <stop offset="100%" stopColor={c1} stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="fast-ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={c2} stopOpacity={0.1} />
+            <stop offset="30%" stopColor={c2} stopOpacity={0.9} />
+            <stop offset="70%" stopColor={c1} stopOpacity={0.9} />
+            <stop offset="100%" stopColor={c1} stopOpacity={0.1} />
           </linearGradient>
         </defs>
 
@@ -466,58 +465,117 @@ function SciFiGauge({
           @keyframes sf-spin { 100% { transform: rotate(360deg); } }
           @keyframes sf-scan { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
           .sf-outer { transform-origin: 100px 100px; animation: sf-spin 10s linear infinite; }
-          .sf-inner { transform-origin: 100px 100px; animation: sf-spin 14s linear infinite reverse; }
-          .sf-scan { transform-origin: 100px 100px; animation: sf-scan 3.5s linear infinite; }
+          .sf-mid { transform-origin: 100px 100px; animation: sf-spin 3s linear infinite reverse; }
+          .sf-inner { transform-origin: 100px 100px; animation: sf-spin 14s linear infinite; }
+          .sf-scan { transform-origin: 100px 100px; animation: sf-scan 2s linear infinite; }
         `}</style>
 
         {/* outer dashed ring */}
         <g className="sf-outer">
-          <circle cx="100" cy="100" r="94" fill="none" stroke={c1} strokeWidth="1" strokeDasharray="4 6" opacity={isDark ? 0.55 : 0.35} filter={glowFilter} />
+          <circle cx="100" cy="100" r="96" fill="none" stroke={c1} strokeWidth="1" strokeDasharray="3 5" opacity={isDark ? 0.5 : 0.3} filter={glowFilter} />
         </g>
 
-        {/* inner dashed ring reverse */}
-        <g className="sf-inner">
-          <circle cx="100" cy="100" r="72" fill="none" stroke={c2} strokeWidth="0.5" strokeDasharray="2 4" opacity={isDark ? 0.4 : 0.25} filter={glowFilter} />
+        {/* mid fast rotating light ring + rays */}
+        <g className="sf-mid">
+          <circle cx="100" cy="100" r="86" fill="none" stroke="url(#fast-ring-grad)" strokeWidth="3" strokeDasharray="18 36" opacity={0.9} filter="url(#sf-glow-strong)" />
+          {Array.from({ length: 12 }).map((_, i) => {
+            const a = i * 30
+            return (
+              <line key={i} x1="100" y1="14" x2="100" y2="22" stroke={i % 2 === 0 ? c1 : c2} strokeWidth="1.5" transform={`rotate(${a} 100 100)`} opacity={0.8} filter={glowFilter} />
+            )
+          })}
         </g>
 
-        {/* main colored scale arc */}
+        {/* main colored scale arc (outer) */}
         <g filter={glowFilter}>
-          <path d={seg1Path} fill="none" stroke={c1} strokeWidth="7" strokeLinecap="butt" opacity={0.95} />
-          <path d={seg2Path} fill="none" stroke={c2} strokeWidth="7" strokeLinecap="butt" opacity={0.95} />
-          <path d={seg3Path} fill="none" stroke={c3} strokeWidth="7" strokeLinecap="butt" opacity={0.95} />
+          <path d={seg1Path} fill="none" stroke={c1} strokeWidth="6" strokeLinecap="butt" opacity={0.95} />
+          <path d={seg2Path} fill="none" stroke={c2} strokeWidth="6" strokeLinecap="butt" opacity={0.95} />
+          <path d={seg3Path} fill="none" stroke={c3} strokeWidth="6" strokeLinecap="butt" opacity={0.95} />
         </g>
 
-        {/* tick marks */}
+        {/* inner dashed progress arc */}
+        <g filter={glowFilter} opacity={0.85}>
+          <path d={segInner1} fill="none" stroke={c1} strokeWidth="3" strokeDasharray="3 2" />
+          <path d={segInner2} fill="none" stroke={c2} strokeWidth="3" strokeDasharray="3 2" />
+          <path d={segInner3} fill="none" stroke={c3} strokeWidth="3" strokeDasharray="3 2" />
+        </g>
+
+        {/* block ticks */}
         <g filter={glowFilter}>
-          {ticks.map((t, i) => (
-            <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke={isDark ? '#e2e8f0' : '#334155'} strokeWidth={t.major ? 1.5 : 0.8} opacity={t.major ? 0.9 : 0.55} />
-          ))}
+          {blockTicks.map((t, i) => {
+            const w = t.isMajor ? 2.4 : 1.2
+            const h = t.isMajor ? 7 : 4
+            return (
+              <rect
+                key={i}
+                x={t.x - w / 2}
+                y={t.y - h / 2}
+                width={w}
+                height={h}
+                rx={0.3}
+                fill={isDark ? '#e2e8f0' : '#1f2937'}
+                transform={`rotate(${90 - t.angle} ${t.x} ${t.y})`}
+                opacity={t.isMajor ? 0.95 : 0.65}
+              />
+            )
+          })}
         </g>
 
         {/* scan beam wedge */}
-        <g className="sf-scan" opacity={isDark ? 0.55 : 0.35}>
-          <path d="M 100 100 L 196 92 L 196 108 Z" fill="url(#scan-grad)" filter={glowFilter} />
+        <g className="sf-scan" opacity={isDark ? 0.6 : 0.35}>
+          <path d="M 100 100 L 198 84 L 198 116 Z" fill="url(#scan-grad)" filter="url(#sf-glow-strong)" />
+        </g>
+
+        {/* inner dashed ring */}
+        <g className="sf-inner">
+          <circle cx="100" cy="100" r="68" fill="none" stroke={c2} strokeWidth="0.5" strokeDasharray="2 3" opacity={isDark ? 0.35 : 0.2} filter={glowFilter} />
         </g>
 
         {/* pointer */}
         <g transform={`rotate(${90 - pointerAngle} 100 100)`} style={{ transition: 'transform 0.55s cubic-bezier(0.22,1,0.36,1)' }}>
-          <rect x="99" y="56" width="2" height="44" rx="1" fill={c1} filter="url(#sf-glow-strong)" />
+          <rect x="99.5" y="50" width="1" height="50" rx="0.5" fill={c1} filter="url(#sf-glow-strong)" />
+          <circle cx="100" cy="100" r="3.5" fill={c1} filter="url(#sf-glow-strong)" opacity="0.9" />
         </g>
 
-        {/* center pivot */}
+        {/* center 3D ring */}
         <g>
-          <circle cx="100" cy="100" r="12" fill="rgba(0,0,0,0.35)" stroke={c1} strokeWidth="1" filter={glowFilter} opacity={isDark ? 0.85 : 0.5} />
-          <circle cx="100" cy="100" r="6" fill="url(#center-pivot)" filter="url(#sf-glow-strong)" />
-          <circle cx="100" cy="100" r="2.5" fill="#ffffff" opacity={0.95} />
+          <ellipse cx="100" cy="100" rx="16" ry="9" fill="none" stroke={c1} strokeWidth="2" opacity={0.7} filter={glowFilter} />
+          <ellipse cx="100" cy="103" rx="16" ry="9" fill="none" stroke={c2} strokeWidth="1" opacity={0.35} filter={glowFilter} />
         </g>
 
-        {/* text */}
-        <text x="100" y="130" textAnchor="middle" fontSize="22" fontWeight="700" fill={textColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' style={{ textShadow: isDark ? '0 0 8px rgba(0,0,0,0.8)' : 'none' }}>
-          {value.toFixed(1)}
-        </text>
-        <text x="100" y="146" textAnchor="middle" fontSize="10" fill={subTextColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' opacity={0.9}>
-          {name || ''}
-        </text>
+        {/* center display screen */}
+        <g>
+          <rect x="70" y="110" width="60" height="40" rx="10" fill={isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)'} stroke={c1} strokeWidth="1.5" filter={glowFilter} opacity="0.95" />
+          <rect x="73" y="113" width="54" height="34" rx="7" fill="none" stroke={c1} strokeWidth="0.5" opacity={0.4} filter={glowFilter} />
+          <text x="100" y="135" textAnchor="middle" fontSize="20" fontWeight="700" fill={textColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace'>
+            {value.toFixed(1)}
+          </text>
+          <text x="100" y="145" textAnchor="middle" fontSize="8" fill={subTextColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' opacity={0.9}>
+            {name || ''}
+          </text>
+        </g>
+
+        {/* right side LED bars */}
+        <g>
+          {Array.from({ length: 10 }).map((_, i) => {
+            const y = 78 + i * 7
+            const active = i / 10 <= pct
+            const color = i < 4 ? c1 : i < 7 ? c2 : c3
+            return (
+              <rect
+                key={i}
+                x="168"
+                y={y}
+                width={active ? 10 : 8}
+                height={active ? 4 : 2.5}
+                rx="1"
+                fill={active ? color : (isDark ? '#0f172a' : '#cbd5e1')}
+                opacity={active ? 0.95 : 0.2}
+                filter={active ? glowFilter : undefined}
+              />
+            )
+          })}
+        </g>
       </svg>
     </Box>
   )
