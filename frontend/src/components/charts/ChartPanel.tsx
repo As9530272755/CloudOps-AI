@@ -167,39 +167,103 @@ function GaugeCanvasParticles({
     const defaultColors = isDark ? ['#00f0ff', '#facc15', '#ff00aa'] : ['#007AFF', '#FF9500', '#FF3B30']
     const palette = colors?.length ? colors : defaultColors
 
-    interface Particle {
+    interface Bubble {
       angle: number
       radiusPct: number
       angleSpeed: number
       radiusSpeed: number
-      size: number
-      alpha: number
-      fade: number
+      baseSize: number
       color: string
+      life: number
+      maxLife: number
+      bobOffset: number
+      bobSpeed: number
+      z: number // pseudo-depth for parallax size
     }
 
-    const particles: Particle[] = []
-    const maxParticles = 28
+    const bubbles: Bubble[] = []
+    const maxBubbles = 36
     const startAngle = (225 * Math.PI) / 180
 
     const spawn = () => {
-      if (particles.length >= maxParticles) return
+      if (bubbles.length >= maxBubbles) return
       const angle = startAngle - Math.random() * 1.5 * Math.PI
-      const isOrbiter = Math.random() > 0.55
-      particles.push({
+      const isOrbiter = Math.random() > 0.5
+      bubbles.push({
         angle,
-        radiusPct: isOrbiter ? 0.5 + Math.random() * 0.28 : 0.18 + Math.random() * 0.38,
-        angleSpeed: isOrbiter ? (Math.random() > 0.5 ? 0.003 : -0.003) * (0.6 + Math.random() * 0.8) : (Math.random() - 0.5) * 0.001,
-        radiusSpeed: isOrbiter ? 0 : (Math.random() - 0.5) * 0.002,
-        size: isOrbiter ? 2 + Math.random() * 2.5 : 1.5 + Math.random() * 2,
-        alpha: 0,
-        fade: 0.008 + Math.random() * 0.012,
+        radiusPct: isOrbiter ? 0.48 + Math.random() * 0.22 : 0.2 + Math.random() * 0.32,
+        angleSpeed: isOrbiter
+          ? (Math.random() > 0.5 ? 0.0025 : -0.0025) * (0.7 + Math.random())
+          : (Math.random() - 0.5) * 0.0012,
+        radiusSpeed: isOrbiter ? 0 : (Math.random() - 0.5) * 0.0015,
+        baseSize: isOrbiter ? 2.2 + Math.random() * 3 : 1.6 + Math.random() * 2.2,
         color: palette[Math.floor(Math.random() * palette.length)],
+        life: 0,
+        maxLife: 180 + Math.random() * 220,
+        bobOffset: Math.random() * Math.PI * 2,
+        bobSpeed: 0.02 + Math.random() * 0.03,
+        z: Math.random(),
       })
     }
 
     let lastSpawn = 0
     let t = 0
+
+    function drawSphere(
+      c2d: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      r: number,
+      color: string,
+      alpha: number,
+      lightX: number,
+      lightY: number
+    ) {
+      // Outer soft atmospheric glow
+      const glow = c2d.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 3)
+      glow.addColorStop(0, hexToRgba(color, alpha * 0.5))
+      glow.addColorStop(0.5, hexToRgba(color, alpha * 0.15))
+      glow.addColorStop(1, 'rgba(0,0,0,0)')
+      c2d.fillStyle = glow
+      c2d.beginPath()
+      c2d.arc(cx, cy, r * 3, 0, Math.PI * 2)
+      c2d.fill()
+
+      // Main 3D sphere body
+      const body = c2d.createRadialGradient(
+        cx + r * lightX * 0.25,
+        cy + r * lightY * 0.25,
+        0,
+        cx,
+        cy,
+        r
+      )
+      body.addColorStop(0, hexToRgba('#ffffff', 0.9))
+      body.addColorStop(0.25, hexToRgba(color, alpha))
+      body.addColorStop(0.65, hexToRgba(color, alpha * 0.8))
+      body.addColorStop(1, hexToRgba(color, alpha * 0.25))
+      c2d.fillStyle = body
+      c2d.beginPath()
+      c2d.arc(cx, cy, r, 0, Math.PI * 2)
+      c2d.fill()
+
+      // Sharp specular highlight
+      const spec = c2d.createRadialGradient(
+        cx - r * lightX * 0.35,
+        cy - r * lightY * 0.35,
+        0,
+        cx - r * lightX * 0.35,
+        cy - r * lightY * 0.35,
+        r * 0.4
+      )
+      spec.addColorStop(0, 'rgba(255,255,255,0.85)')
+      spec.addColorStop(0.5, hexToRgba(color, 0.35))
+      spec.addColorStop(1, 'rgba(255,255,255,0)')
+      c2d.fillStyle = spec
+      c2d.beginPath()
+      c2d.arc(cx - r * lightX * 0.35, cy - r * lightY * 0.35, r * 0.55, 0, Math.PI * 2)
+      c2d.fill()
+    }
 
     const draw = (now: number) => {
       t += 1
@@ -214,56 +278,71 @@ function GaugeCanvasParticles({
       const cy = h * 0.55
       const r = Math.min(w, h) * 0.9 * 0.5
 
-      if (now - lastSpawn > 80 + Math.random() * 60) {
+      if (now - lastSpawn > 60 + Math.random() * 50) {
         spawn()
-        if (Math.random() > 0.6) spawn()
+        if (Math.random() > 0.55) spawn()
         lastSpawn = now
       }
 
-      ctx.globalCompositeOperation = 'lighter'
-
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i]
-        p.angle += p.angleSpeed
-        p.radiusPct += p.radiusSpeed
-        if (p.radiusPct < 0.1 || p.radiusPct > 0.82) p.radiusSpeed *= -1
-        p.alpha += p.fade
-        if (p.alpha > 1) {
-          p.alpha = 1
-          p.fade = -Math.abs(p.fade)
-        }
-        if (p.alpha <= 0 && p.fade < 0) {
-          particles.splice(i, 1)
-          continue
-        }
-
-        const pr = r * p.radiusPct
-        const x = cx + Math.cos(p.angle) * pr
-        const y = cy - Math.sin(p.angle) * pr
-        const glow = p.size * (2 + Math.sin(t * 0.05 + i) * 0.5)
-
-        const g = ctx.createRadialGradient(x, y, 0, x, y, glow * 2.5)
-        g.addColorStop(0, hexToRgba(p.color, p.alpha))
-        g.addColorStop(0.4, hexToRgba(p.color, p.alpha * 0.35))
-        g.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx.fillStyle = g
-        ctx.beginPath()
-        ctx.arc(x, y, glow * 2.5, 0, Math.PI * 2)
-        ctx.fill()
+      const lightDir = {
+        x: Math.cos(t * 0.01),
+        y: Math.sin(t * 0.013),
       }
 
-      // Subtle sweep scanline along the arc
-      const scanAngle = startAngle - ((t * 0.003) % 1.5) * Math.PI
-      const scanR = r * 0.68
-      const sx = cx + Math.cos(scanAngle) * scanR
-      const sy = cy - Math.sin(scanAngle) * scanR
-      const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 14)
-      sg.addColorStop(0, hexToRgba(palette[0], 0.25))
-      sg.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = sg
-      ctx.beginPath()
-      ctx.arc(sx, sy, 14, 0, Math.PI * 2)
-      ctx.fill()
+      // Update bubbles
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        const b = bubbles[i]
+        b.angle += b.angleSpeed
+        b.radiusPct += b.radiusSpeed
+        if (b.radiusPct < 0.12 || b.radiusPct > 0.78) b.radiusSpeed *= -1
+        b.life++
+        if (b.life > b.maxLife) {
+          bubbles.splice(i, 1)
+        }
+      }
+
+      // Draw soft connector lines between near bubbles
+      ctx.globalCompositeOperation = 'screen'
+      ctx.lineWidth = 0.8
+      for (let i = 0; i < bubbles.length; i++) {
+        for (let j = i + 1; j < bubbles.length; j++) {
+          const a = bubbles[i]
+          const b = bubbles[j]
+          const ax = cx + Math.cos(a.angle) * (r * a.radiusPct)
+          const ay = cy - Math.sin(a.angle) * (r * a.radiusPct)
+          const bx = cx + Math.cos(b.angle) * (r * b.radiusPct)
+          const by = cy - Math.sin(b.angle) * (r * b.radiusPct)
+          const dx = ax - bx
+          const dy = ay - by
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist < 28) {
+            const lineAlpha = (1 - dist / 28) * 0.25
+            const grad = ctx.createLinearGradient(ax, ay, bx, by)
+            grad.addColorStop(0, hexToRgba(a.color, lineAlpha))
+            grad.addColorStop(1, hexToRgba(b.color, lineAlpha))
+            ctx.strokeStyle = grad
+            ctx.beginPath()
+            ctx.moveTo(ax, ay)
+            ctx.lineTo(bx, by)
+            ctx.stroke()
+          }
+        }
+      }
+
+      // Draw bubbles (back-to-front by z)
+      const sorted = [...bubbles].sort((a, b) => a.z - b.z)
+      ctx.globalCompositeOperation = 'lighter'
+      for (let i = 0; i < sorted.length; i++) {
+        const b = sorted[i]
+        const lifeAlpha = Math.min(1, b.life / 40) * Math.min(1, (b.maxLife - b.life) / 40)
+        const bob = Math.sin(t * b.bobSpeed + b.bobOffset) * 3
+        const pr = r * b.radiusPct + bob
+        const x = cx + Math.cos(b.angle) * pr
+        const y = cy - Math.sin(b.angle) * pr
+        const depthScale = 0.75 + b.z * 0.5
+        const size = b.baseSize * depthScale
+        drawSphere(ctx, x, y, size, b.color, lifeAlpha, lightDir.x, lightDir.y)
+      }
 
       ctx.globalCompositeOperation = 'source-over'
       animationRef.current = requestAnimationFrame(draw)
@@ -287,6 +366,7 @@ function GaugeCanvasParticles({
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
+        zIndex: 1,
       }}
     />
   )
@@ -356,7 +436,7 @@ function SciFiGauge({
   return (
     <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       <Box sx={{ position: 'absolute', inset: 0, background: bgGradient }} />
-      <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', position: 'relative', zIndex: 1 }}>
+      <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', position: 'relative', zIndex: 2 }}>
         <defs>
           <filter id="sf-glow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="2.5" result="blur" />
@@ -1009,8 +1089,8 @@ export function ChartPanel({
           ) : type === 'gauge' ? (
             <Box sx={{ position: 'absolute', inset: 0 }}>
               <SciFiGauge
-                value={chartData?.value ?? 0}
-                name={chartData?.name ?? ''}
+                value={Number.isFinite(chartData?.value) ? (chartData as any).value : 0}
+                name={(chartData as any)?.name ?? ''}
                 min={options?.min ?? 0}
                 max={options?.max ?? 100}
                 colors={options?.gaugeColors}
