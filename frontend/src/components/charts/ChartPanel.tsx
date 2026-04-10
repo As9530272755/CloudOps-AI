@@ -214,24 +214,31 @@ export default function ChartPanel({
   }, [type, options])
 
   useEffect(() => {
-    let resizeHandler: (() => void) | undefined
+    if (!chartRef.current) return
 
-    const timer = setTimeout(() => {
-      if (chartRef.current && !chartInstance.current) {
-        chartInstance.current = echarts.init(chartRef.current)
-        // 延迟 resize，确保 GridLayout 注入的宽高已生效
-        requestAnimationFrame(() => {
-          chartInstance.current?.resize()
-        })
+    // 初始化 ECharts
+    if (!chartInstance.current) {
+      chartInstance.current = echarts.init(chartRef.current)
+    }
+
+    loadData()
+
+    // ResizeObserver：容器尺寸变化时自动 resize + 重绘
+    const ro = new ResizeObserver(() => {
+      chartInstance.current?.resize()
+      // 如果之前因尺寸为0没画出来，现在retry
+      if (chartRef.current && chartRef.current.clientWidth > 0 && chartRef.current.clientHeight > 0) {
+        chartInstance.current?.resize()
       }
-      loadData()
-      resizeHandler = () => chartInstance.current?.resize()
-      window.addEventListener('resize', resizeHandler)
-    }, 50)
+    })
+    ro.observe(chartRef.current)
+
+    const handleWinResize = () => chartInstance.current?.resize()
+    window.addEventListener('resize', handleWinResize)
 
     return () => {
-      clearTimeout(timer)
-      if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+      ro.disconnect()
+      window.removeEventListener('resize', handleWinResize)
       chartInstance.current?.dispose()
       chartInstance.current = null
     }
