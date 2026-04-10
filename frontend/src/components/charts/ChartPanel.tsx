@@ -253,6 +253,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               axisPointer: { type: 'cross', label: { backgroundColor: '#6b7280' } },
               confine: true,
               order: 'valueDesc',
+              extraCssText: 'max-height: 240px; overflow-y: auto;',
             },
             dataZoom: [
               { type: 'inside', start: 0, end: 100 },
