@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Box,
   Card,
@@ -34,6 +34,7 @@ import {
   Refresh as RefreshIcon,
   CloudQueue as ClusterIcon,
   ArrowForward as EnterIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material'
 
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest } from '../lib/cluster-api'
@@ -74,13 +75,13 @@ export default function Clusters() {
     status: '',
     auth_type: '',
   })
+  const [searchQuery, setSearchQuery] = useState('')
 
   // 加载集群列表
   const loadClusters = async () => {
     setLoading(true)
     try {
       const params: ClusterListParams = {}
-      if (filters.keyword?.trim()) params.keyword = filters.keyword.trim()
       if (filters.status) params.status = filters.status
       if (filters.auth_type) params.auth_type = filters.auth_type
 
@@ -125,6 +126,18 @@ export default function Clusters() {
   }
 
   // 处理删除集群
+  // 实时模糊搜索过滤
+  const filteredClusters = useMemo(() => {
+    if (!searchQuery.trim()) return clusters
+    const q = searchQuery.toLowerCase()
+    return clusters.filter(
+      (c) =>
+        (c.display_name || '').toLowerCase().includes(q) ||
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.server || '').toLowerCase().includes(q)
+    )
+  }, [clusters, searchQuery])
+
   const handleDelete = async (id: number) => {
     if (!confirm('确定要删除此集群吗？')) return
     try {
@@ -186,12 +199,15 @@ export default function Clusters() {
         <CardContent>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
             <TextField
-              label="搜索"
+              label="全局搜索"
               placeholder="名称 / 显示名 / Server"
               size="small"
-              value={filters.keyword}
-              onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
-              sx={{ minWidth: 220 }}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 18 }} />,
+              }}
+              sx={{ minWidth: 260 }}
             />
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <InputLabel>状态</InputLabel>
@@ -222,6 +238,7 @@ export default function Clusters() {
             <Button
               variant="outlined"
               onClick={() => {
+                setSearchQuery('')
                 setFilters({ keyword: '', status: '', auth_type: '' })
                 // 重置后自动刷新
                 setTimeout(() => loadClusters(), 0)
@@ -264,6 +281,16 @@ export default function Clusters() {
                 点击右上角"添加集群"按钮添加您的第一个 Kubernetes 集群
               </Typography>
             </Box>
+          ) : filteredClusters.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 8 }}>
+              <ClusterIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" sx={{ color: 'text.secondary', mb: 1 }}>
+                未找到匹配的集群
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                请尝试更换搜索关键词
+              </Typography>
+            </Box>
           ) : (
             <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
               <Table>
@@ -278,7 +305,7 @@ export default function Clusters() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {clusters.map((cluster) => (
+                  {filteredClusters.map((cluster) => (
                     <TableRow
                       key={cluster.id}
                       hover
