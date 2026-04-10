@@ -181,8 +181,6 @@ export default function ChartPanel({
     if (!chartInstance.current || !chartData) return
     if (type === 'stat' || type === 'table') return
 
-    const isManySeries = (chartData.series?.length || 0) > 10
-
     let option: echarts.EChartsOption = {}
 
     switch (type) {
@@ -247,13 +245,7 @@ export default function ChartPanel({
             symbol: 'none',
             lineStyle: { width: 1.5 },
             emphasis: {
-              focus: 'series',
-              blurScope: 'coordinateSystem',
-              lineStyle: { width: 3 },
-            },
-            // 大量 series 时淡化非 hover 线条
-            blur: {
-              lineStyle: { opacity: isManySeries ? 0.08 : 0.25 },
+              lineStyle: { width: 2.5 },
             },
             // 只有用户明确配置才开 area
             areaStyle: options.area ? { opacity: 0.15 } : undefined,
