@@ -151,23 +151,33 @@ export default function MainLayout() {
                     }
                     onClick={() => handleNavigate(item.path)}
                     sx={{
-                      borderRadius: '12px',
+                      position: 'relative',
+                      borderRadius: '10px',
                       py: 1.25,
                       px: 2,
-                      transition: 'all 0.2s ease',
+                      transition: 'background-color 0.2s',
                       '&.Mui-selected': {
-                        background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
-                        color: '#FFFFFF',
-                        boxShadow: '0 4px 12px rgba(0, 122, 255, 0.3)',
+                        bgcolor: alpha(theme.palette.primary.main, 0.08),
+                        color: theme.palette.primary.main,
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 0,
+                          top: 8,
+                          bottom: 8,
+                          width: 3,
+                          borderRadius: '0 3px 3px 0',
+                          bgcolor: theme.palette.primary.main,
+                        },
                         '& .MuiListItemIcon-root': {
-                          color: '#FFFFFF',
+                          color: theme.palette.primary.main,
                         },
                         '&:hover': {
-                          background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
+                          bgcolor: alpha(theme.palette.primary.main, 0.1),
                         },
                       },
                       '&:hover': {
-                        backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
                       },
                     }}
                   >
@@ -177,8 +187,8 @@ export default function MainLayout() {
                         color:
                           location.pathname === item.path ||
                           (item.path !== '/' && location.pathname.startsWith(item.path))
-                            ? '#FFFFFF'
-                            : theme.palette.primary.main,
+                            ? theme.palette.primary.main
+                            : 'text.secondary',
                       }}
                     >
                       {item.icon}
