@@ -63,16 +63,19 @@ export default function Dashboard() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
 
-  // 动态计算 grid 宽度
+  // 动态计算 grid 宽度（在 grid 容器出现或改变时重新绑定）
   useEffect(() => {
     if (!gridContainerRef.current) return
+    const el = gridContainerRef.current
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect?.width
       if (w) setGridWidth(Math.floor(w))
     })
-    ro.observe(gridContainerRef.current)
+    ro.observe(el)
+    // 立即同步一次，解决挂载时已存在容器但 observer 延迟的问题
+    setGridWidth(Math.floor(el.clientWidth))
     return () => ro.disconnect()
-  }, [])
+  }, [panels.length, editMode])
 
   useMemo(() => getTimeRange(timeRange), [timeRange])
 
