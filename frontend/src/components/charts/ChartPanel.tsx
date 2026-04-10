@@ -292,6 +292,157 @@ function GaugeCanvasParticles({
   )
 }
 
+function SciFiGauge({
+  value,
+  name,
+  min,
+  max,
+  colors,
+  isDark,
+}: {
+  value: number
+  name: string
+  min: number
+  max: number
+  colors?: string[]
+  isDark: boolean
+}) {
+  const pct = Math.max(0, Math.min(1, (value - min) / (max - min || 1)))
+  const pointerAngle = 225 - pct * 270
+
+  const c1 = colors?.[0] || (isDark ? '#00f0ff' : '#007AFF')
+  const c2 = colors?.[1] || colors?.[0] || (isDark ? '#facc15' : '#FF9500')
+  const c3 = colors?.[2] || colors?.[1] || colors?.[0] || (isDark ? '#ff00aa' : '#FF3B30')
+
+  const bgGradient = isDark
+    ? 'radial-gradient(circle at 50% 55%, rgba(11,26,47,0.9) 0%, rgba(2,6,23,0.95) 60%)'
+    : 'radial-gradient(circle at 50% 55%, rgba(255,255,255,0.9) 0%, rgba(243,244,246,0.95) 60%)'
+
+  const textColor = isDark ? '#e2e8f0' : '#1f2937'
+  const subTextColor = isDark ? '#94a3b8' : '#6b7280'
+  const glowFilter = isDark ? 'url(#sf-glow)' : 'url(#sf-glow-light)'
+
+  const describeArc = (cx: number, cy: number, r: number, start: number, end: number) => {
+    const toRad = (a: number) => (a * Math.PI) / 180
+    const x1 = cx + r * Math.cos(toRad(start))
+    const y1 = cy - r * Math.sin(toRad(start))
+    const x2 = cx + r * Math.cos(toRad(end))
+    const y2 = cy - r * Math.sin(toRad(end))
+    const largeArc = Math.abs(end - start) <= 180 ? 0 : 1
+    const sweep = end > start ? 0 : 1
+    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} ${sweep} ${x2.toFixed(2)} ${y2.toFixed(2)}`
+  }
+
+  const ticks: Array<{ x1: number; y1: number; x2: number; y2: number; major: boolean }> = []
+  for (let i = 0; i <= 30; i++) {
+    const a = 225 - i * 9
+    const rad = (a * Math.PI) / 180
+    const isMajor = i % 5 === 0
+    const r1 = 90
+    const r2 = isMajor ? 83 : 86
+    ticks.push({
+      x1: 100 + r1 * Math.cos(rad),
+      y1: 100 - r1 * Math.sin(rad),
+      x2: 100 + r2 * Math.cos(rad),
+      y2: 100 - r2 * Math.sin(rad),
+      major: isMajor,
+    })
+  }
+
+  const seg1Path = describeArc(100, 100, 90, 225, 144)
+  const seg2Path = describeArc(100, 100, 90, 144, 36)
+  const seg3Path = describeArc(100, 100, 90, 36, -45)
+
+  return (
+    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <Box sx={{ position: 'absolute', inset: 0, background: bgGradient }} />
+      <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', position: 'relative', zIndex: 1 }}>
+        <defs>
+          <filter id="sf-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="sf-glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="sf-glow-light" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="1.5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <radialGradient id="center-pivot">
+            <stop offset="0%" stopColor={c1} stopOpacity={1} />
+            <stop offset="60%" stopColor={c2} stopOpacity={0.8} />
+            <stop offset="100%" stopColor={c3} stopOpacity={0.4} />
+          </radialGradient>
+          <linearGradient id="scan-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={c1} stopOpacity={0} />
+            <stop offset="50%" stopColor={c1} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={c1} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+
+        <style>{`
+          @keyframes sf-spin { 100% { transform: rotate(360deg); } }
+          @keyframes sf-scan { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+          .sf-outer { transform-origin: 100px 100px; animation: sf-spin 10s linear infinite; }
+          .sf-inner { transform-origin: 100px 100px; animation: sf-spin 14s linear infinite reverse; }
+          .sf-scan { transform-origin: 100px 100px; animation: sf-scan 3.5s linear infinite; }
+        `}</style>
+
+        {/* outer dashed ring */}
+        <g className="sf-outer">
+          <circle cx="100" cy="100" r="94" fill="none" stroke={c1} strokeWidth="1" strokeDasharray="4 6" opacity={isDark ? 0.55 : 0.35} filter={glowFilter} />
+        </g>
+
+        {/* inner dashed ring reverse */}
+        <g className="sf-inner">
+          <circle cx="100" cy="100" r="72" fill="none" stroke={c2} strokeWidth="0.5" strokeDasharray="2 4" opacity={isDark ? 0.4 : 0.25} filter={glowFilter} />
+        </g>
+
+        {/* main colored scale arc */}
+        <g filter={glowFilter}>
+          <path d={seg1Path} fill="none" stroke={c1} strokeWidth="7" strokeLinecap="butt" opacity={0.95} />
+          <path d={seg2Path} fill="none" stroke={c2} strokeWidth="7" strokeLinecap="butt" opacity={0.95} />
+          <path d={seg3Path} fill="none" stroke={c3} strokeWidth="7" strokeLinecap="butt" opacity={0.95} />
+        </g>
+
+        {/* tick marks */}
+        <g filter={glowFilter}>
+          {ticks.map((t, i) => (
+            <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke={isDark ? '#e2e8f0' : '#334155'} strokeWidth={t.major ? 1.5 : 0.8} opacity={t.major ? 0.9 : 0.55} />
+          ))}
+        </g>
+
+        {/* scan beam wedge */}
+        <g className="sf-scan" opacity={isDark ? 0.55 : 0.35}>
+          <path d="M 100 100 L 196 92 L 196 108 Z" fill="url(#scan-grad)" filter={glowFilter} />
+        </g>
+
+        {/* pointer */}
+        <g transform={`rotate(${90 - pointerAngle} 100 100)`} style={{ transition: 'transform 0.55s cubic-bezier(0.22,1,0.36,1)' }}>
+          <rect x="99" y="56" width="2" height="44" rx="1" fill={c1} filter="url(#sf-glow-strong)" />
+        </g>
+
+        {/* center pivot */}
+        <g>
+          <circle cx="100" cy="100" r="12" fill="rgba(0,0,0,0.35)" stroke={c1} strokeWidth="1" filter={glowFilter} opacity={isDark ? 0.85 : 0.5} />
+          <circle cx="100" cy="100" r="6" fill="url(#center-pivot)" filter="url(#sf-glow-strong)" />
+          <circle cx="100" cy="100" r="2.5" fill="#ffffff" opacity={0.95} />
+        </g>
+
+        {/* text */}
+        <text x="100" y="130" textAnchor="middle" fontSize="22" fontWeight="700" fill={textColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' style={{ textShadow: isDark ? '0 0 8px rgba(0,0,0,0.8)' : 'none' }}>
+          {value.toFixed(1)}
+        </text>
+        <text x="100" y="146" textAnchor="middle" fontSize="10" fill={subTextColor} fontFamily='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' opacity={0.9}>
+          {name || ''}
+        </text>
+      </svg>
+    </Box>
+  )
+}
+
 function CustomLegend({
   series,
   placement,
@@ -448,6 +599,7 @@ export function ChartPanel({
 
   // 初始化 ECharts + ResizeObserver
   useEffect(() => {
+    if (type === 'gauge' || type === 'stat' || type === 'table' || type === 'text') return
     if (!chartRef.current) return
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current, isDark ? 'dark' : undefined, { renderer: 'canvas' })
@@ -481,16 +633,14 @@ export function ChartPanel({
   // chartData 准备好后绘制
   useEffect(() => {
     if (!chartInstance.current || !chartData) return
-    if (type === 'stat' || type === 'table' || type === 'text') return
+    if (type === 'stat' || type === 'table' || type === 'text' || type === 'gauge') return
 
     const legendPlacement = options?.legendPlacement ?? 'bottom'
 
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
-    const hasGaugeData = chartData.value !== undefined
     if ((type === 'line' || type === 'bar' || type === 'area' || type === 'scatter' || type === 'heatmap') && !hasSeries) return
     if (type === 'pie' && !hasPieData) return
-    if (type === 'gauge' && !hasGaugeData) return
 
     const drawStyle = resolveOption(options, 'drawStyle')
     const lineWidth = resolveOption(options, 'lineWidth')
@@ -705,52 +855,7 @@ export function ChartPanel({
           }
           break
         }
-        case 'gauge': {
-          const gaugeColors = options?.gaugeColors || [
-            isDark ? '#00f0ff' : '#007AFF',
-            isDark ? '#facc15' : '#FF9500',
-            isDark ? '#ff00aa' : '#FF3B30',
-          ]
-          const glow = options?.gaugeGlow !== false
-          const c1 = gaugeColors[0]
-          const c2 = gaugeColors[1] ?? gaugeColors[0]
-          const c3 = gaugeColors[2] ?? gaugeColors[1] ?? gaugeColors[0]
-          const pointerColor = c1
-          option = {
-            backgroundColor: 'transparent',
-            tooltip: {
-              trigger: 'item',
-              backgroundColor: tooltipBg,
-              borderColor: tooltipBorder,
-              borderWidth: 1,
-              textStyle: { color: tooltipText },
-            },
-            series: [{
-              type: 'gauge',
-              min: options?.min ?? 0,
-              max: options?.max ?? 100,
-              radius: '90%',
-              center: ['50%', '55%'],
-              detail: { formatter: '{value}', fontSize: 26, color: isDark ? '#e2e8f0' : '#1f2937', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace', offsetCenter: [0, '55%'] },
-              data: [{ value: chartData.value, name: chartData.name }],
-              pointer: {
-                icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',
-                length: '45%',
-                width: 6,
-                offsetCenter: [0, '-10%'],
-                itemStyle: { color: pointerColor, shadowBlur: glow ? 16 : 0, shadowColor: pointerColor },
-              },
-              axisLine: { lineStyle: { width: 14, shadowBlur: glow ? 20 : 0, shadowColor: c1, color: [
-                [0.3, c1], [0.7, c2], [1, c3]
-              ] } },
-              splitLine: { length: 12, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
-              axisTick: { length: 6, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
-              axisLabel: { fontSize: 10, color: labelColor, distance: 10 },
-              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '75%'] },
-            }],
-          }
-          break
-        }
+
       }
 
       chartInstance.current.setOption(option, { notMerge: true })
@@ -901,6 +1006,20 @@ export function ChartPanel({
                 {chartData?.text || options?.textContent || query || '请输入文本内容'}
               </Typography>
             </Box>
+          ) : type === 'gauge' ? (
+            <Box sx={{ position: 'absolute', inset: 0 }}>
+              <SciFiGauge
+                value={chartData?.value ?? 0}
+                name={chartData?.name ?? ''}
+                min={options?.min ?? 0}
+                max={options?.max ?? 100}
+                colors={options?.gaugeColors}
+                isDark={isDark}
+              />
+              {options?.gaugeParticles !== false && (
+                <GaugeCanvasParticles active={!(!chartData)} colors={options?.gaugeColors} isDark={isDark} />
+              )}
+            </Box>
           ) : (
             <Box sx={{ position: 'absolute', inset: 0 }}>
               <Box
@@ -908,9 +1027,6 @@ export function ChartPanel({
                 ref={chartRef}
                 sx={{ position: 'absolute', inset: 0 }}
               />
-              {type === 'gauge' && options?.gaugeParticles !== false && (
-                <GaugeCanvasParticles active={!(!chartData)} colors={options?.gaugeColors} isDark={isDark} />
-              )}
             </Box>
           )}
 
