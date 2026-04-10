@@ -163,7 +163,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
   useEffect(() => {
     if (!chartRef.current) return
     if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current)
+      chartInstance.current = echarts.init(chartRef.current, 'dark')
     }
 
     const ro = new ResizeObserver(() => chartInstance.current?.resize())
@@ -190,18 +190,17 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     if (!chartInstance.current || !chartData) return
     if (type === 'stat' || type === 'table') return
 
-    const legendPlacement = options?.legendPlacement ?? 'right'
+    const legendPlacement = options?.legendPlacement ?? 'bottom'
     const showLegend = options?.legend !== false && legendPlacement !== 'hidden'
     const chartWidth = chartRef.current?.clientWidth || 400
-    const dataLength = chartData.timestamps?.length || 1
 
     function buildLegend() {
       if (!showLegend) return undefined
-      const common = { type: 'scroll', textStyle: { color: '#374151', fontSize: 11, width: 135, overflow: 'truncate' }, pageIconColor: '#374151', pageTextStyle: { color: '#374151' }, tooltip: { show: true } }
-      if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 8, left: 'center', icon: 'roundRect' } as any
-      if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 8, top: 8, bottom: 8, icon: 'roundRect' } as any
-      // right (default)
-      return { ...common, orient: 'vertical', right: 8, top: 8, bottom: 8, icon: 'roundRect' } as any
+      const common = { type: 'scroll', textStyle: { color: '#c7d0d9', fontSize: 11 }, pageIconColor: '#8e8e8e', pageTextStyle: { color: '#c7d0d9' }, tooltip: { show: true } }
+      if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect' } as any
+      if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 0, top: 'middle', icon: 'roundRect' } as any
+      if (legendPlacement === 'right') return { ...common, orient: 'vertical', right: 0, top: 'middle', icon: 'roundRect' } as any
+      return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect' } as any
     }
 
     // Guard: 切换图表类型时，旧 chartData 结构可能与新 type 不匹配（例如 pie -> line）
@@ -227,19 +226,20 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
         case 'line':
         case 'bar': {
           const effectiveType = drawStyle === 'points' ? 'line' : (drawStyle === 'bar' ? 'bar' : 'line')
+          const dataLength = chartData.timestamps?.length || 1
           const symbol = drawStyle === 'points'
             ? 'circle'
             : shouldShowPoints(showPoints, chartWidth, dataLength)
 
-          const gridRight = legendPlacement === 'right' ? (showLegend ? 160 : 16) : 16
-          const gridLeft = legendPlacement === 'left' ? (showLegend ? 160 : 16) : 48
-          const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 80 : 40) : 40
+          const gridRight = legendPlacement === 'right' ? (showLegend ? 120 : 16) : 16
+          const gridLeft = legendPlacement === 'left' ? (showLegend ? 120 : 16) : 56
+          const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 56 : 24) : 24
 
           option = {
             backgroundColor: 'transparent',
             color: GRAFANA_COLORS,
             grid: {
-              top: 16,
+              top: 24,
               right: gridRight,
               bottom: gridBottom,
               left: gridLeft,
@@ -247,10 +247,10 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             },
             tooltip: {
               trigger: 'axis',
-              backgroundColor: 'rgba(31, 41, 55, 0.95)',
-              borderColor: '#374151',
-              textStyle: { color: '#f3f4f6', fontSize: 12 },
-              axisPointer: { type: 'cross', label: { backgroundColor: '#6b7280' } },
+              backgroundColor: '#181b1f',
+              borderColor: '#464c54',
+              textStyle: { color: '#c7d0d9', fontSize: 12 },
+              axisPointer: { type: 'cross', label: { backgroundColor: '#2c3235' } },
               confine: true,
               order: 'valueDesc',
               enterable: true,
@@ -273,19 +273,18 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             },
             dataZoom: [
               { type: 'inside', start: 0, end: 100 },
-              { type: 'slider', start: 0, end: 100, height: 18, bottom: 8, borderColor: 'transparent', fillerColor: 'rgba(0,122,255,0.15)' },
             ],
             xAxis: {
               type: 'time',
-              axisLine: { lineStyle: { color: '#d1d5db' } },
-              axisLabel: { color: '#6b7280', fontSize: 11, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
-              splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
+              axisLine: { lineStyle: { color: '#464c54' } },
+              axisLabel: { color: '#8e8e8e', fontSize: 11, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
+              splitLine: { show: false },
             },
             yAxis: {
               type: 'value',
               axisLine: { show: false },
-              axisLabel: { color: '#6b7280', fontSize: 11 },
-              splitLine: { lineStyle: { color: '#e5e7eb' } },
+              axisLabel: { color: '#8e8e8e', fontSize: 11 },
+              splitLine: { lineStyle: { color: '#252a2e' } },
             },
             legend: buildLegend(),
             series: chartData.series.map((s: any) => {
@@ -300,7 +299,6 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
                 symbol: symbol,
                 symbolSize: symbol === 'circle' ? pointSize : undefined,
                 lineStyle: isLine ? { width: lineWidth } : undefined,
-                itemStyle: isLine ? undefined : undefined,
                 // Grafana: fill only when fillOpacity > 0
                 areaStyle: areaOpacity > 0 ? { opacity: areaOpacity } : undefined,
                 emphasis: {
@@ -321,9 +319,9 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             color: GRAFANA_COLORS,
             tooltip: {
               trigger: 'item',
-              backgroundColor: 'rgba(31, 41, 55, 0.95)',
-              borderColor: '#374151',
-              textStyle: { color: '#f3f4f6' },
+              backgroundColor: '#181b1f',
+              borderColor: '#464c54',
+              textStyle: { color: '#c7d0d9' },
             },
             legend: buildLegend(),
             series: [{
@@ -331,7 +329,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               radius: ['35%', '65%'],
               center: [centerX, '50%'],
               data: chartData.data || [],
-              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11 },
+              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11, color: '#c7d0d9' },
               emphasis: {
                 itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
               },
@@ -344,23 +342,23 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             backgroundColor: 'transparent',
             tooltip: {
               trigger: 'item',
-              backgroundColor: 'rgba(31, 41, 55, 0.95)',
-              borderColor: '#374151',
-              textStyle: { color: '#f3f4f6' },
+              backgroundColor: '#181b1f',
+              borderColor: '#464c54',
+              textStyle: { color: '#c7d0d9' },
             },
             series: [{
               type: 'gauge',
               min: options?.min ?? 0,
               max: options?.max ?? 100,
-              detail: { formatter: '{value}', fontSize: 24, color: '#374151' },
+              detail: { formatter: '{value}', fontSize: 24, color: '#c7d0d9' },
               data: [{ value: chartData.value, name: chartData.name }],
               axisLine: { lineStyle: { width: 12, color: [
                 [0.3, '#7EB26D'], [0.7, '#EAB839'], [1, '#E24D42']
               ] } },
               splitLine: { length: 12 },
               axisTick: { length: 8 },
-              axisLabel: { fontSize: 10, color: '#6b7280' },
-              title: { fontSize: 12, color: '#6b7280', offsetCenter: [0, '70%'] },
+              axisLabel: { fontSize: 10, color: '#8e8e8e' },
+              title: { fontSize: 12, color: '#8e8e8e', offsetCenter: [0, '70%'] },
             }],
           }
           break
@@ -377,49 +375,48 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
       sx={{
         height: '100%',
         width: '100%',
-        borderRadius: '16px',
-        p: 2,
+        borderRadius: '3px',
+        p: 1.5,
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        background: 'rgba(255,255,255,0.7)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255,255,255,0.3)',
+        background: '#181b1f',
+        border: '1px solid #2c3235',
       }}
     >
-      <Box className="grid-drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10, cursor: 'move' }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
+      <Box className="grid-drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, position: 'relative', zIndex: 10, cursor: 'move' }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 500, fontSize: '0.8125rem', color: '#c7d0d9' }}>
           {title}
         </Typography>
       </Box>
 
       {/* 图表区：始终保留 DOM，loading/error 用 overlay */}
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <Box sx={{ flex: 1, minHeight: 0, position: 'relative', mt: 0.5 }}>
         {type === 'stat' ? (
           <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-            <Typography variant="h3" sx={{ fontWeight: 700, color: '#007AFF' }}>
+            <Typography variant="h3" sx={{ fontWeight: 700, color: options?.thresholds ? options.thresholds[0]?.color : '#c7d0d9' }}>
               {statValue !== null ? statValue.toFixed(options?.decimals ?? 1) : '-'}
             </Typography>
             {options?.unit && (
-              <Typography variant="caption" color="text.secondary">{options.unit}</Typography>
+              <Typography variant="caption" sx={{ color: '#8e8e8e' }}>{options.unit}</Typography>
             )}
           </Box>
         ) : type === 'table' ? (
           <Box sx={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
-            <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: '#c7d0d9' }}>
               <Box component="thead">
                 <Box component="tr">
                   {['Time', 'Metric', 'Value'].map((h) => (
-                    <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: '1px solid #eee', color: '#666' }}>{h}</Box>
+                    <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: '1px solid #2c3235', color: '#8e8e8e' }}>{h}</Box>
                   ))}
                 </Box>
               </Box>
               <Box component="tbody">
                 {tableData?.rows.map((row: any, idx: number) => (
                   <Box component="tr" key={idx}>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0' }}>{row.time}</Box>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #f0f0f0' }}>{row.value}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #252a2e' }}>{row.time}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #252a2e', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #252a2e' }}>{row.value}</Box>
                   </Box>
                 ))}
               </Box>
@@ -435,9 +432,9 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
 
         {/* loading / error overlay */}
         {(loading || error) && type !== 'stat' && (
-          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.7)' }}>
-            {loading && <CircularProgress size={24} />}
-            {error && !loading && <Typography variant="caption" color="error">{error}</Typography>}
+          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(17,18,23,0.7)' }}>
+            {loading && <CircularProgress size={24} sx={{ color: '#8e8e8e' }} />}
+            {error && !loading && <Typography variant="caption" sx={{ color: '#E24D42' }}>{error}</Typography>}
           </Box>
         )}
       </Box>

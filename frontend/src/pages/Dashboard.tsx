@@ -23,7 +23,6 @@ import ReactGridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
-import { glassEffect } from '../theme/theme'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel } from '../lib/dashboard-api'
 import { ChartPanel } from '../components/charts/ChartPanel'
@@ -240,13 +239,13 @@ export default function Dashboard() {
   const healthyClusters = clusters.filter((c) => c.metadata?.health_status === 'healthy').length
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, bgcolor: '#0b0c0e', minHeight: '100vh' }}>
       {/* Header */}
-      <Card sx={{ mb: 3, ...glassEffect }}>
+      <Card sx={{ mb: 3, bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px' }}>
         <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>仪表盘</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="h5" sx={{ fontWeight: 600, color: '#c7d0d9' }}>仪表盘</Typography>
+            <Typography variant="body2" sx={{ color: '#8e8e8e' }}>
               可视化监控中心
             </Typography>
           </Box>
@@ -305,9 +304,9 @@ export default function Dashboard() {
           { label: '节点总数', value: totalNodes, color: '#5856D6' },
           { label: 'Pod 总数', value: totalPods, color: '#FF9500' },
         ].map((stat) => (
-          <Card key={stat.label} sx={{ ...glassEffect, borderLeft: `4px solid ${stat.color}` }}>
+          <Card key={stat.label} sx={{ bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px', borderLeft: `4px solid ${stat.color}` }}>
             <CardContent>
-              <Typography variant="body2" color="text.secondary">{stat.label}</Typography>
+              <Typography variant="body2" sx={{ color: '#8e8e8e' }}>{stat.label}</Typography>
               <Typography variant="h4" sx={{ fontWeight: 700, color: stat.color, mt: 1 }}>
                 {stat.value}
               </Typography>
@@ -318,13 +317,13 @@ export default function Dashboard() {
 
       {/* 编辑模式：顶部管理条 */}
       {editMode && (
-        <Card sx={{ mb: 3, ...glassEffect }}>
+        <Card sx={{ mb: 3, bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px' }}>
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#c7d0d9' }}>
                 面板管理
               </Typography>
-              <Button variant="outlined" size="small" onClick={() => setEditMode(false)}>
+              <Button variant="outlined" size="small" onClick={() => setEditMode(false)} sx={{ color: '#c7d0d9', borderColor: '#464c54' }}>
                 退出编辑
               </Button>
             </Box>
@@ -338,11 +337,12 @@ export default function Dashboard() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
-                    borderRadius: '12px',
-                    background: 'rgba(255,255,255,0.9)',
+                    borderRadius: '3px',
+                    background: '#111217',
+                    border: '1px solid #2c3235',
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 500, color: '#c7d0d9' }}>
                     {panel.title}
                   </Typography>
                   <Chip label={panel.type} size="small" variant="outlined" />
@@ -355,7 +355,7 @@ export default function Dashboard() {
                 </Card>
               ))}
               {panels.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{ color: '#8e8e8e' }}>
                   当前无面板，点击下方按钮添加
                 </Typography>
               )}
@@ -366,23 +366,23 @@ export default function Dashboard() {
 
       {/* Dashboard Grid */}
       {!dashboard && !editMode ? (
-        <Card sx={{ ...glassEffect, textAlign: 'center', py: 8 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>
+        <Card sx={{ bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px', textAlign: 'center', py: 8 }}>
+          <Typography variant="h6" sx={{ mb: 2, color: '#c7d0d9' }}>
             暂无仪表盘
           </Typography>
-          <Button variant="contained" onClick={handleAddPanel} sx={{ borderRadius: '12px' }}>
+          <Button variant="contained" onClick={handleAddPanel} sx={{ borderRadius: '3px' }}>
             创建默认仪表盘并添加面板
           </Button>
         </Card>
       ) : (
         <Box sx={{ position: 'relative' }}>
           {panels.length === 0 && !editMode && (
-            <Card sx={{ ...glassEffect, textAlign: 'center', py: 8 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>当前仪表盘为空</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            <Card sx={{ bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px', textAlign: 'center', py: 8 }}>
+              <Typography variant="h6" sx={{ mb: 2, color: '#c7d0d9' }}>当前仪表盘为空</Typography>
+              <Typography variant="body2" sx={{ color: '#8e8e8e', mb: 3 }}>
                 点击编辑按钮添加您的第一个监控面板
               </Typography>
-              <Button variant="contained" onClick={() => setEditMode(true)} sx={{ borderRadius: '12px' }}>
+              <Button variant="contained" onClick={() => setEditMode(true)} sx={{ borderRadius: '3px' }}>
                 开始编辑
               </Button>
             </Card>
