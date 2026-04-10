@@ -222,7 +222,15 @@ export function ChartPanel({
 
     function buildLegend() {
       if (!showLegend) return undefined
-      const common = { type: 'scroll', textStyle: { color: theme.palette.text.primary, fontSize: 11 }, tooltip: { show: true } }
+      const divider = theme.palette.divider
+      const common = {
+        type: 'scroll',
+        textStyle: { color: theme.palette.text.primary, fontSize: 11 },
+        tooltip: { show: true },
+        borderWidth: 1,
+        borderColor: divider,
+        padding: [8, 10],
+      }
       const maxLen = 32
       const fmt = (name: string) => name.length > maxLen ? name.slice(0, maxLen) + '...' : name
       if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect', height: 40, formatter: fmt } as any
