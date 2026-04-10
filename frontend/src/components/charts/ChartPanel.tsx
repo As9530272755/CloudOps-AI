@@ -1,18 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Box, Typography, CircularProgress, Paper, useTheme, IconButton, Menu, MenuItem } from '@mui/material'
+import { Box, Typography, CircularProgress, Paper, IconButton, Menu, MenuItem } from '@mui/material'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import * as echarts from 'echarts'
 import { ChartType, PanelOptions } from './types'
 import { datasourceAPI } from '../../lib/datasource-api'
 
-// Grafana default color palette (from Grafana source code)
-const GRAFANA_COLORS = [
-  '#7EB26D', '#EAB839', '#6ED0E0', '#EF843C', '#E24D42',
-  '#1F78C1', '#BA43A9', '#705DA0', '#508642', '#CCA300',
-  '#447EBC', '#C15C17', '#890F02', '#0A437C', '#6D1F62',
-  '#967302', '#2F575E', '#99440A', '#58140C', '#052B51',
-  '#511749', '#3F6833', '#BF1B00', '#F2CC0C', '#70DBED',
-  '#C4162A', '#64B0C8', '#E0F9D7', '#8AB8FF', '#F9934E',
+// Sci-fi neon palette inspired by Datadog / VictoriaMetrics / modern cyberpunk dashboards
+const SCI_FI_COLORS = [
+  '#00f0ff', '#ff00aa', '#00ff88', '#facc15', '#a855f7',
+  '#f472b6', '#38bdf8', '#fb923c', '#ef4444', '#22d3ee',
+  '#c084fc', '#34d399', '#fbbf24', '#f87171', '#60a5fa',
 ]
 
 // Grafana-style default field config
@@ -108,6 +105,75 @@ function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: n
   return chartWidth / dataLength > 8 ? 'circle' : 'none'
 }
 
+function CustomLegend({
+  series,
+  placement,
+}: {
+  series: Array<{ name: string }>
+  placement: 'bottom' | 'left' | 'right'
+}) {
+  const isHorizontal = placement === 'bottom'
+  const maxWidth = isHorizontal ? 180 : 190
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: isHorizontal ? 'row' : 'column',
+        flexWrap: isHorizontal ? 'wrap' : 'nowrap',
+        gap: '5px 14px',
+        overflow: 'auto',
+        ...(isHorizontal
+          ? { maxHeight: 68, pt: 1, borderTop: '1px solid rgba(59,130,246,0.15)' }
+          : { maxWidth: 210, pl: 1.5, borderLeft: '1px solid rgba(59,130,246,0.15)' }),
+        scrollbarWidth: 'thin',
+        '&::-webkit-scrollbar': { width: '4px', height: '4px' },
+        '&::-webkit-scrollbar-thumb': { background: 'rgba(59,130,246,0.25)', borderRadius: '2px' },
+      }}
+    >
+      {series.map((s, idx) => (
+        <Box
+          key={s.name + idx}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.8,
+            cursor: 'pointer',
+            px: 0.5,
+            py: 0.2,
+            borderRadius: '4px',
+            transition: 'background 0.2s',
+            '&:hover': { background: 'rgba(59,130,246,0.08)' },
+          }}
+          title={s.name}
+        >
+          <Box
+            sx={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: SCI_FI_COLORS[idx % SCI_FI_COLORS.length],
+              boxShadow: `0 0 6px ${SCI_FI_COLORS[idx % SCI_FI_COLORS.length]}`,
+              flexShrink: 0,
+            }}
+          />
+          <Typography
+            noWrap
+            sx={{
+              fontSize: '11px',
+              color: '#94a3b8',
+              maxWidth,
+              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+            }}
+          >
+            {s.name}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 export function ChartPanel({
   title,
   type,
@@ -133,7 +199,6 @@ export function ChartPanel({
   onDuplicate?: () => void
   showMenu?: boolean
 }) {
-  const theme = useTheme()
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
   const [chartData, setChartData] = useState<any>(null)
@@ -182,8 +247,7 @@ export function ChartPanel({
   useEffect(() => {
     if (!chartRef.current) return
     if (!chartInstance.current) {
-      // 跟随系统主题：不强制 dark 主题
-      chartInstance.current = echarts.init(chartRef.current, undefined, { renderer: 'canvas' })
+      chartInstance.current = echarts.init(chartRef.current, 'dark')
     }
 
     const ro = new ResizeObserver(() => chartInstance.current?.resize())
@@ -220,27 +284,6 @@ export function ChartPanel({
     const showLegend = options?.legend !== false && legendPlacement !== 'hidden'
     const chartWidth = chartRef.current?.clientWidth || 400
 
-    function buildLegend() {
-      if (!showLegend) return undefined
-      const divider = theme.palette.divider
-      const bg = theme.palette.background.paper
-      const common = {
-        type: 'scroll',
-        textStyle: { color: theme.palette.text.primary, fontSize: 11 },
-        tooltip: { show: true },
-        backgroundColor: bg,
-        borderWidth: 1,
-        borderColor: divider,
-        padding: [8, 10],
-      }
-      const maxLen = 32
-      const fmt = (name: string) => name.length > maxLen ? name.slice(0, maxLen) + '...' : name
-      if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect', height: 40, formatter: fmt } as any
-      if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 0, top: 'middle', icon: 'roundRect', width: 200, formatter: fmt } as any
-      if (legendPlacement === 'right') return { ...common, orient: 'vertical', right: 0, top: 'middle', icon: 'roundRect', width: 200, formatter: fmt } as any
-      return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect', height: 40, formatter: fmt } as any
-    }
-
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
     const hasGaugeData = chartData.value !== undefined
@@ -255,12 +298,19 @@ export function ChartPanel({
     const pointSize = resolveOption(options, 'pointSize')
     const lineInterpolation = resolveOption(options, 'lineInterpolation')
 
-    const axisColor = theme.palette.mode === 'dark' ? '#4b5563' : '#d1d5db'
-    const labelColor = theme.palette.mode === 'dark' ? '#9ca3af' : '#6b7280'
-    const splitColor = theme.palette.mode === 'dark' ? '#374151' : '#f3f4f6'
-    const tooltipBg = theme.palette.mode === 'dark' ? '#1f2937' : '#ffffff'
-    const tooltipBorder = theme.palette.mode === 'dark' ? '#374151' : '#e5e7eb'
-    const tooltipText = theme.palette.mode === 'dark' ? '#f3f4f6' : '#111827'
+    // Sci-fi dark theme colors (hardcoded for consistent aesthetic)
+    const axisColor = '#1e3a5f'
+    const labelColor = '#64748b'
+    const splitColor = '#0f172a'
+    const tooltipBg = 'rgba(11,17,32,0.95)'
+    const tooltipBorder = 'rgba(0,240,255,0.25)'
+    const tooltipText = '#e2e8f0'
+
+    // Custom DOM legend means we don't need grid to reserve legend space
+    const gridRight = legendPlacement === 'right' && showLegend ? 16 : 16
+    const gridLeft = legendPlacement === 'left' && showLegend ? 16 : 48
+    const gridBottom = legendPlacement === 'bottom' && showLegend ? 16 : 24
+    const gridTop = 24
 
     let option: echarts.EChartsOption = {}
 
@@ -274,15 +324,11 @@ export function ChartPanel({
             ? 'circle'
             : shouldShowPoints(showPoints, chartWidth, dataLength)
 
-          const gridRight = legendPlacement === 'right' ? (showLegend ? 220 : 16) : 16
-          const gridLeft = legendPlacement === 'left' ? (showLegend ? 220 : 16) : 56
-          const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 64 : 24) : 24
-
           option = {
             backgroundColor: 'transparent',
-            color: GRAFANA_COLORS,
+            color: SCI_FI_COLORS,
             grid: {
-              top: 24,
+              top: gridTop,
               right: gridRight,
               bottom: gridBottom,
               left: gridLeft,
@@ -292,23 +338,24 @@ export function ChartPanel({
               trigger: 'axis',
               backgroundColor: tooltipBg,
               borderColor: tooltipBorder,
-              textStyle: { color: tooltipText, fontSize: 12 },
-              axisPointer: { type: 'cross', label: { backgroundColor: splitColor } },
+              borderWidth: 1,
+              textStyle: { color: tooltipText, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
+              axisPointer: { type: 'cross', label: { backgroundColor: '#0b1120', color: '#00f0ff' }, lineStyle: { color: 'rgba(0,240,255,0.4)' }, crossStyle: { color: 'rgba(0,240,255,0.2)' } },
               confine: true,
               order: 'valueDesc',
               enterable: true,
-              extraCssText: 'max-height: 260px; overflow-y: auto;',
+              extraCssText: 'max-height: 260px; overflow-y: auto; backdrop-filter: blur(6px);',
               formatter: (params: any) => {
                 if (!Array.isArray(params) || params.length === 0) return ''
                 const t = new Date(params[0].axisValue)
                 const timeLabel = `${(t.getMonth() + 1).toString().padStart(2, '0')}/${t.getDate().toString().padStart(2, '0')} ${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`
-                let html = `<div style="font-weight:600;margin-bottom:4px;color:${tooltipText}">${timeLabel}</div>`
+                let html = `<div style="font-weight:600;margin-bottom:6px;color:#00f0ff;font-size:12px;">${timeLabel}</div>`
                 for (let i = 0; i < params.length; i++) {
                   const p = params[i]
-                  html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;white-space:nowrap;color:${tooltipText}">`
-                  html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`
-                  html += `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;max-width:280px;">${p.seriesName}</span>`
-                  html += `<span style="font-weight:600;margin-left:8px;">${p.value}</span>`
+                  html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;white-space:nowrap;color:#e2e8f0;font-size:11px;">`
+                  html += `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${p.color};box-shadow:0 0 5px ${p.color};"></span>`
+                  html += `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;max-width:260px;">${p.seriesName}</span>`
+                  html += `<span style="font-weight:600;margin-left:8px;color:#fff;">${p.value}</span>`
                   html += `</div>`
                 }
                 return html
@@ -320,31 +367,33 @@ export function ChartPanel({
             xAxis: {
               type: 'time',
               axisLine: { lineStyle: { color: axisColor } },
-              axisLabel: { color: labelColor, fontSize: 11, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
+              axisLabel: { color: labelColor, fontSize: 10, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
               splitLine: { show: false },
             },
             yAxis: {
               type: 'value',
               axisLine: { show: false },
-              axisLabel: { color: labelColor, fontSize: 11 },
-              splitLine: { lineStyle: { color: splitColor } },
+              axisLabel: { color: labelColor, fontSize: 10, fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
+              splitLine: { lineStyle: { color: splitColor, type: 'dashed' } },
             },
-            legend: buildLegend(),
-            series: chartData.series.map((s: any) => {
+            legend: { show: false }, // custom DOM legend instead
+            series: chartData.series.map((s: any, idx: number) => {
               const isLine = effectiveType === 'line'
               const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
+              const c = SCI_FI_COLORS[idx % SCI_FI_COLORS.length]
 
               return {
                 name: s.name,
                 type: effectiveType,
-                data: s.data.map((v: number, idx: number) => [chartData.timestamps[idx], v]),
+                data: s.data.map((v: number, i: number) => [chartData.timestamps[i], v]),
                 smooth: lineInterpolation === 'smooth',
                 symbol: symbol,
                 symbolSize: symbol === 'circle' ? pointSize : undefined,
-                lineStyle: isLine ? { width: lineWidth } : undefined,
-                areaStyle: areaOpacity > 0 ? { opacity: areaOpacity } : undefined,
+                lineStyle: isLine ? { width: lineWidth, shadowBlur: 8, shadowColor: c } : undefined,
+                itemStyle: { color: c },
+                areaStyle: areaOpacity > 0 ? { opacity: areaOpacity, color: new (echarts as any).graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: c }, { offset: 1, color: 'transparent' }]) } : undefined,
                 emphasis: {
-                  lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined },
+                  lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined, shadowBlur: 12, shadowColor: c },
                 },
               }
             }),
@@ -354,25 +403,25 @@ export function ChartPanel({
         case 'pie': {
           const pieCount = (chartData.data || []).length
           const showPieLabel = pieCount <= 10
-          const centerX = legendPlacement === 'right' ? '40%' : (legendPlacement === 'left' ? '60%' : '50%')
           option = {
             backgroundColor: 'transparent',
-            color: GRAFANA_COLORS,
+            color: SCI_FI_COLORS,
             tooltip: {
               trigger: 'item',
               backgroundColor: tooltipBg,
               borderColor: tooltipBorder,
+              borderWidth: 1,
               textStyle: { color: tooltipText },
             },
-            legend: buildLegend(),
+            legend: { show: false },
             series: [{
               type: 'pie',
               radius: ['35%', '65%'],
-              center: [centerX, '50%'],
+              center: ['50%', '50%'],
               data: chartData.data || [],
-              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11, color: labelColor },
+              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 10, color: '#94a3b8' },
               emphasis: {
-                itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
+                itemStyle: { shadowBlur: 14, shadowOffsetX: 0, shadowColor: 'rgba(0, 240, 255, 0.6)' },
               },
             }],
           }
@@ -385,21 +434,22 @@ export function ChartPanel({
               trigger: 'item',
               backgroundColor: tooltipBg,
               borderColor: tooltipBorder,
+              borderWidth: 1,
               textStyle: { color: tooltipText },
             },
             series: [{
               type: 'gauge',
               min: options?.min ?? 0,
               max: options?.max ?? 100,
-              detail: { formatter: '{value}', fontSize: 24, color: tooltipText },
+              detail: { formatter: '{value}', fontSize: 26, color: '#e2e8f0', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
               data: [{ value: chartData.value, name: chartData.name }],
               axisLine: { lineStyle: { width: 12, color: [
-                [0.3, '#7EB26D'], [0.7, '#EAB839'], [1, '#E24D42']
+                [0.3, '#00f0ff'], [0.7, '#facc15'], [1, '#ff00aa']
               ] } },
-              splitLine: { length: 12 },
-              axisTick: { length: 8 },
-              axisLabel: { fontSize: 10, color: labelColor },
-              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '70%'] },
+              splitLine: { length: 12, lineStyle: { color: '#1e3a5f' } },
+              axisTick: { length: 8, lineStyle: { color: '#1e3a5f' } },
+              axisLabel: { fontSize: 10, color: '#64748b' },
+              title: { fontSize: 12, color: '#64748b', offsetCenter: [0, '70%'] },
             }],
           }
           break
@@ -409,28 +459,48 @@ export function ChartPanel({
     } catch (e) {
       console.error('ECharts render error:', e)
     }
-  }, [chartData, type, options, theme])
+  }, [chartData, type, options])
+
+  const legendPlacement = options?.legendPlacement ?? 'bottom'
+  const showCustomLegend = options?.legend !== false && legendPlacement !== 'hidden' && (type === 'line' || type === 'bar' || type === 'pie')
 
   return (
     <Paper
       sx={{
         height: '100%',
         width: '100%',
-        borderRadius: '3px',
+        borderRadius: '6px',
         p: 1.5,
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        border: `1px solid ${theme.palette.divider}`,
+        background: 'linear-gradient(145deg, rgba(13,20,36,0.95) 0%, rgba(8,12,22,0.98) 100%)',
+        border: '1px solid rgba(59,130,246,0.12)',
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.3), 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)',
+        transition: 'box-shadow 0.3s, border-color 0.3s',
+        '&:hover': {
+          borderColor: 'rgba(59,130,246,0.25)',
+          boxShadow: '0 0 0 1px rgba(0,0,0,0.3), 0 12px 40px rgba(0,0,0,0.45), 0 0 18px rgba(0,240,255,0.06), inset 0 1px 0 rgba(255,255,255,0.03)',
+        },
       }}
+      elevation={0}
     >
       <Box className="grid-drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, position: 'relative', zIndex: 10, cursor: 'move' }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 500, fontSize: '0.8125rem', color: 'text.primary' }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            fontWeight: 500,
+            fontSize: '0.8125rem',
+            color: '#00f0ff',
+            textShadow: '0 0 8px rgba(0,240,255,0.35)',
+            letterSpacing: '0.02em',
+          }}
+        >
           {title}
         </Typography>
         {showMenu && (
           <>
-            <IconButton size="small" className="grid-drag-cancel" onClick={(e) => setMenuAnchor(e.currentTarget)}>
+            <IconButton size="small" className="grid-drag-cancel" onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: '#94a3b8' }}>
               <MoreVertIcon fontSize="small" />
             </IconButton>
             <Menu
@@ -439,59 +509,87 @@ export function ChartPanel({
               onClose={() => setMenuAnchor(null)}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              PaperProps={{ sx: { bgcolor: 'rgba(11,17,32,0.98)', border: '1px solid rgba(59,130,246,0.25)', color: '#e2e8f0' } }}
             >
-              {onEdit && <MenuItem onClick={() => { setMenuAnchor(null); onEdit() }}>编辑</MenuItem>}
-              {onDuplicate && <MenuItem onClick={() => { setMenuAnchor(null); onDuplicate() }}>复制</MenuItem>}
-              {onDelete && <MenuItem onClick={() => { setMenuAnchor(null); onDelete() }} sx={{ color: 'error.main' }}>删除</MenuItem>}
+              {onEdit && <MenuItem onClick={() => { setMenuAnchor(null); onEdit() }} sx={{ color: '#e2e8f0', fontSize: 13 }}>编辑</MenuItem>}
+              {onDuplicate && <MenuItem onClick={() => { setMenuAnchor(null); onDuplicate() }} sx={{ color: '#e2e8f0', fontSize: 13 }}>复制</MenuItem>}
+              {onDelete && <MenuItem onClick={() => { setMenuAnchor(null); onDelete() }} sx={{ color: '#ff00aa', fontSize: 13 }}>删除</MenuItem>}
             </Menu>
           </>
         )}
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative', mt: 0.5 }}>
-        {type === 'stat' ? (
-          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-            <Typography variant="h3" sx={{ fontWeight: 700, color: options?.thresholds ? options.thresholds[0]?.color : 'text.primary' }}>
-              {statValue !== null ? statValue.toFixed(options?.decimals ?? 1) : '-'}
-            </Typography>
-            {options?.unit && (
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>{options.unit}</Typography>
-            )}
-          </Box>
-        ) : type === 'table' ? (
-          <Box sx={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
-            <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: 'text.primary' }}>
-              <Box component="thead">
-                <Box component="tr">
-                  {['Time', 'Metric', 'Value'].map((h) => (
-                    <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: `1px solid ${theme.palette.divider}`, color: 'text.secondary' }}>{h}</Box>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: showCustomLegend && legendPlacement === 'right' ? 'row' : 'column',
+        }}
+      >
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', mt: 0.5 }}>
+          {type === 'stat' ? (
+            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+              <Typography
+                variant="h3"
+                sx={{
+                  fontWeight: 700,
+                  color: options?.thresholds ? options.thresholds[0]?.color : '#e2e8f0',
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                  textShadow: '0 0 14px rgba(0,240,255,0.25)',
+                }}
+              >
+                {statValue !== null ? statValue.toFixed(options?.decimals ?? 1) : '-'}
+              </Typography>
+              {options?.unit && (
+                <Typography variant="caption" sx={{ color: '#64748b', mt: 0.5 }}>{options.unit}</Typography>
+              )}
+            </Box>
+          ) : type === 'table' ? (
+            <Box sx={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
+              <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: '#e2e8f0' }}>
+                <Box component="thead">
+                  <Box component="tr">
+                    {['Time', 'Metric', 'Value'].map((h) => (
+                      <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.75, borderBottom: '1px solid rgba(59,130,246,0.2)', color: '#00f0ff', fontSize: 10, fontWeight: 600 }}>{h}</Box>
+                    ))}
+                  </Box>
+                </Box>
+                <Box component="tbody">
+                  {tableData?.rows.map((row: any, idx: number) => (
+                    <Box component="tr" key={idx} sx={{ '&:hover': { background: 'rgba(59,130,246,0.06)' } }}>
+                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid rgba(30,58,95,0.4)', color: '#94a3b8', fontSize: 10 }}>{row.time}</Box>
+                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid rgba(30,58,95,0.4)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 10 }}>{row.metric}</Box>
+                      <Box component="td" sx={{ p: 0.75, borderBottom: '1px solid rgba(30,58,95,0.4)', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace', fontSize: 10 }}>{row.value}</Box>
+                    </Box>
                   ))}
                 </Box>
               </Box>
-              <Box component="tbody">
-                {tableData?.rows.map((row: any, idx: number) => (
-                  <Box component="tr" key={idx}>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: `1px solid ${theme.palette.divider}` }}>{row.time}</Box>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: `1px solid ${theme.palette.divider}`, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: `1px solid ${theme.palette.divider}` }}>{row.value}</Box>
-                  </Box>
-                ))}
-              </Box>
             </Box>
-          </Box>
-        ) : (
-          <Box
-            className="grid-drag-cancel"
-            ref={chartRef}
-            sx={{ position: 'absolute', inset: 0 }}
-          />
-        )}
+          ) : (
+            <Box
+              className="grid-drag-cancel"
+              ref={chartRef}
+              sx={{ position: 'absolute', inset: 0 }}
+            />
+          )}
 
-        {(loading || error) && type !== 'stat' && (
-          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)' }}>
-            {loading && <CircularProgress size={24} />}
-            {error && !loading && <Typography variant="caption" color="error">{error}</Typography>}
-          </Box>
+          {(loading || error) && type !== 'stat' && (
+            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(8,12,22,0.7)' }}>
+              {loading && <CircularProgress size={24} sx={{ color: '#00f0ff' }} />}
+              {error && !loading && <Typography variant="caption" sx={{ color: '#ff00aa' }}>{error}</Typography>}
+            </Box>
+          )}
+        </Box>
+
+        {showCustomLegend && chartData?.series && legendPlacement === 'bottom' && (
+          <CustomLegend series={chartData.series} placement="bottom" />
+        )}
+        {showCustomLegend && chartData?.series && legendPlacement === 'right' && (
+          <CustomLegend series={chartData.series} placement="right" />
+        )}
+        {showCustomLegend && chartData?.series && legendPlacement === 'left' && (
+          <CustomLegend series={chartData.series} placement="left" />
         )}
       </Box>
     </Paper>

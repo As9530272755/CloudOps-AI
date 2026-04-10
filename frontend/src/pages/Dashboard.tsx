@@ -66,7 +66,6 @@ interface GrafanaGridItemProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
 }
 
-// Intercept react-grid-layout dimensions and pass width/height to children (same as Grafana DashboardGrid)
 const GrafanaGridItem = React.forwardRef<HTMLDivElement, GrafanaGridItemProps>((props, ref) => {
   const { children, style, ...divProps } = props
   let width = 100
@@ -108,7 +107,6 @@ export default function Dashboard() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
 
-  // === Grafana: ResizeObserver on root to track grid width ===
   useEffect(() => {
     if (!gridRootRef.current) return
     const el = gridRootRef.current
@@ -148,7 +146,6 @@ export default function Dashboard() {
     loadDashboard()
   }, [loadClusters, loadDashboard])
 
-  // Auto refresh
   useEffect(() => {
     if (!refreshInterval) return
     const timer = setInterval(() => setRefreshTick((t) => t + 1), refreshInterval * 1000)
@@ -173,7 +170,6 @@ export default function Dashboard() {
     }
   }
 
-  // Build layout for react-grid-layout (Grafana style)
   const layout = useMemo(() => {
     return panels.map((p) => {
       let pos = { x: 0, y: 0, w: 12, h: 8 }
@@ -184,7 +180,6 @@ export default function Dashboard() {
     })
   }, [panels])
 
-  // Grafana animation hack: delay move animations to avoid fly-in on initial load
   useEffect(() => {
     if (gridWrapperRef.current) {
       const ref = gridWrapperRef.current
@@ -236,7 +231,6 @@ export default function Dashboard() {
   const onDragStop = useCallback(
     (_layout: ReactGridLayout.Layout[], _oldItem: ReactGridLayout.Layout, newItem: ReactGridLayout.Layout) => {
       if (!editMode) return
-      // Update single item and sort
       const updated = panels.map((p) =>
         String(p.id) === newItem.i ? { ...p, position: JSON.stringify({ x: newItem.x, y: newItem.y, w: newItem.w, h: newItem.h }) } : p
       )
@@ -309,7 +303,6 @@ export default function Dashboard() {
   const totalPods = clusters.reduce((sum, c) => sum + (c.metadata?.pod_count || 0), 0)
   const healthyClusters = clusters.filter((c) => c.metadata?.health_status === 'healthy').length
 
-  // Render individual panel wrapped in GrafanaGridItem
   const renderPanels = () => {
     return panels.map((panel) => {
       const parsedOptions = panel.options ? JSON.parse(panel.options) : {}
@@ -335,31 +328,87 @@ export default function Dashboard() {
   }
 
   return (
-    <Box sx={{ p: 3, minHeight: '100vh' }}>
+    <Box
+      sx={{
+        p: 3,
+        minHeight: '100vh',
+        bgcolor: '#070b14',
+        backgroundImage: `
+          radial-gradient(circle at 15% 25%, rgba(0,240,255,0.04) 0%, transparent 40%),
+          radial-gradient(circle at 85% 75%, rgba(255,0,170,0.03) 0%, transparent 40%),
+          linear-gradient(rgba(11,18,34,0.3) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(11,18,34,0.3) 1px, transparent 1px)
+        `,
+        backgroundSize: '100% 100%, 100% 100%, 40px 40px, 40px 40px',
+      }}
+    >
       {/* === Header toolbar === */}
-      <Card sx={{ mb: 3 }}>
+      <Card
+        sx={{
+          mb: 3,
+          borderRadius: '8px',
+          background: 'linear-gradient(145deg, rgba(13,22,40,0.95) 0%, rgba(8,14,26,0.98) 100%)',
+          border: '1px solid rgba(59,130,246,0.12)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)',
+        }}
+      >
         <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>仪表盘</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="h5" sx={{ fontWeight: 600, color: '#e2e8f0', letterSpacing: '0.01em' }}>
+              仪表盘
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#64748b' }}>
               可视化监控中心
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <ToggleButtonGroup size="small" value={timeRange} exclusive onChange={(_, v) => v && setTimeRange(v)}>
+            <ToggleButtonGroup
+              size="small"
+              value={timeRange}
+              exclusive
+              onChange={(_, v) => v && setTimeRange(v)}
+              sx={{
+                '& .MuiToggleButton-root': {
+                  color: '#94a3b8',
+                  borderColor: 'rgba(59,130,246,0.2)',
+                  '&.Mui-selected': {
+                    color: '#00f0ff',
+                    background: 'rgba(0,240,255,0.08)',
+                    borderColor: 'rgba(0,240,255,0.35)',
+                    textShadow: '0 0 8px rgba(0,240,255,0.35)',
+                  },
+                },
+              }}
+            >
               {timeRangeOptions.map((opt) => (
                 <ToggleButton key={opt.value} value={opt.value}>{opt.label}</ToggleButton>
               ))}
             </ToggleButtonGroup>
 
-            <ToggleButtonGroup size="small" value={refreshInterval} exclusive onChange={(_, v) => v !== null && setRefreshInterval(v)}>
+            <ToggleButtonGroup
+              size="small"
+              value={refreshInterval}
+              exclusive
+              onChange={(_, v) => v !== null && setRefreshInterval(v)}
+              sx={{
+                '& .MuiToggleButton-root': {
+                  color: '#94a3b8',
+                  borderColor: 'rgba(59,130,246,0.2)',
+                  '&.Mui-selected': {
+                    color: '#facc15',
+                    background: 'rgba(250,204,21,0.08)',
+                    borderColor: 'rgba(250,204,21,0.35)',
+                  },
+                },
+              }}
+            >
               {refreshOptions.map((opt) => (
                 <ToggleButton key={opt.value} value={opt.value}>{opt.label}</ToggleButton>
               ))}
             </ToggleButtonGroup>
 
             <Tooltip title="刷新">
-              <IconButton onClick={() => setRefreshTick((t) => t + 1)}>
+              <IconButton onClick={() => setRefreshTick((t) => t + 1)} sx={{ color: '#94a3b8' }}>
                 <RefreshIcon />
               </IconButton>
             </Tooltip>
@@ -374,11 +423,24 @@ export default function Dashboard() {
                   setEditMode(true)
                 }
               }}
+              sx={editMode
+                ? {
+                    background: 'linear-gradient(135deg, #00f0ff 0%, #007AFF 100%)',
+                    color: '#fff',
+                    boxShadow: '0 0 16px rgba(0,240,255,0.25)',
+                    border: 'none',
+                  }
+                : {
+                    color: '#00f0ff',
+                    borderColor: 'rgba(0,240,255,0.35)',
+                    '&:hover': { borderColor: 'rgba(0,240,255,0.6)', background: 'rgba(0,240,255,0.06)' },
+                  }
+              }
             >
               {editMode ? '保存布局' : '编辑'}
             </Button>
             {editMode && (
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddPanel}>
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddPanel} sx={{ color: '#facc15', borderColor: 'rgba(250,204,21,0.35)', '&:hover': { borderColor: 'rgba(250,204,21,0.6)', background: 'rgba(250,204,21,0.06)' } }}>
                 添加面板
               </Button>
             )}
@@ -389,15 +451,33 @@ export default function Dashboard() {
       {/* === Stat cards === */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
         {[
-          { label: '集群总数', value: clusters.length, color: '#007AFF' },
-          { label: '健康集群', value: healthyClusters, color: '#34C759' },
-          { label: '节点总数', value: totalNodes, color: '#5856D6' },
-          { label: 'Pod 总数', value: totalPods, color: '#FF9500' },
+          { label: '集群总数', value: clusters.length, color: '#00f0ff' },
+          { label: '健康集群', value: healthyClusters, color: '#00ff88' },
+          { label: '节点总数', value: totalNodes, color: '#a855f7' },
+          { label: 'Pod 总数', value: totalPods, color: '#facc15' },
         ].map((stat) => (
-          <Card key={stat.label} sx={{ borderLeft: `4px solid ${stat.color}` }}>
+          <Card
+            key={stat.label}
+            sx={{
+              borderRadius: '8px',
+              background: 'linear-gradient(145deg, rgba(13,22,40,0.95) 0%, rgba(8,14,26,0.98) 100%)',
+              border: '1px solid rgba(59,130,246,0.08)',
+              borderLeft: `3px solid ${stat.color}`,
+              boxShadow: `0 4px 20px rgba(0,0,0,0.3), inset 0 0 18px ${stat.color}10`,
+            }}
+          >
             <CardContent>
-              <Typography variant="body2" color="text.secondary">{stat.label}</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: stat.color, mt: 1 }}>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>{stat.label}</Typography>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 700,
+                  color: stat.color,
+                  mt: 1,
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                  textShadow: `0 0 12px ${stat.color}40`,
+                }}
+              >
                 {stat.value}
               </Typography>
             </CardContent>
@@ -405,27 +485,25 @@ export default function Dashboard() {
         ))}
       </Box>
 
-      {/* === Edit mode: no top management bar, panel actions are via ⋮ menu === */}
-
       {/* === Dashboard Grid (Grafana style) === */}
       {!dashboard && !editMode ? (
-        <Card sx={{ textAlign: 'center', py: 8 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>
+        <Card sx={{ textAlign: 'center', py: 8, bgcolor: 'rgba(13,22,40,0.6)', border: '1px solid rgba(59,130,246,0.12)' }}>
+          <Typography variant="h6" sx={{ mb: 2, color: '#e2e8f0' }}>
             暂无仪表盘
           </Typography>
-          <Button variant="contained" onClick={handleAddPanel}>
+          <Button variant="contained" onClick={handleAddPanel} sx={{ background: 'linear-gradient(135deg, #00f0ff 0%, #007AFF 100%)', color: '#fff' }}>
             创建默认仪表盘并添加面板
           </Button>
         </Card>
       ) : (
         <Box sx={{ position: 'relative' }}>
           {panels.length === 0 && !editMode && (
-            <Card sx={{ textAlign: 'center', py: 8 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>当前仪表盘为空</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            <Card sx={{ textAlign: 'center', py: 8, bgcolor: 'rgba(13,22,40,0.6)', border: '1px solid rgba(59,130,246,0.12)' }}>
+              <Typography variant="h6" sx={{ mb: 2, color: '#e2e8f0' }}>当前仪表盘为空</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
                 点击编辑按钮添加您的第一个监控面板
               </Typography>
-              <Button variant="contained" onClick={() => setEditMode(true)}>
+              <Button variant="contained" onClick={() => setEditMode(true)} sx={{ background: 'linear-gradient(135deg, #00f0ff 0%, #007AFF 100%)', color: '#fff' }}>
                 开始编辑
               </Button>
             </Card>
@@ -461,9 +539,6 @@ export default function Dashboard() {
         </Box>
       )}
 
-      {/* === Add panel button moved to top toolbar === */}
-
-      {/* === Grafana-style Panel Editor (full screen takeover) === */}
       <PanelEditor
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
