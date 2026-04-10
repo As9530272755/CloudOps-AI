@@ -117,6 +117,39 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
                   <MenuItem value="table">表格</MenuItem>
                 </Select>
               </FormControl>
+              {(() => {
+                let parsed: any = {}
+                try { if (options) parsed = JSON.parse(options) } catch {}
+                const placement = parsed.legendPlacement || 'right'
+                const showLegend = parsed.legend !== false
+                const setOpt = (patch: any) => {
+                  try {
+                    const next = { ...parsed, ...patch }
+                    setOptions(JSON.stringify(next))
+                  } catch {}
+                }
+                return (
+                  <>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>图例位置</InputLabel>
+                      <Select
+                        value={showLegend ? placement : 'hidden'}
+                        label="图例位置"
+                        onChange={(e) => {
+                          const v = e.target.value as any
+                          if (v === 'hidden') setOpt({ legend: false })
+                          else setOpt({ legend: true, legendPlacement: v })
+                        }}
+                      >
+                        <MenuItem value="right">右侧</MenuItem>
+                        <MenuItem value="left">左侧</MenuItem>
+                        <MenuItem value="bottom">底部</MenuItem>
+                        <MenuItem value="hidden">隐藏</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </>
+                )
+              })()}
               <FormControl fullWidth size="small">
                 <InputLabel>数据源</InputLabel>
                 <Select

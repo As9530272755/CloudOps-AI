@@ -190,9 +190,19 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     if (!chartInstance.current || !chartData) return
     if (type === 'stat' || type === 'table') return
 
-    const showLegend = options?.legend !== false
+    const legendPlacement = options?.legendPlacement ?? 'right'
+    const showLegend = options?.legend !== false && legendPlacement !== 'hidden'
     const chartWidth = chartRef.current?.clientWidth || 400
     const dataLength = chartData.times?.length || 1
+
+    function buildLegend() {
+      if (!showLegend) return undefined
+      const common = { type: 'scroll', textStyle: { color: '#374151', fontSize: 11, width: 135, overflow: 'truncate' }, pageIconColor: '#374151', pageTextStyle: { color: '#374151' }, tooltip: { show: true } }
+      if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 8, left: 'center', icon: 'roundRect' } as any
+      if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 8, top: 8, bottom: 8, icon: 'roundRect' } as any
+      // right (default)
+      return { ...common, orient: 'vertical', right: 8, top: 8, bottom: 8, icon: 'roundRect' } as any
+    }
 
     // Resolve Grafana-style options with defaults
     const drawStyle = resolveOption(options, 'drawStyle')
@@ -212,14 +222,18 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
           ? 'circle'
           : shouldShowPoints(showPoints, chartWidth, dataLength)
 
+        const gridRight = legendPlacement === 'right' ? (showLegend ? 160 : 16) : 16
+        const gridLeft = legendPlacement === 'left' ? (showLegend ? 160 : 16) : 48
+        const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 80 : 40) : 40
+
         option = {
           backgroundColor: 'transparent',
           color: GRAFANA_COLORS,
           grid: {
             top: 16,
-            right: showLegend ? 160 : 16,
-            bottom: 40,
-            left: 48,
+            right: gridRight,
+            bottom: gridBottom,
+            left: gridLeft,
             containLabel: false,
           },
           tooltip: {
@@ -248,20 +262,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             axisLabel: { color: '#6b7280', fontSize: 11 },
             splitLine: { lineStyle: { color: '#e5e7eb' } },
           },
-          legend: showLegend
-            ? {
-                type: 'scroll',
-                orient: 'vertical',
-                right: 8,
-                top: 8,
-                bottom: 8,
-                icon: 'roundRect',
-                textStyle: { color: '#374151', fontSize: 11, width: 135, overflow: 'truncate' },
-                pageIconColor: '#374151',
-                pageTextStyle: { color: '#374151' },
-                tooltip: { show: true },
-              }
-            : undefined,
+          legend: buildLegend(),
           series: chartData.series.map((s: any) => {
             const isLine = effectiveType === 'line'
             const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
@@ -285,7 +286,11 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
         }
         break
       }
-      case 'pie':
+      case 'pie': {
+        const pieCount = (chartData.data || []).length
+        // Grafana style: hide pie labels when too many series to avoid overlap hell
+        const showPieLabel = pieCount <= 10
+        const centerX = legendPlacement === 'right' ? '40%' : (legendPlacement === 'left' ? '60%' : '50%')
         option = {
           backgroundColor: 'transparent',
           color: GRAFANA_COLORS,
@@ -295,21 +300,20 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             borderColor: '#374151',
             textStyle: { color: '#f3f4f6' },
           },
-          legend: options?.legend !== false
-            ? { type: 'scroll', orient: 'vertical', right: 8, top: 'center', textStyle: { fontSize: 11 } }
-            : undefined,
+          legend: buildLegend(),
           series: [{
             type: 'pie',
             radius: ['35%', '65%'],
-            center: ['40%', '50%'],
+            center: [centerX, '50%'],
             data: chartData.data || [],
-            label: { show: true, formatter: '{b}: {c}', fontSize: 11 },
+            label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11 },
             emphasis: {
               itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
             },
           }],
         }
         break
+      }
       case 'gauge':
         option = {
           backgroundColor: 'transparent',

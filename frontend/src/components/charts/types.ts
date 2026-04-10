@@ -11,6 +11,7 @@ export interface PanelPosition {
 export interface PanelOptions {
   unit?: string
   legend?: boolean
+  legendPlacement?: 'right' | 'left' | 'bottom' | 'hidden'
   thresholds?: Array<{ value: number; color: string }>
   colors?: string[]
   min?: number
