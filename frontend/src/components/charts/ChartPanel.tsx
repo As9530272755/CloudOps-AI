@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Box, Typography, IconButton, CircularProgress, Paper } from '@mui/material'
-import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material'
+import { Box, Typography, CircularProgress, Paper } from '@mui/material'
 import * as echarts from 'echarts'
 import { ChartType, PanelOptions } from './types'
 import { datasourceAPI } from '../../lib/datasource-api'
@@ -11,9 +10,6 @@ interface ChartPanelProps {
   query: string
   dataSourceId: number
   options?: PanelOptions
-  isEditing?: boolean
-  onEdit?: () => void
-  onDelete?: () => void
   start?: string
   end?: string
   step?: string
@@ -90,9 +86,6 @@ export default function ChartPanel({
   query,
   dataSourceId,
   options = {},
-  isEditing,
-  onEdit,
-  onDelete,
   start,
   end,
   step,
@@ -262,18 +255,10 @@ export default function ChartPanel({
         border: '1px solid rgba(255,255,255,0.3)',
       }}
     >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}>
-        <Box className="drag-handle" sx={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
-            {title}
-          </Typography>
-        </Box>
-        {isEditing && (
-          <Box sx={{ position: 'relative', zIndex: 10 }}>
-            <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit?.() }}><EditIcon fontSize="small" /></IconButton>
-            <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); onDelete?.() }}><DeleteIcon fontSize="small" /></IconButton>
-          </Box>
-        )}
+      <Box className="drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
+          {title}
+        </Typography>
       </Box>
 
       {loading && (

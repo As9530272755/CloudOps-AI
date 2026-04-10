@@ -10,12 +10,14 @@ import {
   IconButton,
   Tooltip,
   Fab,
+  Chip,
 } from '@mui/material'
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Save as SaveIcon,
   Refresh as RefreshIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material'
 import GridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -137,6 +139,22 @@ export default function Dashboard() {
     return `grid-${panels.map((p) => p.id).join('-')}`
   }, [panels])
 
+  const handleEditPanel = (panel: DashboardPanel) => {
+    setEditingPanel(panel)
+    setEditorOpen(true)
+  }
+
+  const handleDeletePanel = async (panel: DashboardPanel) => {
+    if (!dashboard) return
+    if (!confirm(`确定删除面板 "${panel.title}" 吗？`)) return
+    try {
+      await dashboardAPI.deletePanel(dashboard.id, panel.id)
+      loadDashboard()
+    } catch (err: any) {
+      alert(err.message || '删除失败')
+    }
+  }
+
   const handleLayoutChange = (newLayout: any) => {
     if (!editMode) return
     const updated = panels.map((p) => {
@@ -168,18 +186,6 @@ export default function Dashboard() {
   const handleAddPanel = () => {
     setEditingPanel(undefined)
     setEditorOpen(true)
-  }
-
-  const handleEditPanel = (panel: DashboardPanel) => {
-    setEditingPanel(panel)
-    setEditorOpen(true)
-  }
-
-  const handleDeletePanel = async (panel: DashboardPanel) => {
-    if (!dashboard) return
-    if (!confirm(`确定删除面板 ${panel.title} 吗？`)) return
-    await dashboardAPI.deletePanel(dashboard.id, panel.id)
-    loadDashboard()
   }
 
   const handleSavePanel = async (data: any) => {
@@ -279,6 +285,54 @@ export default function Dashboard() {
         ))}
       </Box>
 
+      {/* 编辑模式：顶部管理条 */}
+      {editMode && (
+        <Card sx={{ mb: 3, ...glassEffect }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                面板管理
+              </Typography>
+              <Button variant="outlined" size="small" onClick={() => setEditMode(false)}>
+                退出编辑
+              </Button>
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {panels.map((panel) => (
+                <Card
+                  key={panel.id}
+                  sx={{
+                    px: 2,
+                    py: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    borderRadius: '12px',
+                    background: 'rgba(255,255,255,0.9)',
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {panel.title}
+                  </Typography>
+                  <Chip label={panel.type} size="small" variant="outlined" />
+                  <IconButton size="small" onClick={() => handleEditPanel(panel)}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" color="error" onClick={() => handleDeletePanel(panel)}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Card>
+              ))}
+              {panels.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  当前无面板，点击下方按钮添加
+                </Typography>
+              )}
+            </Box>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Dashboard Grid */}
       {!dashboard && !editMode ? (
         <Card sx={{ ...glassEffect, textAlign: 'center', py: 8 }}>
@@ -323,9 +377,6 @@ export default function Dashboard() {
                     query={panel.query}
                     dataSourceId={panel.data_source_id}
                     options={panel.options ? JSON.parse(panel.options) : {}}
-                    isEditing={editMode}
-                    onEdit={() => handleEditPanel(panel)}
-                    onDelete={() => handleDeletePanel(panel)}
                     start={startStr}
                     end={endStr}
                     step="15s"
