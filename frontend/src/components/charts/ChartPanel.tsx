@@ -41,7 +41,7 @@ function formatPrometheusData(result: any, chartType: ChartType) {
   if (!result?.data?.result) return null
 
   const series: Array<{ name: string; data: number[] }> = []
-  const times: string[] = []
+  const timestamps: number[] = []
 
   const results = result.data.result
 
@@ -85,19 +85,19 @@ function formatPrometheusData(result: any, chartType: ChartType) {
     if (item.values) {
       const data: number[] = []
       item.values.forEach((v: [number, string]) => {
-        if (times.length < item.values.length) {
-          times.push(new Date(v[0] * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
+        if (timestamps.length < item.values.length) {
+          timestamps.push(v[0] * 1000)
         }
         data.push(parseFloat(v[1]))
       })
       series.push({ name, data })
     } else if (item.value) {
       series.push({ name, data: [parseFloat(item.value[1])] })
-      times.push(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
+      timestamps.push(Date.now())
     }
   })
 
-  return { series, times }
+  return { series, timestamps }
 }
 
 // Grafana-style auto points: show points when density is low
@@ -193,7 +193,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     const legendPlacement = options?.legendPlacement ?? 'right'
     const showLegend = options?.legend !== false && legendPlacement !== 'hidden'
     const chartWidth = chartRef.current?.clientWidth || 400
-    const dataLength = chartData.times?.length || 1
+    const dataLength = chartData.timestamps?.length || 1
 
     function buildLegend() {
       if (!showLegend) return undefined
@@ -205,7 +205,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     }
 
     // Guard: 切换图表类型时，旧 chartData 结构可能与新 type 不匹配（例如 pie -> line）
-    const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.times)
+    const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
     const hasGaugeData = chartData.value !== undefined
     if ((type === 'line' || type === 'bar') && !hasSeries) return
@@ -257,7 +257,9 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               extraCssText: 'max-height: 260px; overflow-y: auto;',
               formatter: (params: any) => {
                 if (!Array.isArray(params) || params.length === 0) return ''
-                let html = `<div style="font-weight:600;margin-bottom:4px;">${params[0].axisValue}</div>`
+                const t = new Date(params[0].axisValue)
+                const timeLabel = `${(t.getMonth() + 1).toString().padStart(2, '0')}/${t.getDate().toString().padStart(2, '0')} ${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`
+                let html = `<div style="font-weight:600;margin-bottom:4px;">${timeLabel}</div>`
                 for (let i = 0; i < params.length; i++) {
                   const p = params[i]
                   html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;white-space:nowrap;">`
@@ -274,10 +276,9 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               { type: 'slider', start: 0, end: 100, height: 18, bottom: 8, borderColor: 'transparent', fillerColor: 'rgba(0,122,255,0.15)' },
             ],
             xAxis: {
-              type: 'category',
-              data: chartData.times || [],
+              type: 'time',
               axisLine: { lineStyle: { color: '#d1d5db' } },
-              axisLabel: { color: '#6b7280', fontSize: 11, rotate: 0 },
+              axisLabel: { color: '#6b7280', fontSize: 11, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
               splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
             },
             yAxis: {
@@ -294,7 +295,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               return {
                 name: s.name,
                 type: effectiveType,
-                data: s.data,
+                data: s.data.map((v: number, idx: number) => [chartData.timestamps[idx], v]),
                 smooth: lineInterpolation === 'smooth',
                 symbol: symbol,
                 symbolSize: symbol === 'circle' ? pointSize : undefined,
