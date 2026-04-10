@@ -180,11 +180,15 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
               <InputLabel>图表类型</InputLabel>
               <Select value={type} label="图表类型" onChange={(e) => setType(e.target.value as any)}>
                 <MenuItem value="line">折线图</MenuItem>
+                <MenuItem value="area">面积图</MenuItem>
                 <MenuItem value="bar">柱状图</MenuItem>
+                <MenuItem value="scatter">散点图</MenuItem>
                 <MenuItem value="pie">饼图</MenuItem>
                 <MenuItem value="gauge">仪表盘</MenuItem>
                 <MenuItem value="stat">单值统计</MenuItem>
                 <MenuItem value="table">表格</MenuItem>
+                <MenuItem value="heatmap">热力图</MenuItem>
+                <MenuItem value="text">文本</MenuItem>
               </Select>
             </FormControl>
 

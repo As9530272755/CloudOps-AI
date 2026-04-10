@@ -84,7 +84,16 @@ function formatPrometheusData(result: any, chartType: ChartType) {
     return { columns, rows: rows.slice(0, 50) }
   }
 
-  // line / bar
+  if (chartType === 'text') {
+    const lines = results.map((item: any) => {
+      const name = formatSeriesName(item.metric || {})
+      const val = item.value?.[1] || '-'
+      return `${name}: ${val}`
+    })
+    return { text: lines.join('\n') }
+  }
+
+  // line / bar / area / scatter / heatmap
   results.forEach((item: any) => {
     const name = formatSeriesName(item.metric || {})
     if (item.values) {
@@ -301,14 +310,14 @@ export function ChartPanel({
   // chartData 准备好后绘制
   useEffect(() => {
     if (!chartInstance.current || !chartData) return
-    if (type === 'stat' || type === 'table') return
+    if (type === 'stat' || type === 'table' || type === 'text') return
 
     const legendPlacement = options?.legendPlacement ?? 'bottom'
 
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
     const hasGaugeData = chartData.value !== undefined
-    if ((type === 'line' || type === 'bar') && !hasSeries) return
+    if ((type === 'line' || type === 'bar' || type === 'area' || type === 'scatter' || type === 'heatmap') && !hasSeries) return
     if (type === 'pie' && !hasPieData) return
     if (type === 'gauge' && !hasGaugeData) return
 
@@ -339,10 +348,14 @@ export function ChartPanel({
     try {
       switch (type) {
         case 'line':
-        case 'bar': {
-          const effectiveType = drawStyle === 'points' ? 'line' : (drawStyle === 'bar' ? 'bar' : 'line')
+        case 'bar':
+        case 'area':
+        case 'scatter': {
+          const effectiveType = type === 'scatter'
+            ? 'scatter'
+            : (type === 'bar' || drawStyle === 'bar' ? 'bar' : 'line')
           const dataLength = chartData.timestamps?.length || 1
-          const symbol = drawStyle === 'points'
+          const symbol = type === 'scatter' || drawStyle === 'points'
             ? 'circle'
             : shouldShowPoints(showPoints, chartRef.current?.clientWidth || 400, dataLength)
 
@@ -406,7 +419,7 @@ export function ChartPanel({
             legend: { show: false }, // custom DOM legend instead
             series: chartData.series.map((s: any, idx: number) => {
               const isLine = effectiveType === 'line'
-              const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
+              const areaOpacity = (type === 'area' && fillOpacity === 0 ? 15 : fillOpacity) / 100
               const c = palette[idx % palette.length]
 
               return {
@@ -424,6 +437,73 @@ export function ChartPanel({
                 },
               }
             }),
+          }
+          break
+        }
+        case 'heatmap': {
+          const timestamps = chartData.timestamps || []
+          const seriesNames = chartData.series?.map((s: any) => s.name) || []
+          const data: [number, number, number][] = []
+          let maxVal = 0
+          chartData.series?.forEach((s: any, y: number) => {
+            s.data.forEach((v: number, x: number) => {
+              data.push([x, y, v])
+              if (v > maxVal) maxVal = v
+            })
+          })
+          option = {
+            backgroundColor: 'transparent',
+            tooltip: {
+              position: 'top',
+              backgroundColor: tooltipBg,
+              borderColor: tooltipBorder,
+              borderWidth: 1,
+              textStyle: { color: tooltipText, fontSize: 12 },
+              formatter: (p: any) => {
+                const s = seriesNames[p.data[1]] || '-'
+                const t = new Date(timestamps[p.data[0]]).toLocaleString()
+                return `<div style="font-weight:600;">${s}</div><div>${t}</div><div>value: ${p.data[2]}</div>`
+              },
+            },
+            grid: { top: 10, right: 16, bottom: 50, left: 90 },
+            xAxis: {
+              type: 'category',
+              data: timestamps.map((t: number) => {
+                const d = new Date(t)
+                return `${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+              }),
+              splitArea: { show: true },
+              axisLabel: { color: labelColor, fontSize: 9, rotate: 45 },
+            },
+            yAxis: {
+              type: 'category',
+              data: seriesNames,
+              splitArea: { show: true },
+              axisLabel: { color: labelColor, fontSize: 9 },
+            },
+            visualMap: {
+              min: 0,
+              max: maxVal || 1,
+              calculable: true,
+              orient: 'horizontal',
+              left: 'center',
+              bottom: 0,
+              itemWidth: 12,
+              itemHeight: 80,
+              textStyle: { color: labelColor, fontSize: 10 },
+              inRange: {
+                color: isDark ? ['#0b1120', '#00f0ff', '#ff00aa'] : ['#f0f9ff', '#007AFF', '#FF3B30'],
+              },
+            },
+            series: [{
+              name: title,
+              type: 'heatmap',
+              data,
+              label: { show: false },
+              emphasis: {
+                itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' },
+              },
+            }],
           }
           break
         }
@@ -489,7 +569,7 @@ export function ChartPanel({
   }, [chartData, type, options, isDark, palette])
 
   const legendPlacement = options?.legendPlacement ?? 'bottom'
-  const showCustomLegend = options?.legend !== false && legendPlacement !== 'hidden' && (type === 'line' || type === 'bar' || type === 'pie')
+  const showCustomLegend = options?.legend !== false && legendPlacement !== 'hidden' && (type === 'line' || type === 'bar' || type === 'area' || type === 'scatter' || type === 'pie')
 
   const titleColor = isDark ? '#00f0ff' : theme.palette.primary.main
   const titleShadow = isDark ? '0 0 8px rgba(0,240,255,0.35)' : 'none'
@@ -612,6 +692,23 @@ export function ChartPanel({
                   ))}
                 </Box>
               </Box>
+            </Box>
+          ) : type === 'text' ? (
+            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, overflow: 'auto' }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  color: 'text.primary',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.6,
+                  width: '100%',
+                  textAlign: 'center',
+                }}
+              >
+                {chartData?.text || options?.textContent || query || '请输入文本内容'}
+              </Typography>
             </Box>
           ) : (
             <Box

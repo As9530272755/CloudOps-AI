@@ -1,4 +1,4 @@
-export type ChartType = 'line' | 'bar' | 'pie' | 'gauge' | 'stat' | 'table'
+export type ChartType = 'line' | 'bar' | 'pie' | 'gauge' | 'stat' | 'table' | 'area' | 'heatmap' | 'scatter' | 'text'
 
 export interface PanelPosition {
   x: number
@@ -17,6 +17,8 @@ export interface PanelOptions {
   min?: number
   max?: number
   decimals?: number
+
+  textContent?: string
 
   // Grafana-style line/bar/points config
   drawStyle?: 'line' | 'bar' | 'points'
