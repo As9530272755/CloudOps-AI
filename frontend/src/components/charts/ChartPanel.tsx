@@ -386,7 +386,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
         border: '1px solid rgba(255,255,255,0.3)',
       }}
     >
-      <Box className="drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}>
+      <Box className="grid-drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10, cursor: 'move' }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
           {title}
         </Typography>
@@ -426,11 +426,9 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
           </Box>
         ) : (
           <Box
+            className="grid-drag-cancel"
             ref={chartRef}
             sx={{ position: 'absolute', inset: 0 }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
           />
         )}
 

@@ -19,7 +19,7 @@ import {
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material'
-import GridLayout from 'react-grid-layout'
+import ReactGridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
@@ -378,18 +378,24 @@ export default function Dashboard() {
 
           {(panels.length > 0 || editMode) && (
             <Box ref={gridContainerRef}>
-              <GridLayout
+              <ReactGridLayout
                 key={gridKey}
                 className="layout"
                 layout={layout}
                 width={gridWidth}
-                gridConfig={{ cols: 12, rowHeight: 60 }}
-                dragConfig={{ enabled: editMode, handle: '.drag-handle' }}
-                resizeConfig={{ enabled: editMode }}
+                cols={12}
+                rowHeight={60}
+                margin={[16, 16]}
+                containerPadding={[0, 0]}
+                isDraggable={editMode}
+                isResizable={editMode}
+                draggableHandle=".grid-drag-handle"
+                draggableCancel=".grid-drag-cancel"
                 onLayoutChange={handleLayoutChange}
+                useCSSTransforms
               >
                 {panels.map((panel) => (
-                  <Box key={panel.id}>
+                  <Box key={panel.id} className="grid-drag-cancel">
                     <ChartPanel
                       key={`${panel.id}-${refreshTick}-${timeRange}`}
                       title={panel.title}
@@ -400,7 +406,7 @@ export default function Dashboard() {
                     />
                   </Box>
                 ))}
-              </GridLayout>
+              </ReactGridLayout>
             </Box>
           )}
         </Box>
