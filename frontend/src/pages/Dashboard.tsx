@@ -21,7 +21,6 @@ import ReactGridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
-import { clusterAPI, Cluster } from '../lib/cluster-api'
 import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel, CreatePanelRequest } from '../lib/dashboard-api'
 import { ChartPanel } from '../components/charts/ChartPanel'
 import PanelEditor from '../components/dashboard/PanelEditor'
@@ -121,7 +120,6 @@ export default function Dashboard() {
   const gridRootRef = useRef<HTMLDivElement>(null)
   const gridWrapperRef = useRef<HTMLDivElement>(null)
   const [gridWidth, setGridWidth] = useState(1200)
-  const [clusters, setClusters] = useState<Cluster[]>([])
   const [dashboard, setDashboard] = useState<DashboardModel | null>(null)
   const [panels, setPanels] = useState<DashboardPanel[]>([])
   const [editMode, setEditMode] = useState(false)
@@ -145,13 +143,6 @@ export default function Dashboard() {
 
   const queryRange = useMemo(() => getQueryRange(timeRange), [timeRange])
 
-  const loadClusters = useCallback(async () => {
-    try {
-      const result = await clusterAPI.getClusters()
-      if (result.success) setClusters(result.data)
-    } catch {}
-  }, [])
-
   const loadDashboard = useCallback(async () => {
     try {
       const result = await dashboardAPI.getDefault()
@@ -166,9 +157,8 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    loadClusters()
     loadDashboard()
-  }, [loadClusters, loadDashboard])
+  }, [loadDashboard])
 
   useEffect(() => {
     if (!refreshInterval) return
@@ -323,10 +313,6 @@ export default function Dashboard() {
     loadDashboard()
   }
 
-  const totalNodes = clusters.reduce((sum, c) => sum + (c.metadata?.node_count || 0), 0)
-  const totalPods = clusters.reduce((sum, c) => sum + (c.metadata?.pod_count || 0), 0)
-  const healthyClusters = clusters.filter((c) => c.metadata?.health_status === 'healthy').length
-
   const renderPanels = () => {
     return panels.map((panel) => {
       const parsedOptions = panel.options ? JSON.parse(panel.options) : {}
@@ -423,25 +409,6 @@ export default function Dashboard() {
           </Box>
         </CardContent>
       </Card>
-
-      {/* === Stat cards === */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
-        {[
-          { label: '集群总数', value: clusters.length, color: theme.palette.primary.main },
-          { label: '健康集群', value: healthyClusters, color: theme.palette.success.main },
-          { label: '节点总数', value: totalNodes, color: theme.palette.secondary.main },
-          { label: 'Pod 总数', value: totalPods, color: theme.palette.warning.main },
-        ].map((stat) => (
-          <Card key={stat.label} sx={{ borderLeft: `3px solid ${stat.color}` }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary">{stat.label}</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: stat.color, mt: 1 }}>
-                {stat.value}
-              </Typography>
-            </CardContent>
-          </Card>
-        ))}
-      </Box>
 
       {/* === Dashboard Grid (Grafana style) === */}
       {!dashboard && !editMode ? (
