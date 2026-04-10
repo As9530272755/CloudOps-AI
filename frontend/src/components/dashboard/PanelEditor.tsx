@@ -26,21 +26,8 @@ interface PanelEditorProps {
   initialData?: Partial<CreatePanelRequest>
 }
 
+// 24-column default (Grafana style)
 const DEFAULT_POSITION = JSON.stringify({ x: 0, y: 0, w: 12, h: 8 })
-
-// Grafana-style: normalize old 12-col positions to 24-col
-function normalizePosition(pos: string | undefined): string {
-  if (!pos) return DEFAULT_POSITION
-  try {
-    const p = JSON.parse(pos)
-    if (p.w != null && p.w <= 12) {
-      return JSON.stringify({ x: (p.x || 0) * 2, y: (p.y || 0) * 2, w: p.w * 2, h: (p.h || 4) * 2 })
-    }
-    return pos
-  } catch {
-    return DEFAULT_POSITION
-  }
-}
 
 export default function PanelEditor({ open, onClose, onSave, initialData }: PanelEditorProps) {
   const [dataSources, setDataSources] = useState<DataSource[]>([])
@@ -48,7 +35,7 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
   const [type, setType] = useState(initialData?.type || 'line')
   const [dataSourceId, setDataSourceId] = useState<number>(initialData?.data_source_id || 0)
   const [query, setQuery] = useState(initialData?.query || '')
-  const [position, setPosition] = useState(() => normalizePosition(initialData?.position))
+  const [position, setPosition] = useState(() => initialData?.position || DEFAULT_POSITION)
   const [options, setOptions] = useState(initialData?.options || '{}')
   const [error, setError] = useState('')
 
@@ -60,7 +47,7 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
         setType(initialData.type || 'line')
         setDataSourceId(initialData.data_source_id || 0)
         setQuery(initialData.query || '')
-        setPosition(normalizePosition(initialData.position))
+        setPosition(initialData.position || DEFAULT_POSITION)
         setOptions(initialData.options || '{}')
       }
     }
