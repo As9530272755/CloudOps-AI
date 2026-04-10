@@ -30,6 +30,8 @@ import {
   IconButton,
   Tooltip,
   Grid,
+  Checkbox,
+  ListItemText,
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -142,15 +144,21 @@ export default function Inspection() {
       if (preset) schedule = preset.value
     }
     const payload = { ...form, schedule, schedule_type: scheduleType }
-    if (editingTask) {
-      await inspectionAPI.updateTask(editingTask.id, payload)
-    } else {
-      await inspectionAPI.createTask(payload)
+    try {
+      const res = editingTask
+        ? await inspectionAPI.updateTask(editingTask.id, payload)
+        : await inspectionAPI.createTask(payload)
+      if (!res.success) {
+        setError(res.error || '保存失败')
+        return
+      }
+      setTaskDialog(false)
+      setEditingTask(null)
+      setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
+      loadTasks()
+    } catch (err: any) {
+      setError(err.message || '保存失败')
     }
-    setTaskDialog(false)
-    setEditingTask(null)
-    setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
-    loadTasks()
   }
 
   const handleDeleteTask = async (id: number) => {
@@ -440,7 +448,10 @@ export default function Inspection() {
                 renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name || id).join(', ')}
               >
                 {clusters.map(c => (
-                  <MenuItem key={c.id} value={c.id}>{c.display_name || c.name}</MenuItem>
+                  <MenuItem key={c.id} value={c.id}>
+                    <Checkbox checked={(form.cluster_ids || []).includes(c.id)} />
+                    <ListItemText primary={c.display_name || c.name} />
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -465,7 +476,7 @@ export default function Inspection() {
       </Dialog>
 
       {/* 报告详情弹窗 */}
-      <Dialog open={reportDialog} onClose={() => setReportDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
+      <Dialog open={reportDialog} onClose={() => setReportDialog(false)} maxWidth={false} fullWidth PaperProps={{ sx: { borderRadius: '16px', width: '95vw', maxWidth: '1400px' } }}>
         <DialogTitle sx={{ fontWeight: 600 }}>
           巡检报告 #{selectedJob?.job.id}
           {selectedJob && selectedJob.job.status === 'running' && (

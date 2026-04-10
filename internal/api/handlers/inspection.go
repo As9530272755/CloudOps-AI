@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/service"
@@ -34,11 +35,86 @@ func NewInspectionHandler(s *service.InspectionService) *InspectionHandler {
 	return &InspectionHandler{inspectionService: s}
 }
 
+// taskReq 用于接收前端请求，cluster_ids 为数组
+type taskReq struct {
+	ID           uint     `json:"id"`
+	Name         string   `json:"name" binding:"required"`
+	Description  string   `json:"description"`
+	Schedule     string   `json:"schedule"`
+	ScheduleType string   `json:"schedule_type"`
+	Timezone     string   `json:"timezone"`
+	Enabled      bool     `json:"enabled"`
+	RetryTimes   int      `json:"retry_times"`
+	ClusterIDs   []uint   `json:"cluster_ids"`
+	RulesConfig  string   `json:"rules_config"`
+	NotifyConfig string   `json:"notify_config"`
+}
+
+func toInspectionTask(req taskReq) model.InspectionTask {
+	clusterIDsStr := ""
+	if len(req.ClusterIDs) > 0 {
+		b, _ := json.Marshal(req.ClusterIDs)
+		clusterIDsStr = string(b)
+	}
+	return model.InspectionTask{
+		Name:         req.Name,
+		Description:  req.Description,
+		Schedule:     req.Schedule,
+		ScheduleType: req.ScheduleType,
+		Timezone:     req.Timezone,
+		Enabled:      req.Enabled,
+		RetryTimes:   req.RetryTimes,
+		ClusterIDs:   clusterIDsStr,
+		RulesConfig:  req.RulesConfig,
+		NotifyConfig: req.NotifyConfig,
+	}
+}
+
+// taskResp 用于返回给前端，cluster_ids 为数组
+type taskResp struct {
+	ID           uint      `json:"id"`
+	TenantID     uint      `json:"tenant_id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Schedule     string    `json:"schedule"`
+	ScheduleType string    `json:"schedule_type"`
+	Timezone     string    `json:"timezone"`
+	Enabled      bool      `json:"enabled"`
+	RetryTimes   int       `json:"retry_times"`
+	ClusterIDs   []uint    `json:"cluster_ids"`
+	RulesConfig  string    `json:"rules_config"`
+	NotifyConfig string    `json:"notify_config"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func toTaskResp(task model.InspectionTask) taskResp {
+	resp := taskResp{
+		ID:           task.ID,
+		TenantID:     task.TenantID,
+		Name:         task.Name,
+		Description:  task.Description,
+		Schedule:     task.Schedule,
+		ScheduleType: task.ScheduleType,
+		Timezone:     task.Timezone,
+		Enabled:      task.Enabled,
+		RetryTimes:   task.RetryTimes,
+		RulesConfig:  task.RulesConfig,
+		NotifyConfig: task.NotifyConfig,
+		CreatedAt:    task.CreatedAt,
+		UpdatedAt:    task.UpdatedAt,
+	}
+	if task.ClusterIDs != "" && task.ClusterIDs != "null" {
+		_ = json.Unmarshal([]byte(task.ClusterIDs), &resp.ClusterIDs)
+	}
+	return resp
+}
+
 // ==================== 任务管理 ====================
 
 // CreateTask 创建巡检任务
 func (h *InspectionHandler) CreateTask(c *gin.Context) {
-	var req model.InspectionTask
+	var req taskReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
@@ -46,11 +122,12 @@ func (h *InspectionHandler) CreateTask(c *gin.Context) {
 	if req.Timezone == "" {
 		req.Timezone = "Asia/Shanghai"
 	}
-	if err := h.inspectionService.CreateTask(&req); err != nil {
+	task := toInspectionTask(req)
+	if err := h.inspectionService.CreateTask(&task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": req})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toTaskResp(task)})
 }
 
 // ListTasks 任务列表
@@ -60,7 +137,11 @@ func (h *InspectionHandler) ListTasks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": tasks})
+	var resp []taskResp
+	for _, t := range tasks {
+		resp = append(resp, toTaskResp(t))
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": resp})
 }
 
 // GetTask 任务详情
@@ -71,23 +152,24 @@ func (h *InspectionHandler) GetTask(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "任务不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": task})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toTaskResp(task)})
 }
 
 // UpdateTask 修改任务
 func (h *InspectionHandler) UpdateTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var req model.InspectionTask
+	var req taskReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	req.ID = uint(id)
-	if err := h.inspectionService.UpdateTask(&req); err != nil {
+	task := toInspectionTask(req)
+	task.ID = uint(id)
+	if err := h.inspectionService.UpdateTask(&task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": req})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toTaskResp(task)})
 }
 
 // DeleteTask 删除任务

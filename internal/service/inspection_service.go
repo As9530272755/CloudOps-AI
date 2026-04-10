@@ -465,10 +465,10 @@ func (s *InspectionService) queryPrometheusData(ctx context.Context, tenantID ui
 	coreMap := s.queryPromQLMap(ctx, ds, `count(node_cpu_seconds_total{mode="idle"}) by (instance)`)
 
 	// 2. Pod 状态分布（sum 而非 count）
-	data.PodStatus["Running"] = int(s.queryPromQLScalar(ctx, ds, `sum(kube_pod_status_phase{phase="Running"})`))
-	data.PodStatus["Pending"] = int(s.queryPromQLScalar(ctx, ds, `sum(kube_pod_status_phase{phase="Pending"})`))
-	data.PodStatus["Failed"] = int(s.queryPromQLScalar(ctx, ds, `sum(kube_pod_status_phase{phase="Failed"})`))
-	data.PodStatus["Succeeded"] = int(s.queryPromQLScalar(ctx, ds, `sum(kube_pod_status_phase{phase="Succeeded"})`))
+	data.PodStatus["Running"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Running"}))`))
+	data.PodStatus["Pending"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Pending"}))`))
+	data.PodStatus["Failed"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Failed"}))`))
+	data.PodStatus["Succeeded"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Succeeded"}))`))
 
 	// 3. 节点数 / Pod 总数
 	data.NodeCount = len(cc.NodeStore.List())
@@ -551,8 +551,8 @@ func (s *InspectionService) queryPrometheusData(ctx context.Context, tenantID ui
 	data.DiskTop = topNByDisk(data.NodeDetails, 10)
 
 	// 7. 总资源与平均使用率
-	data.TotalMemGB = s.queryPromQLScalar(ctx, ds, `sum(node_memory_MemTotal_bytes) / 1024 / 1024 / 1024`)
-	data.UsedMemGB = s.queryPromQLScalar(ctx, ds, `sum(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024`)
+	data.TotalMemGB = s.queryPromQLScalar(ctx, ds, `sum(max by (instance) (node_memory_MemTotal_bytes)) / 1024 / 1024 / 1024`)
+	data.UsedMemGB = s.queryPromQLScalar(ctx, ds, `sum(max by (instance) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)) / 1024 / 1024 / 1024`)
 	if data.TotalMemGB > 0 {
 		data.MemRate = data.UsedMemGB / data.TotalMemGB * 100
 	}
@@ -591,6 +591,8 @@ func (s *InspectionService) queryPromQLMap(ctx context.Context, ds model.DataSou
 	if !ok {
 		return res
 	}
+	// 处理 Prometheus HA 多副本去重：同一个 instance 可能有多条记录，取平均值
+	temp := make(map[string][]float64)
 	for _, r := range results {
 		row, ok := r.(map[string]interface{})
 		if !ok {
@@ -612,8 +614,18 @@ func (s *InspectionService) queryPromQLMap(ctx context.Context, ds model.DataSou
 		var v float64
 		fmt.Sscanf(vStr, "%f", &v)
 		if instance != "" {
-			res[instance] = v
+			temp[instance] = append(temp[instance], v)
 		}
+	}
+	for instance, vals := range temp {
+		if len(vals) == 0 {
+			continue
+		}
+		var sum float64
+		for _, v := range vals {
+			sum += v
+		}
+		res[instance] = sum / float64(len(vals))
 	}
 	return res
 }
