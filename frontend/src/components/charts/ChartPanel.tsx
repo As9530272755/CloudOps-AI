@@ -223,10 +223,12 @@ export function ChartPanel({
     function buildLegend() {
       if (!showLegend) return undefined
       const divider = theme.palette.divider
+      const bg = theme.palette.background.paper
       const common = {
         type: 'scroll',
         textStyle: { color: theme.palette.text.primary, fontSize: 11 },
         tooltip: { show: true },
+        backgroundColor: bg,
         borderWidth: 1,
         borderColor: divider,
         padding: [8, 10],
