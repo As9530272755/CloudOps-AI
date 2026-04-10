@@ -238,6 +238,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"status":            string(v.Status.Phase),
 			"restarts":          podRestarts(v),
 			"node":              v.Spec.NodeName,
+			"pod_ip":            v.Status.PodIP,
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *appsv1.Deployment:

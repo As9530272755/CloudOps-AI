@@ -251,7 +251,7 @@ export default function ClusterDetail() {
       case 'nodes':
         return [...common, { key: 'status', label: '状态' }, { key: 'roles', label: '角色' }, { key: 'version', label: '版本' }, { key: 'internal_ip', label: 'IP' }]
       case 'pods':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'restarts', label: '重启次数' }, { key: 'node', label: '节点' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'restarts', label: '重启次数' }, { key: 'node', label: '节点' }, { key: 'pod_ip', label: 'IP' }]
       case 'deployments':
       case 'statefulsets':
       case 'replicasets':
