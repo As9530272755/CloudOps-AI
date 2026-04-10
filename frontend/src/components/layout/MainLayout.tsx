@@ -16,6 +16,7 @@ import {
   IconButton,
   AppBar,
   Toolbar,
+  Tooltip,
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
 import {
@@ -32,6 +33,7 @@ import {
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   Menu as MenuIcon,
+  MenuOpen as MenuOpenIcon,
 } from '@mui/icons-material'
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
@@ -196,6 +198,51 @@ export default function MainLayout() {
         ))}
       </Box>
 
+      {/* 底部操作栏：折叠 + 主题切换 */}
+      <Box
+        sx={{
+          px: 2,
+          pb: 2,
+          pt: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+        }}
+      >
+        <Tooltip title={open ? '隐藏侧边栏' : '展开侧边栏'}>
+          <IconButton
+            onClick={handleDrawerToggle}
+            sx={{
+              flex: 1,
+              justifyContent: 'center',
+              borderRadius: '10px',
+              color: 'text.secondary',
+              border: '1px solid',
+              borderColor: 'divider',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
+            {open ? <MenuOpenIcon /> : <MenuIcon />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={isDark ? '切换亮色模式' : '切换暗色模式'}>
+          <IconButton
+            onClick={toggleColorMode}
+            sx={{
+              color: 'text.primary',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: '10px',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
+            {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      <Divider sx={{ mx: 2, opacity: 0.5 }} />
+
       {/* 用户信息 */}
       <Box
         sx={{
@@ -242,16 +289,17 @@ export default function MainLayout() {
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {/* 侧边栏 */}
       <Drawer
-        variant={isMobile ? 'temporary' : 'permanent'}
+        variant={isMobile ? 'temporary' : 'persistent'}
         open={open}
         onClose={handleDrawerToggle}
         sx={{
-          width: DRAWER_WIDTH,
+          width: open ? DRAWER_WIDTH : 0,
           flexShrink: 0,
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            borderRight: 'none',
+            borderRight: '1px solid',
+            borderColor: 'divider',
             bgcolor: 'background.paper',
           },
         }}
@@ -271,7 +319,7 @@ export default function MainLayout() {
           }),
         }}
       >
-        {/* 顶部栏 */}
+        {/* 移动端顶部栏 */}
         <AppBar
           position="static"
           elevation={0}
@@ -279,44 +327,48 @@ export default function MainLayout() {
             bgcolor: 'background.paper',
             borderBottom: '1px solid',
             borderColor: 'divider',
-            display: { lg: isMobile ? 'flex' : 'none' },
+            display: { xs: 'flex', lg: 'none' },
           }}
         >
           <Toolbar sx={{ justifyContent: 'space-between' }}>
             <IconButton edge="start" onClick={handleDrawerToggle} sx={{ color: 'text.primary' }}>
               <MenuIcon />
             </IconButton>
-            <IconButton onClick={toggleColorMode} sx={{ color: 'text.primary' }}>
-              {isDark ? <LightModeIcon /> : <DarkModeIcon />}
-            </IconButton>
           </Toolbar>
         </AppBar>
 
-        {/* 桌面端顶部快捷栏：主题切换 + 面包屑占位 */}
-        <Box
-          sx={{
-            display: { xs: 'none', lg: 'flex' },
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            px: 3,
-            py: 1.5,
-            gap: 1,
-          }}
-        >
-          <IconButton
-            onClick={toggleColorMode}
+        {/* 桌面端侧边栏收起时：左上角浮动工具条 */}
+        {!open && !isMobile && (
+          <Box
             sx={{
-              color: 'text.primary',
+              position: 'fixed',
+              top: 16,
+              left: 16,
+              zIndex: 1300,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              px: 1,
+              py: 0.5,
+              borderRadius: '12px',
+              bgcolor: 'background.paper',
               border: '1px solid',
               borderColor: 'divider',
-              borderRadius: '10px',
-              '&:hover': { bgcolor: 'action.hover' },
+              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
             }}
-            title={isDark ? '切换亮色模式' : '切换暗色模式'}
           >
-            {isDark ? <LightModeIcon /> : <DarkModeIcon />}
-          </IconButton>
-        </Box>
+            <Tooltip title="展开侧边栏">
+              <IconButton onClick={handleDrawerToggle} sx={{ color: 'text.primary' }}>
+                <MenuIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={isDark ? '切换亮色模式' : '切换暗色模式'}>
+              <IconButton onClick={toggleColorMode} sx={{ color: 'text.primary' }}>
+                {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
 
         {/* 内容区 */}
         <Box

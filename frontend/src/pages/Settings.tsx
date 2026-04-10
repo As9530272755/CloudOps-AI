@@ -27,7 +27,7 @@ import {
   CircularProgress,
 } from '@mui/material'
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as TestIcon } from '@mui/icons-material'
-import { glassEffect } from '../theme/theme'
+
 import { DataSource, datasourceAPI, CreateDataSourceRequest } from '../lib/datasource-api'
 
 function DataSourceSettings() {
@@ -143,7 +143,7 @@ function DataSourceSettings() {
         </Button>
       </Box>
 
-      <Card sx={{ ...glassEffect }}>
+      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
         <Table>
           <TableHead>
             <TableRow>
@@ -215,7 +215,7 @@ function DataSourceSettings() {
         onClose={() => setDialogOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { ...glassEffect, borderRadius: '16px' } }}
+        PaperProps={{ sx: { borderRadius: '16px' } }}
       >
         <DialogTitle sx={{ fontWeight: 600 }}>
           {editingId ? '编辑数据源' : '添加数据源'}
@@ -273,7 +273,7 @@ export default function Settings() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Card sx={{ mb: 3, ...glassEffect }}>
+      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
         <CardContent>
           <Typography variant="h5" fontWeight={600} gutterBottom>
             系统设置
@@ -284,8 +284,8 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card sx={{ ...glassEffect }}>
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, pt: 1 }}>
+      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, pt: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Tab label="数据源" />
           <Tab label="通用" />
         </Tabs>
