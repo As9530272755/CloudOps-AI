@@ -20,6 +20,11 @@ export interface PanelOptions {
 
   textContent?: string
 
+  // Gauge styling
+  gaugeColors?: string[]
+  gaugeGlow?: boolean
+  gaugeParticles?: boolean
+
   // Grafana-style line/bar/points config
   drawStyle?: 'line' | 'bar' | 'points'
   lineInterpolation?: 'linear' | 'smooth'

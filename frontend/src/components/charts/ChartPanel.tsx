@@ -121,6 +121,69 @@ function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: n
   return chartWidth / dataLength > 8 ? 'circle' : 'none'
 }
 
+function GaugeParticles({
+  colors,
+  isDark,
+}: {
+  colors?: string[]
+  isDark: boolean
+}) {
+  const defaultColors = isDark ? ['#00f0ff', '#facc15', '#ff00aa'] : ['#007AFF', '#FF9500', '#FF3B30']
+  const c = colors || defaultColors
+  const particles = [
+    { size: 3, orbit: 42, duration: 4, delay: 0, color: c[0] },
+    { size: 2, orbit: 40, duration: 6, delay: 1, color: c[1] ?? c[0] },
+    { size: 2.5, orbit: 44, duration: 5, delay: 2, color: c[2] ?? c[0] },
+    { size: 2, orbit: 38, duration: 7, delay: 0.5, color: c[0] },
+  ]
+
+  return (
+    <Box
+      sx={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: 'translateY(3%)',
+      }}
+    >
+      {particles.map((p, idx) => (
+        <Box
+          key={idx}
+          sx={{
+            position: 'absolute',
+            width: `${p.orbit}%`,
+            aspectRatio: '1',
+            borderRadius: '50%',
+            animation: `rotate ${p.duration}s linear infinite`,
+            animationDelay: `${p.delay}s`,
+            '@keyframes rotate': {
+              '0%': { transform: 'rotate(0deg)' },
+              '100%': { transform: 'rotate(360deg)' },
+            },
+          }}
+        >
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: p.size,
+              height: p.size,
+              borderRadius: '50%',
+              bgcolor: p.color,
+              boxShadow: `0 0 ${p.size * 3}px ${p.color}`,
+            }}
+          />
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 function CustomLegend({
   series,
   placement,
@@ -534,7 +597,17 @@ export function ChartPanel({
           }
           break
         }
-        case 'gauge':
+        case 'gauge': {
+          const gaugeColors = options?.gaugeColors || [
+            isDark ? '#00f0ff' : '#007AFF',
+            isDark ? '#facc15' : '#FF9500',
+            isDark ? '#ff00aa' : '#FF3B30',
+          ]
+          const glow = options?.gaugeGlow !== false
+          const c1 = gaugeColors[0]
+          const c2 = gaugeColors[1] ?? gaugeColors[0]
+          const c3 = gaugeColors[2] ?? gaugeColors[1] ?? gaugeColors[0]
+          const pointerColor = c1
           option = {
             backgroundColor: 'transparent',
             tooltip: {
@@ -548,18 +621,28 @@ export function ChartPanel({
               type: 'gauge',
               min: options?.min ?? 0,
               max: options?.max ?? 100,
-              detail: { formatter: '{value}', fontSize: 26, color: isDark ? '#e2e8f0' : '#1f2937', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' },
+              radius: '90%',
+              center: ['50%', '55%'],
+              detail: { formatter: '{value}', fontSize: 26, color: isDark ? '#e2e8f0' : '#1f2937', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace', offsetCenter: [0, '55%'] },
               data: [{ value: chartData.value, name: chartData.name }],
-              axisLine: { lineStyle: { width: 12, color: [
-                [0.3, isDark ? '#00f0ff' : '#007AFF'], [0.7, isDark ? '#facc15' : '#FF9500'], [1, isDark ? '#ff00aa' : '#FF3B30']
+              pointer: {
+                icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',
+                length: '45%',
+                width: 6,
+                offsetCenter: [0, '-10%'],
+                itemStyle: { color: pointerColor, shadowBlur: glow ? 16 : 0, shadowColor: pointerColor },
+              },
+              axisLine: { lineStyle: { width: 14, shadowBlur: glow ? 20 : 0, shadowColor: c1, color: [
+                [0.3, c1], [0.7, c2], [1, c3]
               ] } },
               splitLine: { length: 12, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
-              axisTick: { length: 8, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
-              axisLabel: { fontSize: 10, color: labelColor },
-              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '70%'] },
+              axisTick: { length: 6, lineStyle: { color: isDark ? '#1e3a5f' : '#e5e7eb' } },
+              axisLabel: { fontSize: 10, color: labelColor, distance: 10 },
+              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '75%'] },
             }],
           }
           break
+        }
       }
 
       chartInstance.current.setOption(option, { notMerge: true })
@@ -711,11 +794,16 @@ export function ChartPanel({
               </Typography>
             </Box>
           ) : (
-            <Box
-              className="grid-drag-cancel"
-              ref={chartRef}
-              sx={{ position: 'absolute', inset: 0 }}
-            />
+            <Box sx={{ position: 'absolute', inset: 0 }}>
+              <Box
+                className="grid-drag-cancel"
+                ref={chartRef}
+                sx={{ position: 'absolute', inset: 0 }}
+              />
+              {type === 'gauge' && options?.gaugeParticles && chartData && (
+                <GaugeParticles colors={options?.gaugeColors} isDark={isDark} />
+              )}
+            </Box>
           )}
 
           {(loading || error) && type !== 'stat' && (
