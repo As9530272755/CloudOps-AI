@@ -310,7 +310,7 @@ export default function Dashboard() {
               layout={layout}
               width={1200}
               gridConfig={{ cols: 12, rowHeight: 60 }}
-              dragConfig={{ enabled: editMode }}
+              dragConfig={{ enabled: editMode, cancel: '.no-drag' }}
               resizeConfig={{ enabled: editMode }}
               onLayoutChange={handleLayoutChange}
             >

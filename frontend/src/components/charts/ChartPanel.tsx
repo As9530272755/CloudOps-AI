@@ -120,7 +120,10 @@ export default function ChartPanel({
         setError(result.error || result.message || 'Query failed')
         return
       }
-      const formatted = formatPrometheusData(result.data, type)
+      // 后端返回的是 ProxyQueryResponse { status, data, error }
+      // 真正的 Prometheus 数据在 result.data.data
+      const promData = result.data?.data
+      const formatted = formatPrometheusData({ data: promData }, type)
       if (type === 'table' && formatted) {
         setTableData(formatted as { columns: string[]; rows: any[] })
       } else {
@@ -259,14 +262,17 @@ export default function ChartPanel({
         border: '1px solid rgba(255,255,255,0.3)',
       }}
     >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+      <Box
+        sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}
+        className="no-drag"
+      >
         <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
           {title}
         </Typography>
         {isEditing && (
-          <Box>
-            <IconButton size="small" onClick={onEdit}><EditIcon fontSize="small" /></IconButton>
-            <IconButton size="small" color="error" onClick={onDelete}><DeleteIcon fontSize="small" /></IconButton>
+          <Box className="no-drag" sx={{ position: 'relative', zIndex: 10 }}>
+            <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit?.() }}><EditIcon fontSize="small" /></IconButton>
+            <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); onDelete?.() }}><DeleteIcon fontSize="small" /></IconButton>
           </Box>
         )}
       </Box>
