@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Box,
   Card,
@@ -40,6 +40,7 @@ import {
   FlashOn as QuickIcon,
 } from '@mui/icons-material'
 
+import html2pdf from 'html2pdf.js'
 import { inspectionAPI, InspectionTask, InspectionJob, InspectionResultItem } from '../lib/inspection-api'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 
@@ -482,32 +483,7 @@ export default function Inspection() {
                   &nbsp;|&nbsp; 失败: {selectedJob.job.failed_count}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                  {selectedJob.results[0]?.report_html && (
-                    <Button size="small" variant="outlined" onClick={() => {
-                      const blob = new Blob([selectedJob.results[0].report_html!], { type: 'text/html' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = `report-${selectedJob.job.id}.html`
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    }}>
-                      下载 HTML
-                    </Button>
-                  )}
-                  {selectedJob.results[0]?.report_markdown && (
-                    <Button size="small" variant="outlined" onClick={() => {
-                      const blob = new Blob([selectedJob.results[0].report_markdown!], { type: 'text/markdown' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = `report-${selectedJob.job.id}.md`
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    }}>
-                      下载 Markdown
-                    </Button>
-                  )}
+                  <Button size="small" variant="outlined" onClick={() => setReportDialog(false)}>关闭</Button>
                 </Box>
               </Box>
 
@@ -516,61 +492,108 @@ export default function Inspection() {
                   报告尚未生成完成，请稍等 3-5 秒后刷新执行记录再试。
                 </Alert>
               ) : (
-                selectedJob.results.map(r => (
-                  <Card key={r.id} sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                        <Typography variant="subtitle1" fontWeight={600}>
-                          {clusters.find(c => c.id === r.cluster_id)?.display_name || `集群 ${r.cluster_id}`}
-                        </Typography>
-                        <Chip label={`评分 ${r.score}`} color={r.score >= 90 ? 'success' : r.score >= 70 ? 'warning' : 'error'} size="small" />
-                      </Box>
-                      {r.error_msg ? (
-                        <Alert severity="error" sx={{ mt: 1 }}>{r.error_msg}</Alert>
-                      ) : r.report_html ? (
-                        <Box
-                          sx={{
-                            border: '1px solid',
-                            borderColor: 'divider',
-                            borderRadius: 1,
-                            p: 2,
-                            bgcolor: 'background.paper',
-                          }}
-                          dangerouslySetInnerHTML={{ __html: r.report_html }}
-                        />
-                      ) : (
-                        <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
-                          <Table size="small">
-                            <TableHead>
-                              <TableRow>
-                                <TableCell>检查项</TableCell>
-                                <TableCell>状态</TableCell>
-                                <TableCell>实际值</TableCell>
-                                <TableCell>说明</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {(Array.isArray(r.findings) ? r.findings : []).map((f: any, idx: number) => (
-                                <TableRow key={idx}>
-                                  <TableCell>{f.name}</TableCell>
-                                  <TableCell>
-                                    <Chip
-                                      label={f.level}
-                                      size="small"
-                                      color={f.level === 'pass' ? 'success' : f.level === 'warning' ? 'warning' : f.level === 'critical' ? 'error' : 'default'}
-                                    />
-                                  </TableCell>
-                                  <TableCell>{String(f.actual ?? '-')}</TableCell>
-                                  <TableCell>{f.message}</TableCell>
+                selectedJob.results.map(r => {
+                  const reportRef = React.createRef<HTMLDivElement>()
+                  return (
+                    <Card key={r.id} sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
+                      <CardContent>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Typography variant="subtitle1" fontWeight={600}>
+                            {clusters.find(c => c.id === r.cluster_id)?.display_name || `集群 ${r.cluster_id}`}
+                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip label={`评分 ${r.score}`} color={r.score >= 90 ? 'success' : r.score >= 70 ? 'warning' : 'error'} size="small" />
+                            {r.report_html && (
+                              <>
+                                <Button size="small" variant="outlined" onClick={() => {
+                                  const blob = new Blob([r.report_html!], { type: 'text/html' })
+                                  const url = URL.createObjectURL(blob)
+                                  const a = document.createElement('a')
+                                  a.href = url
+                                  a.download = `report-job${selectedJob.job.id}-cluster${r.cluster_id}.html`
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                }}>
+                                  HTML
+                                </Button>
+                                <Button size="small" variant="outlined" onClick={() => {
+                                  if (reportRef.current) {
+                                    html2pdf().set({
+                                      margin: 10,
+                                      filename: `report-job${selectedJob.job.id}-cluster${r.cluster_id}.pdf`,
+                                      image: { type: 'jpeg', quality: 0.98 },
+                                      html2canvas: { scale: 2, useCORS: true },
+                                      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                                    }).from(reportRef.current).save()
+                                  }
+                                }}>
+                                  PDF
+                                </Button>
+                              </>
+                            )}
+                            {r.report_markdown && (
+                              <Button size="small" variant="outlined" onClick={() => {
+                                const blob = new Blob([r.report_markdown!], { type: 'text/markdown' })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `report-job${selectedJob.job.id}-cluster${r.cluster_id}.md`
+                                a.click()
+                                URL.revokeObjectURL(url)
+                              }}>
+                                MD
+                              </Button>
+                            )}
+                          </Box>
+                        </Box>
+                        {r.error_msg ? (
+                          <Alert severity="error" sx={{ mt: 1 }}>{r.error_msg}</Alert>
+                        ) : r.report_html ? (
+                          <Box
+                            ref={reportRef}
+                            sx={{
+                              border: '1px solid',
+                              borderColor: 'divider',
+                              borderRadius: 1,
+                              p: 2,
+                              bgcolor: 'background.paper',
+                            }}
+                            dangerouslySetInnerHTML={{ __html: r.report_html }}
+                          />
+                        ) : (
+                          <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>检查项</TableCell>
+                                  <TableCell>状态</TableCell>
+                                  <TableCell>实际值</TableCell>
+                                  <TableCell>说明</TableCell>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))
+                              </TableHead>
+                              <TableBody>
+                                {(Array.isArray(r.findings) ? r.findings : []).map((f: any, idx: number) => (
+                                  <TableRow key={idx}>
+                                    <TableCell>{f.name}</TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        label={f.level}
+                                        size="small"
+                                        color={f.level === 'pass' ? 'success' : f.level === 'warning' ? 'warning' : f.level === 'critical' ? 'error' : 'default'}
+                                      />
+                                    </TableCell>
+                                    <TableCell>{String(f.actual ?? '-')}</TableCell>
+                                    <TableCell>{f.message}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })
               )}
             </Box>
           ) : (
