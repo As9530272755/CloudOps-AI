@@ -79,6 +79,9 @@ func autoMigrate(db *gorm.DB) error {
 		&model.ClusterSecret{},
 		&model.ClusterMetadata{},
 		&model.LoginLog{},
+		&model.DataSource{},
+		&model.Dashboard{},
+		&model.DashboardPanel{},
 	)
 }
 

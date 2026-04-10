@@ -11,19 +11,23 @@ import (
 
 // Router API 路由
 type Router struct {
-	authHandler    *handlers.AuthHandler
-	clusterHandler *handlers.ClusterHandler
-	k8sHandler     *handlers.K8sHandler
-	jwtManager     *auth.JWTManager
+	authHandler      *handlers.AuthHandler
+	clusterHandler   *handlers.ClusterHandler
+	k8sHandler       *handlers.K8sHandler
+	dsHandler        *handlers.DatasourceHandler
+	dashboardHandler *handlers.DashboardHandler
+	jwtManager       *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService) *Router {
 	return &Router{
-		authHandler:    handlers.NewAuthHandler(jwtManager),
-		clusterHandler: handlers.NewClusterHandler(clusterService),
-		k8sHandler:     handlers.NewK8sHandler(k8sService),
-		jwtManager:     jwtManager,
+		authHandler:      handlers.NewAuthHandler(jwtManager),
+		clusterHandler:   handlers.NewClusterHandler(clusterService),
+		k8sHandler:       handlers.NewK8sHandler(k8sService),
+		dsHandler:        handlers.NewDatasourceHandler(dsService),
+		dashboardHandler: handlers.NewDashboardHandler(dashboardService),
+		jwtManager:       jwtManager,
 	}
 }
 
@@ -63,9 +67,36 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			protected.GET("/clusters/:id/resources/:kind/:name/yaml", r.k8sHandler.GetResourceYAML)
 			protected.GET("/clusters/:id/resources/:kind/:name", r.k8sHandler.GetResource)
 
+			// 数据源管理
+			ds := protected.Group("/datasources")
+			{
+				ds.POST("", r.dsHandler.CreateDataSource)
+				ds.GET("", r.dsHandler.ListDataSources)
+				ds.GET("/:id", r.dsHandler.GetDataSource)
+				ds.PUT("/:id", r.dsHandler.UpdateDataSource)
+				ds.DELETE("/:id", r.dsHandler.DeleteDataSource)
+				ds.POST("/:id/test", r.dsHandler.TestConnection)
+				ds.POST("/:id/query", r.dsHandler.ProxyQuery)
+			}
+
+			// 仪表盘管理
+			dashboards := protected.Group("/dashboards")
+			{
+				dashboards.POST("", r.dashboardHandler.CreateDashboard)
+				dashboards.GET("", r.dashboardHandler.ListDashboards)
+				dashboards.GET("/default", r.dashboardHandler.GetDefaultDashboard)
+				dashboards.GET("/:id", r.dashboardHandler.GetDashboard)
+				dashboards.PUT("/:id", r.dashboardHandler.UpdateDashboard)
+				dashboards.DELETE("/:id", r.dashboardHandler.DeleteDashboard)
+				// 面板
+				dashboards.POST("/:id/panels", r.dashboardHandler.CreatePanel)
+				dashboards.GET("/:id/panels", r.dashboardHandler.ListPanels)
+				dashboards.PUT("/:id/panels/:panel_id", r.dashboardHandler.UpdatePanel)
+				dashboards.DELETE("/:id/panels/:panel_id", r.dashboardHandler.DeletePanel)
+			}
+
 			// TODO: 添加更多路由
 			// 巡检中心
-			// 数据管理
 			// 日志管理
 			// AI问答
 			// 终端

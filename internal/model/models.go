@@ -158,6 +158,63 @@ func (LoginLog) TableName() string {
 	return "login_logs"
 }
 
+// DataSource 数据源模型 (Prometheus / InfluxDB / etc.)
+type DataSource struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	TenantID    uint           `gorm:"index" json:"tenant_id"`
+	Name        string         `gorm:"size:100;not null" json:"name"`
+	Type        string         `gorm:"size:50;not null" json:"type"`          // prometheus
+	URL         string         `gorm:"size:255;not null" json:"url"`
+	Config      string         `gorm:"type:text" json:"config"`              // JSON: headers, auth, tls_skip_verify
+	IsDefault   bool           `gorm:"default:false" json:"is_default"`
+	IsActive    bool           `gorm:"default:true" json:"is_active"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (DataSource) TableName() string {
+	return "data_sources"
+}
+
+// Dashboard 仪表盘模型
+type Dashboard struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	TenantID    uint           `gorm:"index" json:"tenant_id"`
+	Title       string         `gorm:"size:200;not null" json:"title"`
+	Description string         `gorm:"type:text" json:"description"`
+	Config      string         `gorm:"type:text" json:"config"`               // JSON: layout variables refresh interval
+	IsDefault   bool           `gorm:"default:false" json:"is_default"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+	Panels []DashboardPanel `gorm:"foreignKey:DashboardID" json:"panels,omitempty"`
+}
+
+func (Dashboard) TableName() string {
+	return "dashboards"
+}
+
+// DashboardPanel 图表面板模型
+type DashboardPanel struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	DashboardID  uint      `gorm:"index;not null" json:"dashboard_id"`
+	Title        string    `gorm:"size:200" json:"title"`
+	Type         string    `gorm:"size:50;not null" json:"type"`           // line / bar / pie / gauge / stat / table
+	DataSourceID uint      `gorm:"index;not null" json:"data_source_id"`
+	Query        string    `gorm:"type:text" json:"query"`                 // PromQL
+	Position     string    `gorm:"type:text" json:"position"`              // JSON: {x, y, w, h}
+	Options      string    `gorm:"type:text" json:"options"`               // JSON: legend, thresholds, colors, unit
+	SortOrder    int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (DashboardPanel) TableName() string {
+	return "dashboard_panels"
+}
+
 // AuditLog 审计日志模型 - 操作审计
  type AuditLog struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`

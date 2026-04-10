@@ -69,6 +69,14 @@ func main() {
 	k8sService := service.NewK8sResourceService(k8sManager)
 	log.Println("✅ K8s 资源服务初始化完成")
 
+	// 创建数据源服务
+	dsService := service.NewDatasourceService(db)
+	log.Println("✅ 数据源服务初始化完成")
+
+	// 创建仪表盘服务
+	dashboardService := service.NewDashboardService(db)
+	log.Println("✅ 仪表盘服务初始化完成")
+
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -109,7 +117,7 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 
