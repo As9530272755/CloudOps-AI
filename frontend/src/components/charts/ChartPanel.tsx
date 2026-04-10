@@ -253,7 +253,23 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               axisPointer: { type: 'cross', label: { backgroundColor: '#6b7280' } },
               confine: true,
               order: 'valueDesc',
-              extraCssText: 'max-height: 240px; overflow-y: auto;',
+              formatter: (params: any) => {
+                if (!Array.isArray(params) || params.length === 0) return ''
+                const maxItems = 12
+                let html = `<div style="font-weight:600;margin-bottom:4px;">${params[0].axisValue}</div>`
+                for (let i = 0; i < Math.min(params.length, maxItems); i++) {
+                  const p = params[i]
+                  html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;white-space:nowrap;">`
+                  html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`
+                  html += `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;max-width:280px;">${p.seriesName}</span>`
+                  html += `<span style="font-weight:600;margin-left:8px;">${p.value}</span>`
+                  html += `</div>`
+                }
+                if (params.length > maxItems) {
+                  html += `<div style="margin-top:4px;color:#9ca3af;font-size:11px;">... 和另外 ${params.length - maxItems} 个指标</div>`
+                }
+                return html
+              },
             },
             dataZoom: [
               { type: 'inside', start: 0, end: 100 },
