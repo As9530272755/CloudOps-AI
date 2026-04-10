@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Box, Typography, CircularProgress, Paper } from '@mui/material'
+import { Box, Typography, CircularProgress, Paper, useTheme, IconButton, Menu, MenuItem } from '@mui/material'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import * as echarts from 'echarts'
 import { ChartType, PanelOptions } from './types'
 import { datasourceAPI } from '../../lib/datasource-api'
@@ -100,8 +101,6 @@ function formatPrometheusData(result: any, chartType: ChartType) {
   return { series, timestamps }
 }
 
-// Grafana-style auto points: show points when density is low
-// Heuristic: at least ~8px per data point on screen
 function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: number, dataLength: number): 'circle' | 'none' {
   if (showPoints === 'never') return 'none'
   if (showPoints === 'always') return 'circle'
@@ -109,13 +108,32 @@ function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: n
   return chartWidth / dataLength > 8 ? 'circle' : 'none'
 }
 
-export function ChartPanel({ title, type, query, dataSourceId, options }: {
+export function ChartPanel({
+  title,
+  type,
+  query,
+  dataSourceId,
+  options,
+  width,
+  height,
+  onEdit,
+  onDelete,
+  onDuplicate,
+  showMenu = false,
+}: {
   title: string
   type: ChartType
   query: string
   dataSourceId: number
   options?: PanelOptions
+  width?: number
+  height?: number
+  onEdit?: () => void
+  onDelete?: () => void
+  onDuplicate?: () => void
+  showMenu?: boolean
 }) {
+  const theme = useTheme()
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
   const [chartData, setChartData] = useState<any>(null)
@@ -123,6 +141,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
   const [error, setError] = useState<string | null>(null)
   const [statValue, setStatValue] = useState<number | null>(null)
   const [tableData, setTableData] = useState<{ columns: string[]; rows: any[] } | null>(null)
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
 
   const loadData = useCallback(async () => {
     if (!query || !dataSourceId) return
@@ -163,7 +182,8 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
   useEffect(() => {
     if (!chartRef.current) return
     if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current, 'dark')
+      // 跟随系统主题：不强制 dark 主题
+      chartInstance.current = echarts.init(chartRef.current, undefined, { renderer: 'canvas' })
     }
 
     const ro = new ResizeObserver(() => chartInstance.current?.resize())
@@ -180,12 +200,18 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     }
   }, [])
 
-  // 数据或类型变化时重新拉取
+  // 外部 width/height 变化时重绘
+  useEffect(() => {
+    if (chartInstance.current) {
+      chartInstance.current.resize()
+    }
+  }, [width, height])
+
   useEffect(() => {
     loadData()
   }, [loadData])
 
-  // chartData 准备好后绘制（Grafana 风格）
+  // chartData 准备好后绘制
   useEffect(() => {
     if (!chartInstance.current || !chartData) return
     if (type === 'stat' || type === 'table') return
@@ -196,14 +222,13 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
 
     function buildLegend() {
       if (!showLegend) return undefined
-      const common = { type: 'scroll', textStyle: { color: '#c7d0d9', fontSize: 11 }, pageIconColor: '#8e8e8e', pageTextStyle: { color: '#c7d0d9' }, tooltip: { show: true } }
+      const common = { type: 'scroll', textStyle: { color: theme.palette.text.primary, fontSize: 11 }, tooltip: { show: true } }
       if (legendPlacement === 'bottom') return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect' } as any
       if (legendPlacement === 'left') return { ...common, orient: 'vertical', left: 0, top: 'middle', icon: 'roundRect' } as any
       if (legendPlacement === 'right') return { ...common, orient: 'vertical', right: 0, top: 'middle', icon: 'roundRect' } as any
       return { ...common, orient: 'horizontal', bottom: 0, left: 'center', icon: 'roundRect' } as any
     }
 
-    // Guard: 切换图表类型时，旧 chartData 结构可能与新 type 不匹配（例如 pie -> line）
     const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.timestamps)
     const hasPieData = Array.isArray(chartData.data)
     const hasGaugeData = chartData.value !== undefined
@@ -211,13 +236,19 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     if (type === 'pie' && !hasPieData) return
     if (type === 'gauge' && !hasGaugeData) return
 
-    // Resolve Grafana-style options with defaults
     const drawStyle = resolveOption(options, 'drawStyle')
     const lineWidth = resolveOption(options, 'lineWidth')
     const fillOpacity = resolveOption(options, 'fillOpacity')
     const showPoints = resolveOption(options, 'showPoints')
     const pointSize = resolveOption(options, 'pointSize')
     const lineInterpolation = resolveOption(options, 'lineInterpolation')
+
+    const axisColor = theme.palette.mode === 'dark' ? '#4b5563' : '#d1d5db'
+    const labelColor = theme.palette.mode === 'dark' ? '#9ca3af' : '#6b7280'
+    const splitColor = theme.palette.mode === 'dark' ? '#374151' : '#f3f4f6'
+    const tooltipBg = theme.palette.mode === 'dark' ? '#1f2937' : '#ffffff'
+    const tooltipBorder = theme.palette.mode === 'dark' ? '#374151' : '#e5e7eb'
+    const tooltipText = theme.palette.mode === 'dark' ? '#f3f4f6' : '#111827'
 
     let option: echarts.EChartsOption = {}
 
@@ -247,10 +278,10 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             },
             tooltip: {
               trigger: 'axis',
-              backgroundColor: '#181b1f',
-              borderColor: '#464c54',
-              textStyle: { color: '#c7d0d9', fontSize: 12 },
-              axisPointer: { type: 'cross', label: { backgroundColor: '#2c3235' } },
+              backgroundColor: tooltipBg,
+              borderColor: tooltipBorder,
+              textStyle: { color: tooltipText, fontSize: 12 },
+              axisPointer: { type: 'cross', label: { backgroundColor: splitColor } },
               confine: true,
               order: 'valueDesc',
               enterable: true,
@@ -259,10 +290,10 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
                 if (!Array.isArray(params) || params.length === 0) return ''
                 const t = new Date(params[0].axisValue)
                 const timeLabel = `${(t.getMonth() + 1).toString().padStart(2, '0')}/${t.getDate().toString().padStart(2, '0')} ${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`
-                let html = `<div style="font-weight:600;margin-bottom:4px;">${timeLabel}</div>`
+                let html = `<div style="font-weight:600;margin-bottom:4px;color:${tooltipText}">${timeLabel}</div>`
                 for (let i = 0; i < params.length; i++) {
                   const p = params[i]
-                  html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;white-space:nowrap;">`
+                  html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;white-space:nowrap;color:${tooltipText}">`
                   html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`
                   html += `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;max-width:280px;">${p.seriesName}</span>`
                   html += `<span style="font-weight:600;margin-left:8px;">${p.value}</span>`
@@ -276,15 +307,15 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             ],
             xAxis: {
               type: 'time',
-              axisLine: { lineStyle: { color: '#464c54' } },
-              axisLabel: { color: '#8e8e8e', fontSize: 11, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
+              axisLine: { lineStyle: { color: axisColor } },
+              axisLabel: { color: labelColor, fontSize: 11, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
               splitLine: { show: false },
             },
             yAxis: {
               type: 'value',
               axisLine: { show: false },
-              axisLabel: { color: '#8e8e8e', fontSize: 11 },
-              splitLine: { lineStyle: { color: '#252a2e' } },
+              axisLabel: { color: labelColor, fontSize: 11 },
+              splitLine: { lineStyle: { color: splitColor } },
             },
             legend: buildLegend(),
             series: chartData.series.map((s: any) => {
@@ -299,7 +330,6 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
                 symbol: symbol,
                 symbolSize: symbol === 'circle' ? pointSize : undefined,
                 lineStyle: isLine ? { width: lineWidth } : undefined,
-                // Grafana: fill only when fillOpacity > 0
                 areaStyle: areaOpacity > 0 ? { opacity: areaOpacity } : undefined,
                 emphasis: {
                   lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined },
@@ -311,7 +341,6 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
         }
         case 'pie': {
           const pieCount = (chartData.data || []).length
-          // Grafana style: hide pie labels when too many series to avoid overlap hell
           const showPieLabel = pieCount <= 10
           const centerX = legendPlacement === 'right' ? '40%' : (legendPlacement === 'left' ? '60%' : '50%')
           option = {
@@ -319,9 +348,9 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             color: GRAFANA_COLORS,
             tooltip: {
               trigger: 'item',
-              backgroundColor: '#181b1f',
-              borderColor: '#464c54',
-              textStyle: { color: '#c7d0d9' },
+              backgroundColor: tooltipBg,
+              borderColor: tooltipBorder,
+              textStyle: { color: tooltipText },
             },
             legend: buildLegend(),
             series: [{
@@ -329,7 +358,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
               radius: ['35%', '65%'],
               center: [centerX, '50%'],
               data: chartData.data || [],
-              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11, color: '#c7d0d9' },
+              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11, color: labelColor },
               emphasis: {
                 itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
               },
@@ -342,23 +371,23 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
             backgroundColor: 'transparent',
             tooltip: {
               trigger: 'item',
-              backgroundColor: '#181b1f',
-              borderColor: '#464c54',
-              textStyle: { color: '#c7d0d9' },
+              backgroundColor: tooltipBg,
+              borderColor: tooltipBorder,
+              textStyle: { color: tooltipText },
             },
             series: [{
               type: 'gauge',
               min: options?.min ?? 0,
               max: options?.max ?? 100,
-              detail: { formatter: '{value}', fontSize: 24, color: '#c7d0d9' },
+              detail: { formatter: '{value}', fontSize: 24, color: tooltipText },
               data: [{ value: chartData.value, name: chartData.name }],
               axisLine: { lineStyle: { width: 12, color: [
                 [0.3, '#7EB26D'], [0.7, '#EAB839'], [1, '#E24D42']
               ] } },
               splitLine: { length: 12 },
               axisTick: { length: 8 },
-              axisLabel: { fontSize: 10, color: '#8e8e8e' },
-              title: { fontSize: 12, color: '#8e8e8e', offsetCenter: [0, '70%'] },
+              axisLabel: { fontSize: 10, color: labelColor },
+              title: { fontSize: 12, color: labelColor, offsetCenter: [0, '70%'] },
             }],
           }
           break
@@ -368,7 +397,7 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
     } catch (e) {
       console.error('ECharts render error:', e)
     }
-  }, [chartData, type, options])
+  }, [chartData, type, options, theme])
 
   return (
     <Paper
@@ -380,43 +409,59 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        background: '#181b1f',
-        border: '1px solid #2c3235',
+        border: `1px solid ${theme.palette.divider}`,
       }}
     >
       <Box className="grid-drag-handle" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, position: 'relative', zIndex: 10, cursor: 'move' }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 500, fontSize: '0.8125rem', color: '#c7d0d9' }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 500, fontSize: '0.8125rem', color: 'text.primary' }}>
           {title}
         </Typography>
+        {showMenu && (
+          <>
+            <IconButton size="small" className="grid-drag-cancel" onClick={(e) => setMenuAnchor(e.currentTarget)}>
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+            <Menu
+              anchorEl={menuAnchor}
+              open={Boolean(menuAnchor)}
+              onClose={() => setMenuAnchor(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              {onEdit && <MenuItem onClick={() => { setMenuAnchor(null); onEdit() }}>编辑</MenuItem>}
+              {onDuplicate && <MenuItem onClick={() => { setMenuAnchor(null); onDuplicate() }}>复制</MenuItem>}
+              {onDelete && <MenuItem onClick={() => { setMenuAnchor(null); onDelete() }} sx={{ color: 'error.main' }}>删除</MenuItem>}
+            </Menu>
+          </>
+        )}
       </Box>
 
-      {/* 图表区：始终保留 DOM，loading/error 用 overlay */}
       <Box sx={{ flex: 1, minHeight: 0, position: 'relative', mt: 0.5 }}>
         {type === 'stat' ? (
           <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-            <Typography variant="h3" sx={{ fontWeight: 700, color: options?.thresholds ? options.thresholds[0]?.color : '#c7d0d9' }}>
+            <Typography variant="h3" sx={{ fontWeight: 700, color: options?.thresholds ? options.thresholds[0]?.color : 'text.primary' }}>
               {statValue !== null ? statValue.toFixed(options?.decimals ?? 1) : '-'}
             </Typography>
             {options?.unit && (
-              <Typography variant="caption" sx={{ color: '#8e8e8e' }}>{options.unit}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>{options.unit}</Typography>
             )}
           </Box>
         ) : type === 'table' ? (
           <Box sx={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
-            <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: '#c7d0d9' }}>
+            <Box component="table" sx={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', color: 'text.primary' }}>
               <Box component="thead">
                 <Box component="tr">
                   {['Time', 'Metric', 'Value'].map((h) => (
-                    <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: '1px solid #2c3235', color: '#8e8e8e' }}>{h}</Box>
+                    <Box component="th" key={h} sx={{ textAlign: 'left', p: 0.5, borderBottom: `1px solid ${theme.palette.divider}`, color: 'text.secondary' }}>{h}</Box>
                   ))}
                 </Box>
               </Box>
               <Box component="tbody">
                 {tableData?.rows.map((row: any, idx: number) => (
                   <Box component="tr" key={idx}>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #252a2e' }}>{row.time}</Box>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #252a2e', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
-                    <Box component="td" sx={{ p: 0.5, borderBottom: '1px solid #252a2e' }}>{row.value}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: `1px solid ${theme.palette.divider}` }}>{row.time}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: `1px solid ${theme.palette.divider}`, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.metric}</Box>
+                    <Box component="td" sx={{ p: 0.5, borderBottom: `1px solid ${theme.palette.divider}` }}>{row.value}</Box>
                   </Box>
                 ))}
               </Box>
@@ -430,11 +475,10 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
           />
         )}
 
-        {/* loading / error overlay */}
         {(loading || error) && type !== 'stat' && (
-          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(17,18,23,0.7)' }}>
-            {loading && <CircularProgress size={24} sx={{ color: '#8e8e8e' }} />}
-            {error && !loading && <Typography variant="caption" sx={{ color: '#E24D42' }}>{error}</Typography>}
+          <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)' }}>
+            {loading && <CircularProgress size={24} />}
+            {error && !loading && <Typography variant="caption" color="error">{error}</Typography>}
           </Box>
         )}
       </Box>

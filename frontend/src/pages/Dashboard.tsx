@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
   Box,
   Button,
@@ -18,15 +18,21 @@ import {
   Save as SaveIcon,
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
+  ContentCopy as CopyIcon,
 } from '@mui/icons-material'
 import ReactGridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
 import { clusterAPI, Cluster } from '../lib/cluster-api'
-import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel } from '../lib/dashboard-api'
+import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel, CreatePanelRequest } from '../lib/dashboard-api'
 import { ChartPanel } from '../components/charts/ChartPanel'
 import PanelEditor from '../components/dashboard/PanelEditor'
+
+// === Grafana-style grid constants (from DashboardGrid.tsx) ===
+const GRID_CELL_HEIGHT = 30
+const GRID_CELL_VMARGIN = 8
+const GRID_COLUMN_COUNT = 24
 
 const timeRangeOptions = [
   { label: '1小时', value: '1h' },
@@ -49,8 +55,52 @@ function getTimeRange(value: string) {
   return { start: now - (map[value] || 3600), end: now }
 }
 
+function sortPanelsByGridPos(panels: DashboardPanel[]): DashboardPanel[] {
+  return [...panels].sort((a, b) => {
+    let pa = { x: 0, y: 0 }
+    let pb = { x: 0, y: 0 }
+    try { pa = JSON.parse(a.position) } catch {}
+    try { pb = JSON.parse(b.position) } catch {}
+    if (pa.y !== pb.y) return pa.y - pb.y
+    return pa.x - pb.x
+  })
+}
+
+interface GrafanaGridItemProps extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode
+}
+
+// Intercept react-grid-layout dimensions and pass width/height to children (same as Grafana DashboardGrid)
+const GrafanaGridItem = React.forwardRef<HTMLDivElement, GrafanaGridItemProps>((props, ref) => {
+  const { children, style, ...divProps } = props
+  let width = 100
+  let height = 100
+
+  if (style) {
+    const s = style as React.CSSProperties
+    if (s.width != null) {
+      width = typeof s.width === 'number' ? s.width : parseFloat(s.width as string)
+    }
+    if (s.height != null) {
+      height = typeof s.height === 'number' ? s.height : parseFloat(s.height as string)
+    }
+  }
+
+  const childArray = React.Children.toArray(children)
+  return (
+    <div {...divProps} style={style} ref={ref}>
+      {childArray.length > 0 && React.isValidElement(childArray[0])
+        ? React.cloneElement(childArray[0] as React.ReactElement, { width, height })
+        : childArray[0]}
+      {childArray.slice(1)}
+    </div>
+  )
+})
+GrafanaGridItem.displayName = 'GrafanaGridItem'
+
 export default function Dashboard() {
-  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const gridRootRef = useRef<HTMLDivElement>(null)
+  const gridWrapperRef = useRef<HTMLDivElement>(null)
   const [gridWidth, setGridWidth] = useState(1200)
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [dashboard, setDashboard] = useState<DashboardModel | null>(null)
@@ -62,23 +112,21 @@ export default function Dashboard() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
 
-  // 动态计算 grid 宽度（在 grid 容器出现或改变时重新绑定）
+  // === Grafana: ResizeObserver on root to track grid width ===
   useEffect(() => {
-    if (!gridContainerRef.current) return
-    const el = gridContainerRef.current
+    if (!gridRootRef.current) return
+    const el = gridRootRef.current
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect?.width
       if (w) setGridWidth(Math.floor(w))
     })
     ro.observe(el)
-    // 立即同步一次，解决挂载时已存在容器但 observer 延迟的问题
     setGridWidth(Math.floor(el.clientWidth))
     return () => ro.disconnect()
   }, [panels.length, editMode])
 
   useMemo(() => getTimeRange(timeRange), [timeRange])
 
-  // Load clusters for stat cards
   const loadClusters = useCallback(async () => {
     try {
       const result = await clusterAPI.getClusters()
@@ -86,7 +134,6 @@ export default function Dashboard() {
     } catch {}
   }, [])
 
-  // Load default dashboard
   const loadDashboard = useCallback(async () => {
     try {
       const result = await dashboardAPI.getDefault()
@@ -108,13 +155,10 @@ export default function Dashboard() {
   // Auto refresh
   useEffect(() => {
     if (!refreshInterval) return
-    const timer = setInterval(() => {
-      setRefreshTick((t) => t + 1)
-    }, refreshInterval * 1000)
+    const timer = setInterval(() => setRefreshTick((t) => t + 1), refreshInterval * 1000)
     return () => clearInterval(timer)
   }, [refreshInterval])
 
-  // Ensure dashboard exists (auto-create if missing)
   const ensureDashboard = async () => {
     if (dashboard) return
     try {
@@ -133,25 +177,25 @@ export default function Dashboard() {
     }
   }
 
-  // Local layout state for RGL to prevent re-renders during drag
-  const [currentLayout, setCurrentLayout] = useState<any[]>([])
+  // Build layout for react-grid-layout (Grafana style)
+  const layout = useMemo(() => {
+    return panels.map((p) => {
+      let pos = { x: 0, y: 0, w: 12, h: 8 }
+      try {
+        pos = JSON.parse(p.position)
+      } catch {}
+      return { i: String(p.id), x: pos.x, y: pos.y, w: pos.w, h: pos.h }
+    })
+  }, [panels])
 
+  // Grafana animation hack: delay move animations to avoid fly-in on initial load
   useEffect(() => {
-    setCurrentLayout(
-      panels.map((p) => {
-        let pos = { x: 0, y: 0, w: 6, h: 4 }
-        try {
-          pos = JSON.parse(p.position)
-        } catch {}
-        return { i: String(p.id), ...pos }
-      })
-    )
-  }, [panels])
-
-  // GridLayout key：面板增删时强制重绘，避免残留 overlay/死区
-  const gridKey = useMemo(() => {
-    return `grid-${panels.map((p) => p.id).join('-')}`
-  }, [panels])
+    if (gridWrapperRef.current) {
+      const ref = gridWrapperRef.current
+      const t = setTimeout(() => ref.classList.add('react-grid-layout--enable-move-animations'), 50)
+      return () => clearTimeout(t)
+    }
+  }, [])
 
   const handleEditPanel = (panel: DashboardPanel) => {
     setEditingPanel(panel)
@@ -169,35 +213,66 @@ export default function Dashboard() {
     }
   }
 
-  const onLayoutChange = useCallback((newLayout: any[]) => {
-    if (!editMode) return
-    setCurrentLayout(newLayout)
-  }, [editMode])
+  const handleDuplicatePanel = async (panel: DashboardPanel) => {
+    if (!dashboard) return
+    let pos = { x: 0, y: 0, w: 12, h: 8 }
+    try {
+      pos = JSON.parse(panel.position)
+    } catch {}
+    pos.x = (pos.x + pos.w) % GRID_COLUMN_COUNT
+    const data: CreatePanelRequest = {
+      title: `${panel.title} (复制)`,
+      type: panel.type,
+      data_source_id: panel.data_source_id,
+      query: panel.query,
+      position: JSON.stringify(pos),
+      options: panel.options,
+      sort_order: panel.sort_order,
+    }
+    try {
+      await dashboardAPI.createPanel(dashboard.id, data)
+      loadDashboard()
+    } catch (err: any) {
+      alert(err.message || '复制失败')
+    }
+  }
 
-  const persistLayout = useCallback((newLayout: any[]) => {
-    const updated = panels.map((p) => {
-      const item = newLayout.find((l: any) => l.i === String(p.id))
-      if (!item) return p
-      return { ...p, position: JSON.stringify({ x: item.x, y: item.y, w: item.w, h: item.h }) }
-    })
-    setPanels(updated)
-  }, [panels])
+  const onDragStop = useCallback(
+    (_layout: ReactGridLayout.Layout[], _oldItem: ReactGridLayout.Layout, newItem: ReactGridLayout.Layout) => {
+      if (!editMode) return
+      // Update single item and sort
+      const updated = panels.map((p) =>
+        String(p.id) === newItem.i ? { ...p, position: JSON.stringify({ x: newItem.x, y: newItem.y, w: newItem.w, h: newItem.h }) } : p
+      )
+      setPanels(sortPanelsByGridPos(updated))
+    },
+    [editMode, panels]
+  )
 
-  const onDragStop = useCallback((newLayout: any[]) => {
-    if (!editMode) return
-    setCurrentLayout(newLayout)
-    persistLayout(newLayout)
-  }, [editMode, persistLayout])
+  const onResize = useCallback(
+    (_layout: ReactGridLayout.Layout[], _oldItem: ReactGridLayout.Layout, newItem: ReactGridLayout.Layout) => {
+      if (!editMode) return
+      const updated = panels.map((p) =>
+        String(p.id) === newItem.i ? { ...p, position: JSON.stringify({ x: newItem.x, y: newItem.y, w: newItem.w, h: newItem.h }) } : p
+      )
+      setPanels(sortPanelsByGridPos(updated))
+    },
+    [editMode, panels]
+  )
 
-  const onResizeStop = useCallback((newLayout: any[]) => {
-    if (!editMode) return
-    setCurrentLayout(newLayout)
-    persistLayout(newLayout)
-  }, [editMode, persistLayout])
+  const onResizeStop = useCallback(
+    (_layout: ReactGridLayout.Layout[], _oldItem: ReactGridLayout.Layout, newItem: ReactGridLayout.Layout) => {
+      if (!editMode) return
+      const updated = panels.map((p) =>
+        String(p.id) === newItem.i ? { ...p, position: JSON.stringify({ x: newItem.x, y: newItem.y, w: newItem.w, h: newItem.h }) } : p
+      )
+      setPanels(sortPanelsByGridPos(updated))
+    },
+    [editMode, panels]
+  )
 
   const handleSaveLayout = async () => {
     if (!dashboard) return
-    // Save all panel positions
     for (const p of panels) {
       await dashboardAPI.updatePanel(dashboard.id, p.id, {
         title: p.title,
@@ -218,7 +293,7 @@ export default function Dashboard() {
     setEditorOpen(true)
   }
 
-  const handleSavePanel = async (data: any) => {
+  const handleSavePanel = async (data: CreatePanelRequest) => {
     if (!dashboard) {
       await ensureDashboard()
     }
@@ -238,35 +313,50 @@ export default function Dashboard() {
   const totalPods = clusters.reduce((sum, c) => sum + (c.metadata?.pod_count || 0), 0)
   const healthyClusters = clusters.filter((c) => c.metadata?.health_status === 'healthy').length
 
+  // Render individual panel wrapped in GrafanaGridItem
+  const renderPanels = () => {
+    return panels.map((panel) => {
+      const parsedOptions = panel.options ? JSON.parse(panel.options) : {}
+      return (
+        <GrafanaGridItem key={panel.id}>
+          <ChartPanel
+            key={`${panel.id}-${refreshTick}-${timeRange}`}
+            title={panel.title}
+            type={panel.type as any}
+            query={panel.query}
+            dataSourceId={panel.data_source_id}
+            options={parsedOptions}
+            width={0}
+            height={0}
+            showMenu={editMode}
+            onEdit={() => handleEditPanel(panel)}
+            onDelete={() => handleDeletePanel(panel)}
+            onDuplicate={() => handleDuplicatePanel(panel)}
+          />
+        </GrafanaGridItem>
+      )
+    })
+  }
+
   return (
-    <Box sx={{ p: 3, bgcolor: '#0b0c0e', minHeight: '100vh' }}>
-      {/* Header */}
-      <Card sx={{ mb: 3, bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px' }}>
+    <Box sx={{ p: 3, minHeight: '100vh' }}>
+      {/* === Header toolbar === */}
+      <Card sx={{ mb: 3 }}>
         <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 600, color: '#c7d0d9' }}>仪表盘</Typography>
-            <Typography variant="body2" sx={{ color: '#8e8e8e' }}>
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>仪表盘</Typography>
+            <Typography variant="body2" color="text.secondary">
               可视化监控中心
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <ToggleButtonGroup
-              size="small"
-              value={timeRange}
-              exclusive
-              onChange={(_, v) => v && setTimeRange(v)}
-            >
+            <ToggleButtonGroup size="small" value={timeRange} exclusive onChange={(_, v) => v && setTimeRange(v)}>
               {timeRangeOptions.map((opt) => (
                 <ToggleButton key={opt.value} value={opt.value}>{opt.label}</ToggleButton>
               ))}
             </ToggleButtonGroup>
 
-            <ToggleButtonGroup
-              size="small"
-              value={refreshInterval}
-              exclusive
-              onChange={(_, v) => v !== null && setRefreshInterval(v)}
-            >
+            <ToggleButtonGroup size="small" value={refreshInterval} exclusive onChange={(_, v) => v !== null && setRefreshInterval(v)}>
               {refreshOptions.map((opt) => (
                 <ToggleButton key={opt.value} value={opt.value}>{opt.label}</ToggleButton>
               ))}
@@ -288,7 +378,6 @@ export default function Dashboard() {
                   setEditMode(true)
                 }
               }}
-              sx={editMode ? { background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)', color: '#fff' } : {}}
             >
               {editMode ? '保存布局' : '编辑'}
             </Button>
@@ -296,7 +385,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Stat Cards */}
+      {/* === Stat cards === */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
         {[
           { label: '集群总数', value: clusters.length, color: '#007AFF' },
@@ -304,9 +393,9 @@ export default function Dashboard() {
           { label: '节点总数', value: totalNodes, color: '#5856D6' },
           { label: 'Pod 总数', value: totalPods, color: '#FF9500' },
         ].map((stat) => (
-          <Card key={stat.label} sx={{ bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px', borderLeft: `4px solid ${stat.color}` }}>
+          <Card key={stat.label} sx={{ borderLeft: `4px solid ${stat.color}` }}>
             <CardContent>
-              <Typography variant="body2" sx={{ color: '#8e8e8e' }}>{stat.label}</Typography>
+              <Typography variant="body2" color="text.secondary">{stat.label}</Typography>
               <Typography variant="h4" sx={{ fontWeight: 700, color: stat.color, mt: 1 }}>
                 {stat.value}
               </Typography>
@@ -315,15 +404,15 @@ export default function Dashboard() {
         ))}
       </Box>
 
-      {/* 编辑模式：顶部管理条 */}
+      {/* === Edit mode management bar === */}
       {editMode && (
-        <Card sx={{ mb: 3, bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px' }}>
+        <Card sx={{ mb: 3 }}>
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#c7d0d9' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                 面板管理
               </Typography>
-              <Button variant="outlined" size="small" onClick={() => setEditMode(false)} sx={{ color: '#c7d0d9', borderColor: '#464c54' }}>
+              <Button variant="outlined" size="small" onClick={() => setEditMode(false)}>
                 退出编辑
               </Button>
             </Box>
@@ -337,17 +426,20 @@ export default function Dashboard() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
-                    borderRadius: '3px',
-                    background: '#111217',
-                    border: '1px solid #2c3235',
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'divider',
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontWeight: 500, color: '#c7d0d9' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
                     {panel.title}
                   </Typography>
                   <Chip label={panel.type} size="small" variant="outlined" />
                   <IconButton size="small" onClick={() => handleEditPanel(panel)}>
                     <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" onClick={() => handleDuplicatePanel(panel)}>
+                    <CopyIcon fontSize="small" />
                   </IconButton>
                   <IconButton size="small" color="error" onClick={() => handleDeletePanel(panel)}>
                     <DeleteIcon fontSize="small" />
@@ -355,7 +447,7 @@ export default function Dashboard() {
                 </Card>
               ))}
               {panels.length === 0 && (
-                <Typography variant="body2" sx={{ color: '#8e8e8e' }}>
+                <Typography variant="body2" color="text.secondary">
                   当前无面板，点击下方按钮添加
                 </Typography>
               )}
@@ -364,64 +456,56 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Dashboard Grid */}
+      {/* === Dashboard Grid (Grafana style) === */}
       {!dashboard && !editMode ? (
-        <Card sx={{ bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px', textAlign: 'center', py: 8 }}>
-          <Typography variant="h6" sx={{ mb: 2, color: '#c7d0d9' }}>
+        <Card sx={{ textAlign: 'center', py: 8 }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>
             暂无仪表盘
           </Typography>
-          <Button variant="contained" onClick={handleAddPanel} sx={{ borderRadius: '3px' }}>
+          <Button variant="contained" onClick={handleAddPanel}>
             创建默认仪表盘并添加面板
           </Button>
         </Card>
       ) : (
         <Box sx={{ position: 'relative' }}>
           {panels.length === 0 && !editMode && (
-            <Card sx={{ bgcolor: '#181b1f', border: '1px solid #2c3235', borderRadius: '3px', textAlign: 'center', py: 8 }}>
-              <Typography variant="h6" sx={{ mb: 2, color: '#c7d0d9' }}>当前仪表盘为空</Typography>
-              <Typography variant="body2" sx={{ color: '#8e8e8e', mb: 3 }}>
+            <Card sx={{ textAlign: 'center', py: 8 }}>
+              <Typography variant="h6" sx={{ mb: 2 }}>当前仪表盘为空</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 点击编辑按钮添加您的第一个监控面板
               </Typography>
-              <Button variant="contained" onClick={() => setEditMode(true)} sx={{ borderRadius: '3px' }}>
+              <Button variant="contained" onClick={() => setEditMode(true)}>
                 开始编辑
               </Button>
             </Card>
           )}
 
           {(panels.length > 0 || editMode) && (
-            <Box ref={gridContainerRef}>
-              <ReactGridLayout
-                key={gridKey}
-                className="layout"
-                layout={currentLayout}
-                width={gridWidth}
-                cols={12}
-                rowHeight={60}
-                margin={[16, 16]}
-                containerPadding={[0, 0]}
-                isDraggable={editMode}
-                isResizable={editMode}
-                draggableHandle=".grid-drag-handle"
-                draggableCancel=".grid-drag-cancel"
-                onLayoutChange={onLayoutChange}
-                onDragStop={onDragStop}
-                onResizeStop={onResizeStop}
-                useCSSTransforms
-              >
-                {panels.map((panel) => (
-                  <Box key={panel.id}>
-                    <ChartPanel
-                      key={`${panel.id}-${refreshTick}-${timeRange}`}
-                      title={panel.title}
-                      type={panel.type as any}
-                      query={panel.query}
-                      dataSourceId={panel.data_source_id}
-                      options={panel.options ? JSON.parse(panel.options) : {}}
-                    />
-                  </Box>
-                ))}
-              </ReactGridLayout>
-            </Box>
+            <div
+              ref={gridRootRef}
+              style={{ flex: '1 1 auto', position: 'relative', zIndex: 1 }}
+            >
+              <div style={{ width: gridWidth, height: '100%' }} ref={gridWrapperRef}>
+                <ReactGridLayout
+                  width={gridWidth}
+                  isDraggable={editMode}
+                  isResizable={editMode}
+                  containerPadding={[0, 0]}
+                  useCSSTransforms={true}
+                  margin={[GRID_CELL_VMARGIN, GRID_CELL_VMARGIN]}
+                  cols={GRID_COLUMN_COUNT}
+                  rowHeight={GRID_CELL_HEIGHT}
+                  draggableHandle=".grid-drag-handle"
+                  draggableCancel=".grid-drag-cancel"
+                  layout={layout}
+                  onDragStop={onDragStop}
+                  onResize={onResize}
+                  onResizeStop={onResizeStop}
+                >
+                  {renderPanels()}
+                </ReactGridLayout>
+              </div>
+            </div>
           )}
         </Box>
       )}
@@ -436,6 +520,7 @@ export default function Dashboard() {
         </Fab>
       )}
 
+      {/* === Grafana-style Panel Editor (full screen takeover) === */}
       <PanelEditor
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
