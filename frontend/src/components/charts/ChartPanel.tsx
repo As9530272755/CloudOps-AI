@@ -262,13 +262,12 @@ export default function ChartPanel({
         border: '1px solid rgba(255,255,255,0.3)',
       }}
     >
-      <Box
-        sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}
-        className="drag-handle"
-      >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
-          {title}
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}>
+        <Box className="drag-handle" sx={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
+            {title}
+          </Typography>
+        </Box>
         {isEditing && (
           <Box sx={{ position: 'relative', zIndex: 10 }}>
             <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit?.() }}><EditIcon fontSize="small" /></IconButton>
