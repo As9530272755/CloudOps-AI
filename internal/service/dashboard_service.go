@@ -172,9 +172,13 @@ func (s *DashboardService) UpdatePanel(ctx context.Context, tenantID, dashboardI
 
 // DeletePanel 删除面板
 func (s *DashboardService) DeletePanel(ctx context.Context, tenantID, dashboardID, panelID uint) error {
-	return s.db.WithContext(ctx).Joins("JOIN dashboards ON dashboards.id = dashboard_panels.dashboard_id").
-		Where("dashboards.tenant_id = ? AND dashboard_panels.dashboard_id = ? AND dashboard_panels.id = ?", tenantID, dashboardID, panelID).
-		Delete(&model.DashboardPanel{}).Error
+	// 先验证仪表盘归属
+	var dashboard model.Dashboard
+	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, dashboardID).First(&dashboard).Error; err != nil {
+		return err
+	}
+	// 再删除面板
+	return s.db.WithContext(ctx).Where("dashboard_id = ? AND id = ?", dashboardID, panelID).Delete(&model.DashboardPanel{}).Error
 }
 
 // GetDefaultDashboard 获取默认仪表盘
