@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box,
   Card,
@@ -82,6 +82,7 @@ function getStatusColor(status?: string): 'success' | 'warning' | 'error' | 'def
 export default function ClusterDetail() {
   const { clusterId } = useParams<{ clusterId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const id = Number(clusterId)
 
   const [cluster, setCluster] = useState<Cluster | null>(null)
@@ -222,6 +223,24 @@ export default function ClusterDetail() {
     loadStats()
   }, [id])
 
+  // 处理从搜索跳转过来的 deep link
+  const urlCategory = searchParams.get('category')
+  const urlResource = searchParams.get('resource')
+  const urlNamespace = searchParams.get('namespace')
+  const urlName = searchParams.get('name')
+
+  useEffect(() => {
+    if (urlCategory) {
+      setActiveCategory(urlCategory)
+      if (urlResource) {
+        setActiveResource(urlResource)
+      }
+      if (urlNamespace) {
+        setSelectedNamespace(urlNamespace)
+      }
+    }
+  }, [urlCategory, urlResource, urlNamespace])
+
   useEffect(() => {
     if (activeCategory === 'overview') {
       loadStats()
@@ -229,12 +248,24 @@ export default function ClusterDetail() {
     }
     const category = resourceCategories.find(c => c.key === activeCategory)
     if (category && category.resources.length > 0) {
-      const first = category.resources[0]
-      setActiveResource(first)
+      const targetResource = category.resources.includes(activeResource) ? activeResource : category.resources[0]
+      setActiveResource(targetResource)
       setPage(1)
-      loadResources(first, 1)
+      loadResources(targetResource, 1)
     }
   }, [activeCategory, selectedNamespace, limit])
+
+  // 资源列表加载后，自动打开指定资源的详情弹窗
+  useEffect(() => {
+    if (urlName && items.length > 0 && !loading && activeResource) {
+      const target = items.find((item: any) => item.name === urlName)
+      if (target) {
+        viewDetail(target)
+        searchParams.delete('name')
+        setSearchParams(searchParams, { replace: true })
+      }
+    }
+  }, [items, loading, urlName, activeResource])
 
   useEffect(() => {
     if (activeResource && activeCategory !== 'overview') {

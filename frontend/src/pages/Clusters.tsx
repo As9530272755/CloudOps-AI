@@ -39,7 +39,7 @@ import {
 } from '@mui/icons-material'
 
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest } from '../lib/cluster-api'
-import { k8sAPI, SearchResourceItem, resourceLabels } from '../lib/k8s-api'
+import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
 
 // 状态颜色映射
 const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -234,7 +234,10 @@ export default function Clusters() {
               getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
               onChange={(_, value) => {
                 if (value && typeof value !== 'string') {
-                  navigate(`/clusters/${value.cluster_id}`)
+                  const cat = resourceCategories.find(c => c.resources.includes(value.kind))
+                  const category = cat ? cat.key : 'workloads'
+                  const nsParam = value.namespace && value.namespace !== '-' ? `&namespace=${encodeURIComponent(value.namespace)}` : ''
+                  navigate(`/clusters/${value.cluster_id}?category=${category}&resource=${value.kind}${nsParam}&name=${encodeURIComponent(value.name)}`)
                 }
               }}
               renderOption={(props, option) => (
