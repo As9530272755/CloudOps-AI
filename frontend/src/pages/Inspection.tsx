@@ -161,7 +161,7 @@ export default function Inspection() {
   const handleTrigger = async (id: number) => {
     await inspectionAPI.triggerTask(id)
     setActiveTab(1)
-    setTimeout(() => loadJobs(), 500)
+    setTimeout(() => loadJobs(), 2000)
   }
 
   const handleQuickInspect = async () => {
@@ -170,7 +170,7 @@ export default function Inspection() {
       const res = await inspectionAPI.quickInspect()
       if (res.success) {
         setActiveTab(1)
-        setTimeout(() => loadJobs(), 500)
+        setTimeout(() => loadJobs(), 2000)
       } else {
         setError(res.error || '一键巡检失败')
       }
@@ -465,62 +465,113 @@ export default function Inspection() {
 
       {/* 报告详情弹窗 */}
       <Dialog open={reportDialog} onClose={() => setReportDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
-        <DialogTitle sx={{ fontWeight: 600 }}>巡检报告 #{selectedJob?.job.id}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 600 }}>
+          巡检报告 #{selectedJob?.job.id}
+          {selectedJob && selectedJob.job.status === 'running' && (
+            <Chip label="生成中..." size="small" sx={{ ml: 1 }} color="warning" />
+          )}
+        </DialogTitle>
         <DialogContent dividers>
           {selectedJob ? (
             <Box>
-              <Box sx={{ mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   触发方式: {selectedJob.job.trigger_type === 'manual' ? '手动' : '定时'} 
                   &nbsp;|&nbsp; 集群数: {selectedJob.job.total_clusters} 
                   &nbsp;|&nbsp; 成功: {selectedJob.job.success_count} 
                   &nbsp;|&nbsp; 失败: {selectedJob.job.failed_count}
                 </Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {selectedJob.results[0]?.report_html && (
+                    <Button size="small" variant="outlined" onClick={() => {
+                      const blob = new Blob([selectedJob.results[0].report_html!], { type: 'text/html' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `report-${selectedJob.job.id}.html`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}>
+                      下载 HTML
+                    </Button>
+                  )}
+                  {selectedJob.results[0]?.report_markdown && (
+                    <Button size="small" variant="outlined" onClick={() => {
+                      const blob = new Blob([selectedJob.results[0].report_markdown!], { type: 'text/markdown' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `report-${selectedJob.job.id}.md`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}>
+                      下载 Markdown
+                    </Button>
+                  )}
+                </Box>
               </Box>
-              {selectedJob.results.map(r => (
-                <Card key={r.id} sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="subtitle1" fontWeight={600}>
-                        {clusters.find(c => c.id === r.cluster_id)?.display_name || `集群 ${r.cluster_id}`}
-                      </Typography>
-                      <Chip label={`评分 ${r.score}`} color={r.score >= 90 ? 'success' : r.score >= 70 ? 'warning' : 'error'} size="small" />
-                    </Box>
-                    {r.error_msg ? (
-                      <Alert severity="error" sx={{ mt: 1 }}>{r.error_msg}</Alert>
-                    ) : (
-                      <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>检查项</TableCell>
-                              <TableCell>状态</TableCell>
-                              <TableCell>实际值</TableCell>
-                              <TableCell>说明</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {(Array.isArray(r.findings) ? r.findings : []).map((f: any, idx: number) => (
-                              <TableRow key={idx}>
-                                <TableCell>{f.name}</TableCell>
-                                <TableCell>
-                                  <Chip
-                                    label={f.level}
-                                    size="small"
-                                    color={f.level === 'pass' ? 'success' : f.level === 'warning' ? 'warning' : f.level === 'critical' ? 'error' : 'default'}
-                                  />
-                                </TableCell>
-                                <TableCell>{String(f.actual ?? '-')}</TableCell>
-                                <TableCell>{f.message}</TableCell>
+
+              {selectedJob.results.length === 0 ? (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  报告尚未生成完成，请稍等 3-5 秒后刷新执行记录再试。
+                </Alert>
+              ) : (
+                selectedJob.results.map(r => (
+                  <Card key={r.id} sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle1" fontWeight={600}>
+                          {clusters.find(c => c.id === r.cluster_id)?.display_name || `集群 ${r.cluster_id}`}
+                        </Typography>
+                        <Chip label={`评分 ${r.score}`} color={r.score >= 90 ? 'success' : r.score >= 70 ? 'warning' : 'error'} size="small" />
+                      </Box>
+                      {r.error_msg ? (
+                        <Alert severity="error" sx={{ mt: 1 }}>{r.error_msg}</Alert>
+                      ) : r.report_html ? (
+                        <Box
+                          sx={{
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 1,
+                            p: 2,
+                            bgcolor: 'background.paper',
+                          }}
+                          dangerouslySetInnerHTML={{ __html: r.report_html }}
+                        />
+                      ) : (
+                        <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>检查项</TableCell>
+                                <TableCell>状态</TableCell>
+                                <TableCell>实际值</TableCell>
+                                <TableCell>说明</TableCell>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+                            </TableHead>
+                            <TableBody>
+                              {(Array.isArray(r.findings) ? r.findings : []).map((f: any, idx: number) => (
+                                <TableRow key={idx}>
+                                  <TableCell>{f.name}</TableCell>
+                                  <TableCell>
+                                    <Chip
+                                      label={f.level}
+                                      size="small"
+                                      color={f.level === 'pass' ? 'success' : f.level === 'warning' ? 'warning' : f.level === 'critical' ? 'error' : 'default'}
+                                    />
+                                  </TableCell>
+                                  <TableCell>{String(f.actual ?? '-')}</TableCell>
+                                  <TableCell>{f.message}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </Box>
           ) : (
             <CircularProgress />
