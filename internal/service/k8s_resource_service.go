@@ -298,10 +298,14 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *networkingv1.Ingress:
+		className := ""
+		if v.Spec.IngressClassName != nil {
+			className = *v.Spec.IngressClassName
+		}
 		return map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
-			"class":             *v.Spec.IngressClassName,
+			"class":             className,
 			"hosts":             ingressHosts(v),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
