@@ -71,6 +71,14 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
       setError('请填写完整信息')
       return
     }
+    if (options) {
+      try {
+        JSON.parse(options)
+      } catch {
+        setError('选项 JSON 格式不正确')
+        return
+      }
+    }
     setError('')
     onSave({
       title,
@@ -150,6 +158,10 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
                 rows={2}
                 size="small"
                 helperText="例如：{&quot;unit&quot;:&quot;%&quot;,&quot;legend&quot;:true}"
+                error={(() => {
+                  if (!options) return false
+                  try { JSON.parse(options); return false } catch { return true }
+                })()}
               />
             </Box>
           </Grid>
@@ -158,19 +170,29 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
               预览
             </Typography>
             <Box sx={{ height: 320, borderRadius: 2, border: '1px dashed #ccc', p: 1 }}>
-              {dataSourceId && query ? (
-                <ChartPanel
-                  title={title || '预览'}
-                  type={type as any}
-                  query={query}
-                  dataSourceId={dataSourceId}
-                  options={options ? JSON.parse(options) : {}}
-                />
-              ) : (
-                <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
-                  请选择数据源并输入查询语句
-                </Box>
-              )}
+              {(() => {
+                let parsedOptions = {}
+                if (options) {
+                  try {
+                    parsedOptions = JSON.parse(options)
+                  } catch {
+                    // ignore invalid JSON during typing
+                  }
+                }
+                return dataSourceId && query ? (
+                  <ChartPanel
+                    title={title || '预览'}
+                    type={type as any}
+                    query={query}
+                    dataSourceId={dataSourceId}
+                    options={parsedOptions}
+                  />
+                ) : (
+                  <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+                    请选择数据源并输入查询语句
+                  </Box>
+                )
+              })()}
             </Box>
           </Grid>
         </Grid>
