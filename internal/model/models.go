@@ -263,3 +263,78 @@ func (AuditLog) TableName() string {
 func (ClusterPermission) TableName() string {
 	return "cluster_permissions"
 }
+
+// ==================== 巡检中心模型 ====================
+
+// InspectionTask 巡检任务定义
+type InspectionTask struct {
+	ID             uint           `gorm:"primaryKey" json:"id"`
+	TenantID       uint           `gorm:"index" json:"tenant_id"`
+	Name           string         `gorm:"size:128;not null" json:"name"`
+	Description    string         `gorm:"size:512" json:"description"`
+	Schedule       string         `gorm:"size:64" json:"schedule"`           // Cron 表达式，空表示手动
+	ScheduleType   string         `gorm:"size:32" json:"schedule_type"`      // manual / hourly / daily / weekly / custom
+	Timezone       string         `gorm:"size:64;default:'Asia/Shanghai'" json:"timezone"`
+	Enabled        bool           `gorm:"default:true" json:"enabled"`
+	RetryTimes     int            `gorm:"default:0" json:"retry_times"`
+	ClusterIDs     string         `gorm:"type:text" json:"cluster_ids"`      // JSON 数组 [1,2,3]
+	RulesConfig    string         `gorm:"type:text" json:"rules_config"`     // JSON: 规则开关与阈值覆盖
+	NotifyConfig   string         `gorm:"type:text" json:"notify_config"`    // JSON: webhook 等通知配置
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (InspectionTask) TableName() string { return "inspection_tasks" }
+
+// InspectionJob 单次巡检执行记录
+type InspectionJob struct {
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	TaskID       uint       `gorm:"index" json:"task_id"`
+	Status       string     `gorm:"size:32;index" json:"status"`         // pending / running / success / failed / partial
+	TriggerType  string     `gorm:"size:32" json:"trigger_type"`         // scheduled / manual
+	StartedAt    *time.Time `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	TotalClusters int       `json:"total_clusters"`
+	SuccessCount int       `json:"success_count"`
+	FailedCount  int       `json:"failed_count"`
+	ScoreAvg     int       `json:"score_avg"`
+	RiskLevel    string     `gorm:"size:16" json:"risk_level"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+func (InspectionJob) TableName() string { return "inspection_jobs" }
+
+// InspectionResult 单集群巡检结果
+type InspectionResult struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	JobID          uint      `gorm:"index" json:"job_id"`
+	ClusterID      uint      `gorm:"index" json:"cluster_id"`
+	Status         string    `gorm:"size:32" json:"status"`               // success / failed
+	Score          int       `json:"score"`
+	RiskLevel      string    `gorm:"size:16" json:"risk_level"`          // low / medium / high / critical
+	Findings       string    `gorm:"type:jsonb" json:"findings"`
+	ReportHTML     string    `gorm:"type:text" json:"report_html"`
+	ReportMarkdown string    `gorm:"type:text" json:"report_markdown"`
+	ErrorMsg       string    `gorm:"type:text" json:"error_msg"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (InspectionResult) TableName() string { return "inspection_results" }
+
+// InspectionRule 巡检规则模板
+type InspectionRule struct {
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	Name        string `gorm:"size:128" json:"name"`
+	Category    string `gorm:"size:64;index" json:"category"`        // node / pod / resource / control_plane / security / config
+	SourceType  string `gorm:"size:32" json:"source_type"`           // k8s_api / promql / script
+	Expression  string `gorm:"type:text" json:"expression"`
+	Thresholds  string `gorm:"type:jsonb" json:"thresholds"`         // {"warning":0.95,"critical":0.90}
+	Weight      int    `json:"weight"`
+	Suggestion  string `gorm:"type:text" json:"suggestion"`          // 修复建议
+	Enabled     bool   `gorm:"default:true" json:"enabled"`
+	Builtin     bool   `gorm:"default:false" json:"builtin"`         // 是否内置
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (InspectionRule) TableName() string { return "inspection_rules" }

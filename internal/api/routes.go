@@ -11,23 +11,25 @@ import (
 
 // Router API 路由
 type Router struct {
-	authHandler      *handlers.AuthHandler
-	clusterHandler   *handlers.ClusterHandler
-	k8sHandler       *handlers.K8sHandler
-	dsHandler        *handlers.DatasourceHandler
-	dashboardHandler *handlers.DashboardHandler
-	jwtManager       *auth.JWTManager
+	authHandler       *handlers.AuthHandler
+	clusterHandler    *handlers.ClusterHandler
+	k8sHandler        *handlers.K8sHandler
+	dsHandler         *handlers.DatasourceHandler
+	dashboardHandler  *handlers.DashboardHandler
+	inspectionHandler *handlers.InspectionHandler
+	jwtManager        *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService) *Router {
 	return &Router{
-		authHandler:      handlers.NewAuthHandler(jwtManager),
-		clusterHandler:   handlers.NewClusterHandler(clusterService),
-		k8sHandler:       handlers.NewK8sHandler(k8sService),
-		dsHandler:        handlers.NewDatasourceHandler(dsService),
-		dashboardHandler: handlers.NewDashboardHandler(dashboardService),
-		jwtManager:       jwtManager,
+		authHandler:       handlers.NewAuthHandler(jwtManager),
+		clusterHandler:    handlers.NewClusterHandler(clusterService),
+		k8sHandler:        handlers.NewK8sHandler(k8sService),
+		dsHandler:         handlers.NewDatasourceHandler(dsService),
+		dashboardHandler:  handlers.NewDashboardHandler(dashboardService),
+		inspectionHandler: handlers.NewInspectionHandler(inspectionService),
+		jwtManager:        jwtManager,
 	}
 }
 
@@ -97,8 +99,23 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				dashboards.DELETE("/:id/panels/:panel_id", r.dashboardHandler.DeletePanel)
 			}
 
-			// TODO: 添加更多路由
 			// 巡检中心
+			inspection := protected.Group("/inspection")
+			{
+				inspection.GET("/tasks", r.inspectionHandler.ListTasks)
+				inspection.POST("/tasks", r.inspectionHandler.CreateTask)
+				inspection.GET("/tasks/:id", r.inspectionHandler.GetTask)
+				inspection.PUT("/tasks/:id", r.inspectionHandler.UpdateTask)
+				inspection.DELETE("/tasks/:id", r.inspectionHandler.DeleteTask)
+				inspection.POST("/tasks/:id/trigger", r.inspectionHandler.TriggerTask)
+
+				inspection.GET("/jobs", r.inspectionHandler.ListJobs)
+				inspection.GET("/jobs/:id", r.inspectionHandler.GetJob)
+				inspection.GET("/jobs/:id/report", r.inspectionHandler.DownloadReport)
+				inspection.GET("/results/:id", r.inspectionHandler.GetResult)
+			}
+
+			// TODO: 添加更多路由
 			// 日志管理
 			// AI问答
 			// 终端

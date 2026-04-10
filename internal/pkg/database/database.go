@@ -82,6 +82,10 @@ func autoMigrate(db *gorm.DB) error {
 		&model.DataSource{},
 		&model.Dashboard{},
 		&model.DashboardPanel{},
+		&model.InspectionTask{},
+		&model.InspectionJob{},
+		&model.InspectionResult{},
+		&model.InspectionRule{},
 	)
 }
 

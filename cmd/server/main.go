@@ -77,6 +77,14 @@ func main() {
 	dashboardService := service.NewDashboardService(db)
 	log.Println("✅ 仪表盘服务初始化完成")
 
+	// 创建巡检服务并启动调度器
+	inspectionService := service.NewInspectionService(db, k8sManager)
+	if err := inspectionService.StartScheduler(); err != nil {
+		log.Printf("⚠️ 巡检调度器启动警告: %v", err)
+	} else {
+		log.Println("✅ 巡检调度器启动完成")
+	}
+
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -117,7 +125,7 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 
