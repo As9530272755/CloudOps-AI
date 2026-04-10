@@ -204,6 +204,14 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
       return { ...common, orient: 'vertical', right: 8, top: 8, bottom: 8, icon: 'roundRect' } as any
     }
 
+    // Guard: 切换图表类型时，旧 chartData 结构可能与新 type 不匹配（例如 pie -> line）
+    const hasSeries = Array.isArray(chartData.series) && Array.isArray(chartData.times)
+    const hasPieData = Array.isArray(chartData.data)
+    const hasGaugeData = chartData.value !== undefined
+    if ((type === 'line' || type === 'bar') && !hasSeries) return
+    if (type === 'pie' && !hasPieData) return
+    if (type === 'gauge' && !hasGaugeData) return
+
     // Resolve Grafana-style options with defaults
     const drawStyle = resolveOption(options, 'drawStyle')
     const lineWidth = resolveOption(options, 'lineWidth')
@@ -214,137 +222,137 @@ export function ChartPanel({ title, type, query, dataSourceId, options }: {
 
     let option: echarts.EChartsOption = {}
 
-    switch (type) {
-      case 'line':
-      case 'bar': {
-        const effectiveType = drawStyle === 'points' ? 'line' : (drawStyle === 'bar' ? 'bar' : 'line')
-        const symbol = drawStyle === 'points'
-          ? 'circle'
-          : shouldShowPoints(showPoints, chartWidth, dataLength)
-
-        const gridRight = legendPlacement === 'right' ? (showLegend ? 160 : 16) : 16
-        const gridLeft = legendPlacement === 'left' ? (showLegend ? 160 : 16) : 48
-        const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 80 : 40) : 40
-
-        option = {
-          backgroundColor: 'transparent',
-          color: GRAFANA_COLORS,
-          grid: {
-            top: 16,
-            right: gridRight,
-            bottom: gridBottom,
-            left: gridLeft,
-            containLabel: false,
-          },
-          tooltip: {
-            trigger: 'axis',
-            backgroundColor: 'rgba(31, 41, 55, 0.95)',
-            borderColor: '#374151',
-            textStyle: { color: '#f3f4f6', fontSize: 12 },
-            axisPointer: { type: 'cross', label: { backgroundColor: '#6b7280' } },
-            confine: true,
-            order: 'valueDesc',
-          },
-          dataZoom: [
-            { type: 'inside', start: 0, end: 100 },
-            { type: 'slider', start: 0, end: 100, height: 18, bottom: 8, borderColor: 'transparent', fillerColor: 'rgba(0,122,255,0.15)' },
-          ],
-          xAxis: {
-            type: 'category',
-            data: chartData.times || [],
-            axisLine: { lineStyle: { color: '#d1d5db' } },
-            axisLabel: { color: '#6b7280', fontSize: 11, rotate: 0 },
-            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
-          },
-          yAxis: {
-            type: 'value',
-            axisLine: { show: false },
-            axisLabel: { color: '#6b7280', fontSize: 11 },
-            splitLine: { lineStyle: { color: '#e5e7eb' } },
-          },
-          legend: buildLegend(),
-          series: chartData.series.map((s: any) => {
-            const isLine = effectiveType === 'line'
-            const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
-
-            return {
-              name: s.name,
-              type: effectiveType,
-              data: s.data,
-              smooth: lineInterpolation === 'smooth',
-              symbol: symbol,
-              symbolSize: symbol === 'circle' ? pointSize : undefined,
-              lineStyle: isLine ? { width: lineWidth } : undefined,
-              itemStyle: isLine ? undefined : undefined,
-              // Grafana: fill only when fillOpacity > 0
-              areaStyle: areaOpacity > 0 ? { opacity: areaOpacity } : undefined,
-              emphasis: {
-                lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined },
-              },
-            }
-          }),
-        }
-        break
-      }
-      case 'pie': {
-        const pieCount = (chartData.data || []).length
-        // Grafana style: hide pie labels when too many series to avoid overlap hell
-        const showPieLabel = pieCount <= 10
-        const centerX = legendPlacement === 'right' ? '40%' : (legendPlacement === 'left' ? '60%' : '50%')
-        option = {
-          backgroundColor: 'transparent',
-          color: GRAFANA_COLORS,
-          tooltip: {
-            trigger: 'item',
-            backgroundColor: 'rgba(31, 41, 55, 0.95)',
-            borderColor: '#374151',
-            textStyle: { color: '#f3f4f6' },
-          },
-          legend: buildLegend(),
-          series: [{
-            type: 'pie',
-            radius: ['35%', '65%'],
-            center: [centerX, '50%'],
-            data: chartData.data || [],
-            label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11 },
-            emphasis: {
-              itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
-            },
-          }],
-        }
-        break
-      }
-      case 'gauge':
-        option = {
-          backgroundColor: 'transparent',
-          tooltip: {
-            trigger: 'item',
-            backgroundColor: 'rgba(31, 41, 55, 0.95)',
-            borderColor: '#374151',
-            textStyle: { color: '#f3f4f6' },
-          },
-          series: [{
-            type: 'gauge',
-            min: options?.min ?? 0,
-            max: options?.max ?? 100,
-            detail: { formatter: '{value}', fontSize: 24, color: '#374151' },
-            data: [{ value: chartData.value, name: chartData.name }],
-            axisLine: { lineStyle: { width: 12, color: [
-              [0.3, '#7EB26D'], [0.7, '#EAB839'], [1, '#E24D42']
-            ] } },
-            splitLine: { length: 12 },
-            axisTick: { length: 8 },
-            axisLabel: { fontSize: 10, color: '#6b7280' },
-            title: { fontSize: 12, color: '#6b7280', offsetCenter: [0, '70%'] },
-          }],
-        }
-        break
-    }
-
     try {
+      switch (type) {
+        case 'line':
+        case 'bar': {
+          const effectiveType = drawStyle === 'points' ? 'line' : (drawStyle === 'bar' ? 'bar' : 'line')
+          const symbol = drawStyle === 'points'
+            ? 'circle'
+            : shouldShowPoints(showPoints, chartWidth, dataLength)
+
+          const gridRight = legendPlacement === 'right' ? (showLegend ? 160 : 16) : 16
+          const gridLeft = legendPlacement === 'left' ? (showLegend ? 160 : 16) : 48
+          const gridBottom = legendPlacement === 'bottom' ? (showLegend ? 80 : 40) : 40
+
+          option = {
+            backgroundColor: 'transparent',
+            color: GRAFANA_COLORS,
+            grid: {
+              top: 16,
+              right: gridRight,
+              bottom: gridBottom,
+              left: gridLeft,
+              containLabel: false,
+            },
+            tooltip: {
+              trigger: 'axis',
+              backgroundColor: 'rgba(31, 41, 55, 0.95)',
+              borderColor: '#374151',
+              textStyle: { color: '#f3f4f6', fontSize: 12 },
+              axisPointer: { type: 'cross', label: { backgroundColor: '#6b7280' } },
+              confine: true,
+              order: 'valueDesc',
+            },
+            dataZoom: [
+              { type: 'inside', start: 0, end: 100 },
+              { type: 'slider', start: 0, end: 100, height: 18, bottom: 8, borderColor: 'transparent', fillerColor: 'rgba(0,122,255,0.15)' },
+            ],
+            xAxis: {
+              type: 'category',
+              data: chartData.times || [],
+              axisLine: { lineStyle: { color: '#d1d5db' } },
+              axisLabel: { color: '#6b7280', fontSize: 11, rotate: 0 },
+              splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
+            },
+            yAxis: {
+              type: 'value',
+              axisLine: { show: false },
+              axisLabel: { color: '#6b7280', fontSize: 11 },
+              splitLine: { lineStyle: { color: '#e5e7eb' } },
+            },
+            legend: buildLegend(),
+            series: chartData.series.map((s: any) => {
+              const isLine = effectiveType === 'line'
+              const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
+
+              return {
+                name: s.name,
+                type: effectiveType,
+                data: s.data,
+                smooth: lineInterpolation === 'smooth',
+                symbol: symbol,
+                symbolSize: symbol === 'circle' ? pointSize : undefined,
+                lineStyle: isLine ? { width: lineWidth } : undefined,
+                itemStyle: isLine ? undefined : undefined,
+                // Grafana: fill only when fillOpacity > 0
+                areaStyle: areaOpacity > 0 ? { opacity: areaOpacity } : undefined,
+                emphasis: {
+                  lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined },
+                },
+              }
+            }),
+          }
+          break
+        }
+        case 'pie': {
+          const pieCount = (chartData.data || []).length
+          // Grafana style: hide pie labels when too many series to avoid overlap hell
+          const showPieLabel = pieCount <= 10
+          const centerX = legendPlacement === 'right' ? '40%' : (legendPlacement === 'left' ? '60%' : '50%')
+          option = {
+            backgroundColor: 'transparent',
+            color: GRAFANA_COLORS,
+            tooltip: {
+              trigger: 'item',
+              backgroundColor: 'rgba(31, 41, 55, 0.95)',
+              borderColor: '#374151',
+              textStyle: { color: '#f3f4f6' },
+            },
+            legend: buildLegend(),
+            series: [{
+              type: 'pie',
+              radius: ['35%', '65%'],
+              center: [centerX, '50%'],
+              data: chartData.data || [],
+              label: { show: showPieLabel, formatter: '{b}: {c}', fontSize: 11 },
+              emphasis: {
+                itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
+              },
+            }],
+          }
+          break
+        }
+        case 'gauge':
+          option = {
+            backgroundColor: 'transparent',
+            tooltip: {
+              trigger: 'item',
+              backgroundColor: 'rgba(31, 41, 55, 0.95)',
+              borderColor: '#374151',
+              textStyle: { color: '#f3f4f6' },
+            },
+            series: [{
+              type: 'gauge',
+              min: options?.min ?? 0,
+              max: options?.max ?? 100,
+              detail: { formatter: '{value}', fontSize: 24, color: '#374151' },
+              data: [{ value: chartData.value, name: chartData.name }],
+              axisLine: { lineStyle: { width: 12, color: [
+                [0.3, '#7EB26D'], [0.7, '#EAB839'], [1, '#E24D42']
+              ] } },
+              splitLine: { length: 12 },
+              axisTick: { length: 8 },
+              axisLabel: { fontSize: 10, color: '#6b7280' },
+              title: { fontSize: 12, color: '#6b7280', offsetCenter: [0, '70%'] },
+            }],
+          }
+          break
+      }
+
       chartInstance.current.setOption(option, { notMerge: true })
     } catch (e) {
-      console.error('ECharts setOption error:', e)
+      console.error('ECharts render error:', e)
     }
   }, [chartData, type, options])
 
