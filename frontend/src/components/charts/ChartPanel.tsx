@@ -313,7 +313,11 @@ export default function ChartPanel({
         break
     }
 
-    chartInstance.current.setOption(option, { notMerge: true })
+    try {
+      chartInstance.current.setOption(option, { notMerge: true })
+    } catch (e) {
+      console.error('ECharts setOption error:', e)
+    }
   }, [chartData, type, options])
 
   return (
@@ -370,7 +374,13 @@ export default function ChartPanel({
             </Box>
           </Box>
         ) : (
-          <Box ref={chartRef} sx={{ position: 'absolute', inset: 0 }} />
+          <Box
+            ref={chartRef}
+            sx={{ position: 'absolute', inset: 0 }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          />
         )}
 
         {/* loading / error overlay */}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
   Box,
   Button,
@@ -155,15 +155,27 @@ export default function Dashboard() {
     }
   }
 
-  const handleLayoutChange = (newLayout: any) => {
+  const layoutChangedRef = useRef(false)
+
+  const handleLayoutChange = useCallback((newLayout: any) => {
     if (!editMode) return
+    const changed = (newLayout as any[]).some((l: any) => {
+      const p = panels.find((pp) => String(pp.id) === l.i)
+      if (!p) return false
+      let pos = { x: 0, y: 0, w: 6, h: 4 }
+      try { pos = JSON.parse(p.position) } catch {}
+      return l.x !== pos.x || l.y !== pos.y || l.w !== pos.w || l.h !== pos.h
+    })
+    if (!changed) return
+
+    layoutChangedRef.current = true
     const updated = panels.map((p) => {
       const item = (newLayout as any[]).find((l: any) => l.i === String(p.id))
       if (!item) return p
       return { ...p, position: JSON.stringify({ x: item.x, y: item.y, w: item.w, h: item.h }) }
     })
     setPanels(updated)
-  }
+  }, [editMode, panels])
 
   const handleSaveLayout = async () => {
     if (!dashboard) return
