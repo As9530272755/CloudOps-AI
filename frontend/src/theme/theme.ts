@@ -206,22 +206,6 @@ export const lightTheme = createTheme({
         },
       },
     },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          ...glassEffect,
-          borderRight: 'none',
-        },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          ...glassEffect,
-          boxShadow: 'none',
-        },
-      },
-    },
     MuiTextField: {
       styleOverrides: {
         root: {
@@ -244,24 +228,6 @@ export const lightTheme = createTheme({
         root: {
           borderRadius: '8px',
           fontWeight: 500,
-        },
-      },
-    },
-    MuiListItemButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: '12px',
-          margin: '4px 8px',
-          '&.Mui-selected': {
-            background: colors.primary.gradient,
-            color: '#FFFFFF',
-            '& .MuiListItemIcon-root': {
-              color: '#FFFFFF',
-            },
-            '&:hover': {
-              background: colors.primary.gradient,
-            },
-          },
         },
       },
     },
@@ -334,22 +300,7 @@ export const darkTheme = createTheme({
         },
       },
     },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          ...glassEffectDark,
-          borderRight: 'none',
-        },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          ...glassEffectDark,
-          boxShadow: 'none',
-        },
-      },
-    },
+
   },
 })
 
