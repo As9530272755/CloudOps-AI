@@ -4,6 +4,15 @@ import * as echarts from 'echarts'
 import { ChartType, PanelOptions } from './types'
 import { datasourceAPI } from '../../lib/datasource-api'
 
+const GRAFANA_COLORS = [
+  '#7EB26D', '#EAB839', '#6ED0E0', '#EF843C', '#E24D42',
+  '#1F78C1', '#BA43A9', '#705DA0', '#508642', '#CCA300',
+  '#447EBC', '#C15C17', '#890F02', '#0A437C', '#6D1F62',
+  '#967302', '#2F575E', '#99440A', '#58140C', '#052B51',
+  '#511749', '#3F6833', '#BF1B00', '#F2CC0C', '#70DBED',
+  '#C4162A', '#64B0C8', '#E0F9D7', '#8AB8FF', '#F9934E',
+]
+
 interface ChartPanelProps {
   title: string
   type: ChartType
@@ -13,6 +22,14 @@ interface ChartPanelProps {
   start?: string
   end?: string
   step?: string
+}
+
+function formatSeriesName(metric: Record<string, string>) {
+  const labels = Object.entries(metric)
+    .filter(([k]) => k !== '__name__')
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(', ')
+  return labels || metric.__name__ || 'Value'
 }
 
 function formatPrometheusData(result: any, chartType: ChartType) {
@@ -26,12 +43,12 @@ function formatPrometheusData(result: any, chartType: ChartType) {
   if (chartType === 'stat' || chartType === 'gauge') {
     const first = results[0]
     const value = parseFloat(first?.value?.[1] || first?.values?.[0]?.[1] || 0)
-    return { value, name: first?.metric?.__name__ || 'Value' }
+    return { value, name: formatSeriesName(first?.metric || {}) }
   }
 
   if (chartType === 'pie') {
     const data = results.map((item: any) => ({
-      name: item.metric?.instance || item.metric?.pod || item.metric?.name || 'unknown',
+      name: formatSeriesName(item.metric || {}),
       value: parseFloat(item.value?.[1] || 0),
     }))
     return { data }
@@ -40,9 +57,7 @@ function formatPrometheusData(result: any, chartType: ChartType) {
   if (chartType === 'table') {
     const columns = ['Time', 'Metric', 'Value']
     const rows = results.flatMap((item: any) => {
-      const metricName = Object.entries(item.metric)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(', ')
+      const metricName = formatSeriesName(item.metric || {})
       if (item.values) {
         return item.values.map((v: [number, string]) => ({
           time: new Date(v[0] * 1000).toLocaleString(),
@@ -61,19 +76,19 @@ function formatPrometheusData(result: any, chartType: ChartType) {
 
   // line / bar
   results.forEach((item: any) => {
-    const name = item.metric?.instance || item.metric?.pod || item.metric?.node || item.metric?.__name__ || 'Series'
+    const name = formatSeriesName(item.metric || {})
     if (item.values) {
       const data: number[] = []
       item.values.forEach((v: [number, string]) => {
         if (times.length < item.values.length) {
-          times.push(new Date(v[0] * 1000).toLocaleTimeString())
+          times.push(new Date(v[0] * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
         }
         data.push(parseFloat(v[1]))
       })
       series.push({ name, data })
     } else if (item.value) {
       series.push({ name, data: [parseFloat(item.value[1])] })
-      times.push(new Date().toLocaleTimeString())
+      times.push(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
     }
   })
 
@@ -161,76 +176,144 @@ export default function ChartPanel({
     loadData()
   }, [loadData])
 
-  // 4. chartData 准备好后绘制（此时 DOM 一定存在）
+  // 4. chartData 准备好后绘制（Grafana 风格）
   useEffect(() => {
     if (!chartInstance.current || !chartData) return
     if (type === 'stat' || type === 'table') return
 
-    const colors = options.colors || ['#007AFF', '#5856D6', '#34C759', '#FF9500', '#FF3B30', '#AF52DE']
+    const isManySeries = (chartData.series?.length || 0) > 10
 
-    const baseOption: echarts.EChartsOption = {
-      color: colors,
-      grid: { top: 40, right: 20, bottom: 30, left: 50, containLabel: true },
-      tooltip: { trigger: type === 'pie' ? 'item' : 'axis' },
-    }
-
-    let option: echarts.EChartsOption = { ...baseOption }
+    let option: echarts.EChartsOption = {}
 
     switch (type) {
       case 'line':
-      case 'bar':
+      case 'bar': {
+        const showLegend = options.legend !== false
         option = {
-          ...option,
+          backgroundColor: 'transparent',
+          color: GRAFANA_COLORS,
+          grid: {
+            top: 16,
+            right: showLegend ? 160 : 16,
+            bottom: 40,
+            left: 48,
+            containLabel: false,
+          },
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(31, 41, 55, 0.95)',
+            borderColor: '#374151',
+            textStyle: { color: '#f3f4f6', fontSize: 12 },
+            axisPointer: { type: 'cross', label: { backgroundColor: '#6b7280' } },
+            confine: true,
+            order: 'valueDesc',
+          },
+          dataZoom: [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100, height: 18, bottom: 8, borderColor: 'transparent', fillerColor: 'rgba(0,122,255,0.15)' },
+          ],
           xAxis: {
             type: 'category',
             data: chartData.times || [],
-            axisLine: { lineStyle: { color: '#888' } },
+            axisLine: { lineStyle: { color: '#d1d5db' } },
+            axisLabel: { color: '#6b7280', fontSize: 11, rotate: 0 },
+            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
           },
           yAxis: {
             type: 'value',
-            axisLine: { lineStyle: { color: '#888' } },
-            splitLine: { lineStyle: { color: '#eee' } },
+            axisLine: { show: false },
+            axisLabel: { color: '#6b7280', fontSize: 11 },
+            splitLine: { lineStyle: { color: '#e5e7eb' } },
           },
+          legend: showLegend
+            ? {
+                type: 'scroll',
+                orient: 'vertical',
+                right: 8,
+                top: 8,
+                bottom: 8,
+                icon: 'roundRect',
+                textStyle: { color: '#374151', fontSize: 11, width: 135, overflow: 'truncate' },
+                pageIconColor: '#374151',
+                pageTextStyle: { color: '#374151' },
+                tooltip: { show: true },
+              }
+            : undefined,
           series: chartData.series.map((s: any) => ({
             name: s.name,
             type,
             data: s.data,
-            smooth: true,
+            smooth: false,
             symbol: 'none',
-            areaStyle: type === 'line' ? { opacity: 0.1 } : undefined,
+            lineStyle: { width: 1.5 },
+            emphasis: {
+              focus: 'series',
+              blurScope: 'coordinateSystem',
+              lineStyle: { width: 3 },
+            },
+            // 大量 series 时淡化非 hover 线条
+            blur: {
+              lineStyle: { opacity: isManySeries ? 0.08 : 0.25 },
+            },
+            // 只有用户明确配置才开 area
+            areaStyle: options.area ? { opacity: 0.15 } : undefined,
           })),
-          legend: options.legend !== false ? { bottom: 0, textStyle: { color: '#666' } } : undefined,
         }
         break
+      }
       case 'pie':
         option = {
-          ...option,
+          backgroundColor: 'transparent',
+          color: GRAFANA_COLORS,
+          tooltip: {
+            trigger: 'item',
+            backgroundColor: 'rgba(31, 41, 55, 0.95)',
+            borderColor: '#374151',
+            textStyle: { color: '#f3f4f6' },
+          },
+          legend: options.legend !== false
+            ? { type: 'scroll', orient: 'vertical', right: 8, top: 'center', textStyle: { fontSize: 11 } }
+            : undefined,
           series: [{
             type: 'pie',
-            radius: ['40%', '70%'],
+            radius: ['35%', '65%'],
+            center: ['40%', '50%'],
             data: chartData.data || [],
-            label: { show: true, formatter: '{b}: {c}' },
+            label: { show: true, formatter: '{b}: {c}', fontSize: 11 },
+            emphasis: {
+              itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' },
+            },
           }],
         }
         break
       case 'gauge':
         option = {
-          ...option,
+          backgroundColor: 'transparent',
+          tooltip: {
+            trigger: 'item',
+            backgroundColor: 'rgba(31, 41, 55, 0.95)',
+            borderColor: '#374151',
+            textStyle: { color: '#f3f4f6' },
+          },
           series: [{
             type: 'gauge',
             min: options.min ?? 0,
             max: options.max ?? 100,
-            detail: { formatter: '{value}' },
+            detail: { formatter: '{value}', fontSize: 24, color: '#374151' },
             data: [{ value: chartData.value, name: chartData.name }],
-            axisLine: { lineStyle: { width: 10, color: [
-              [0.3, '#34C759'], [0.7, '#FF9500'], [1, '#FF3B30']
+            axisLine: { lineStyle: { width: 12, color: [
+              [0.3, '#7EB26D'], [0.7, '#EAB839'], [1, '#E24D42']
             ] } },
+            splitLine: { length: 12 },
+            axisTick: { length: 8 },
+            axisLabel: { fontSize: 10, color: '#6b7280' },
+            title: { fontSize: 12, color: '#6b7280', offsetCenter: [0, '70%'] },
           }],
         }
         break
     }
 
-    chartInstance.current.setOption(option, true)
+    chartInstance.current.setOption(option, { notMerge: true })
   }, [chartData, type, options])
 
   return (

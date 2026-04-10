@@ -15,6 +15,7 @@ export interface PanelOptions {
   min?: number
   max?: number
   decimals?: number
+  area?: boolean
 }
 
 export interface PanelData {
