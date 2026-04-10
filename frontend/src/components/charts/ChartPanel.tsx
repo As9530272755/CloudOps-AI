@@ -264,13 +264,13 @@ export default function ChartPanel({
     >
       <Box
         sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, position: 'relative', zIndex: 10 }}
-        className="no-drag"
+        className="drag-handle"
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1D2939' }}>
           {title}
         </Typography>
         {isEditing && (
-          <Box className="no-drag" sx={{ position: 'relative', zIndex: 10 }}>
+          <Box sx={{ position: 'relative', zIndex: 10 }}>
             <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit?.() }}><EditIcon fontSize="small" /></IconButton>
             <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); onDelete?.() }}><DeleteIcon fontSize="small" /></IconButton>
           </Box>
