@@ -214,14 +214,24 @@ export default function ChartPanel({
   }, [type, options])
 
   useEffect(() => {
-    if (chartRef.current && !chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current)
-    }
-    loadData()
-    const handleResize = () => chartInstance.current?.resize()
-    window.addEventListener('resize', handleResize)
+    let resizeHandler: (() => void) | undefined
+
+    const timer = setTimeout(() => {
+      if (chartRef.current && !chartInstance.current) {
+        chartInstance.current = echarts.init(chartRef.current)
+        // 延迟 resize，确保 GridLayout 注入的宽高已生效
+        requestAnimationFrame(() => {
+          chartInstance.current?.resize()
+        })
+      }
+      loadData()
+      resizeHandler = () => chartInstance.current?.resize()
+      window.addEventListener('resize', resizeHandler)
+    }, 50)
+
     return () => {
-      window.removeEventListener('resize', handleResize)
+      clearTimeout(timer)
+      if (resizeHandler) window.removeEventListener('resize', resizeHandler)
       chartInstance.current?.dispose()
       chartInstance.current = null
     }

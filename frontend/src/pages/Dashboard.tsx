@@ -64,6 +64,8 @@ export default function Dashboard() {
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
 
   const { start, end } = useMemo(() => getTimeRange(timeRange), [timeRange])
+  const startStr = useMemo(() => formatUnix(start), [start])
+  const endStr = useMemo(() => formatUnix(end), [end])
 
   // Load clusters for stat cards
   const loadClusters = useCallback(async () => {
@@ -128,6 +130,11 @@ export default function Dashboard() {
       } catch {}
       return { i: String(p.id), ...pos }
     })
+  }, [panels])
+
+  // GridLayout key：面板增删时强制重绘，避免残留 overlay/死区
+  const gridKey = useMemo(() => {
+    return `grid-${panels.map((p) => p.id).join('-')}`
   }, [panels])
 
   const handleLayoutChange = (newLayout: any) => {
@@ -298,6 +305,7 @@ export default function Dashboard() {
 
           {(panels.length > 0 || editMode) && (
             <GridLayout
+              key={gridKey}
               className="layout"
               layout={layout}
               width={1200}
@@ -318,8 +326,8 @@ export default function Dashboard() {
                     isEditing={editMode}
                     onEdit={() => handleEditPanel(panel)}
                     onDelete={() => handleDeletePanel(panel)}
-                    start={formatUnix(start)}
-                    end={formatUnix(end)}
+                    start={startStr}
+                    end={endStr}
                     step="15s"
                   />
                 </Box>
