@@ -51,6 +51,8 @@ function getTimeRange(value: string) {
 }
 
 export default function Dashboard() {
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const [gridWidth, setGridWidth] = useState(1200)
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [dashboard, setDashboard] = useState<DashboardModel | null>(null)
   const [panels, setPanels] = useState<DashboardPanel[]>([])
@@ -60,6 +62,17 @@ export default function Dashboard() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
+
+  // 动态计算 grid 宽度
+  useEffect(() => {
+    if (!gridContainerRef.current) return
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width
+      if (w) setGridWidth(Math.floor(w))
+    })
+    ro.observe(gridContainerRef.current)
+    return () => ro.disconnect()
+  }, [])
 
   useMemo(() => getTimeRange(timeRange), [timeRange])
 
@@ -364,29 +377,31 @@ export default function Dashboard() {
           )}
 
           {(panels.length > 0 || editMode) && (
-            <GridLayout
-              key={gridKey}
-              className="layout"
-              layout={layout}
-              width={1200}
-              gridConfig={{ cols: 12, rowHeight: 60 }}
-              dragConfig={{ enabled: editMode, handle: '.drag-handle' }}
-              resizeConfig={{ enabled: editMode }}
-              onLayoutChange={handleLayoutChange}
-            >
-              {panels.map((panel) => (
-                <Box key={panel.id}>
-                  <ChartPanel
-                    key={`${panel.id}-${refreshTick}-${timeRange}`}
-                    title={panel.title}
-                    type={panel.type as any}
-                    query={panel.query}
-                    dataSourceId={panel.data_source_id}
-                    options={panel.options ? JSON.parse(panel.options) : {}}
-                  />
-                </Box>
-              ))}
-            </GridLayout>
+            <Box ref={gridContainerRef}>
+              <GridLayout
+                key={gridKey}
+                className="layout"
+                layout={layout}
+                width={gridWidth}
+                gridConfig={{ cols: 12, rowHeight: 60 }}
+                dragConfig={{ enabled: editMode, handle: '.drag-handle' }}
+                resizeConfig={{ enabled: editMode }}
+                onLayoutChange={handleLayoutChange}
+              >
+                {panels.map((panel) => (
+                  <Box key={panel.id}>
+                    <ChartPanel
+                      key={`${panel.id}-${refreshTick}-${timeRange}`}
+                      title={panel.title}
+                      type={panel.type as any}
+                      query={panel.query}
+                      dataSourceId={panel.data_source_id}
+                      options={panel.options ? JSON.parse(panel.options) : {}}
+                    />
+                  </Box>
+                ))}
+              </GridLayout>
+            </Box>
           )}
         </Box>
       )}
