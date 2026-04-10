@@ -121,66 +121,174 @@ function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: n
   return chartWidth / dataLength > 8 ? 'circle' : 'none'
 }
 
-function GaugeParticles({
+function hexToRgba(hex: string, alpha: number) {
+  const c = hex.replace('#', '')
+  const r = parseInt(c.substring(0, 2), 16)
+  const g = parseInt(c.substring(2, 4), 16)
+  const b = parseInt(c.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function GaugeCanvasParticles({
+  active,
   colors,
   isDark,
 }: {
+  active: boolean
   colors?: string[]
   isDark: boolean
 }) {
-  const defaultColors = isDark ? ['#00f0ff', '#facc15', '#ff00aa'] : ['#007AFF', '#FF9500', '#FF3B30']
-  const c = colors || defaultColors
-  const particles = [
-    { size: 3, orbit: 42, duration: 4, delay: 0, color: c[0] },
-    { size: 2, orbit: 40, duration: 6, delay: 1, color: c[1] ?? c[0] },
-    { size: 2.5, orbit: 44, duration: 5, delay: 2, color: c[2] ?? c[0] },
-    { size: 2, orbit: 38, duration: 7, delay: 0.5, color: c[0] },
-  ]
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animationRef = useRef<number>()
+  const sizeRef = useRef({ w: 0, h: 0 })
 
+  useEffect(() => {
+    if (!active) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const resize = () => {
+      const rect = canvas.parentElement?.getBoundingClientRect()
+      if (!rect) return
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = Math.floor(rect.width * dpr)
+      canvas.height = Math.floor(rect.height * dpr)
+      canvas.style.width = `${rect.width}px`
+      canvas.style.height = `${rect.height}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      sizeRef.current = { w: rect.width, h: rect.height }
+    }
+    resize()
+    const ro = new ResizeObserver(resize)
+    if (canvas.parentElement) ro.observe(canvas.parentElement)
+
+    const defaultColors = isDark ? ['#00f0ff', '#facc15', '#ff00aa'] : ['#007AFF', '#FF9500', '#FF3B30']
+    const palette = colors?.length ? colors : defaultColors
+
+    interface Particle {
+      angle: number
+      radiusPct: number
+      angleSpeed: number
+      radiusSpeed: number
+      size: number
+      alpha: number
+      fade: number
+      color: string
+    }
+
+    const particles: Particle[] = []
+    const maxParticles = 28
+    const startAngle = (225 * Math.PI) / 180
+
+    const spawn = () => {
+      if (particles.length >= maxParticles) return
+      const angle = startAngle - Math.random() * 1.5 * Math.PI
+      const isOrbiter = Math.random() > 0.55
+      particles.push({
+        angle,
+        radiusPct: isOrbiter ? 0.5 + Math.random() * 0.28 : 0.18 + Math.random() * 0.38,
+        angleSpeed: isOrbiter ? (Math.random() > 0.5 ? 0.003 : -0.003) * (0.6 + Math.random() * 0.8) : (Math.random() - 0.5) * 0.001,
+        radiusSpeed: isOrbiter ? 0 : (Math.random() - 0.5) * 0.002,
+        size: isOrbiter ? 2 + Math.random() * 2.5 : 1.5 + Math.random() * 2,
+        alpha: 0,
+        fade: 0.008 + Math.random() * 0.012,
+        color: palette[Math.floor(Math.random() * palette.length)],
+      })
+    }
+
+    let lastSpawn = 0
+    let t = 0
+
+    const draw = (now: number) => {
+      t += 1
+      const { w, h } = sizeRef.current
+      ctx.clearRect(0, 0, w, h)
+      if (w === 0 || h === 0) {
+        animationRef.current = requestAnimationFrame(draw)
+        return
+      }
+
+      const cx = w * 0.5
+      const cy = h * 0.55
+      const r = Math.min(w, h) * 0.9 * 0.5
+
+      if (now - lastSpawn > 80 + Math.random() * 60) {
+        spawn()
+        if (Math.random() > 0.6) spawn()
+        lastSpawn = now
+      }
+
+      ctx.globalCompositeOperation = 'lighter'
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i]
+        p.angle += p.angleSpeed
+        p.radiusPct += p.radiusSpeed
+        if (p.radiusPct < 0.1 || p.radiusPct > 0.82) p.radiusSpeed *= -1
+        p.alpha += p.fade
+        if (p.alpha > 1) {
+          p.alpha = 1
+          p.fade = -Math.abs(p.fade)
+        }
+        if (p.alpha <= 0 && p.fade < 0) {
+          particles.splice(i, 1)
+          continue
+        }
+
+        const pr = r * p.radiusPct
+        const x = cx + Math.cos(p.angle) * pr
+        const y = cy - Math.sin(p.angle) * pr
+        const glow = p.size * (2 + Math.sin(t * 0.05 + i) * 0.5)
+
+        const g = ctx.createRadialGradient(x, y, 0, x, y, glow * 2.5)
+        g.addColorStop(0, hexToRgba(p.color, p.alpha))
+        g.addColorStop(0.4, hexToRgba(p.color, p.alpha * 0.35))
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.arc(x, y, glow * 2.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // Subtle sweep scanline along the arc
+      const scanAngle = startAngle - ((t * 0.003) % 1.5) * Math.PI
+      const scanR = r * 0.68
+      const sx = cx + Math.cos(scanAngle) * scanR
+      const sy = cy - Math.sin(scanAngle) * scanR
+      const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 14)
+      sg.addColorStop(0, hexToRgba(palette[0], 0.25))
+      sg.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = sg
+      ctx.beginPath()
+      ctx.arc(sx, sy, 14, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.globalCompositeOperation = 'source-over'
+      animationRef.current = requestAnimationFrame(draw)
+    }
+
+    animationRef.current = requestAnimationFrame(draw)
+
+    return () => {
+      ro.disconnect()
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    }
+  }, [active, colors, isDark])
+
+  if (!active) return null
   return (
-    <Box
-      sx={{
+    <canvas
+      ref={canvasRef}
+      style={{
         position: 'absolute',
         inset: 0,
+        width: '100%',
+        height: '100%',
         pointerEvents: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transform: 'translateY(3%)',
       }}
-    >
-      {particles.map((p, idx) => (
-        <Box
-          key={idx}
-          sx={{
-            position: 'absolute',
-            width: `${p.orbit}%`,
-            aspectRatio: '1',
-            borderRadius: '50%',
-            animation: `rotate ${p.duration}s linear infinite`,
-            animationDelay: `${p.delay}s`,
-            '@keyframes rotate': {
-              '0%': { transform: 'rotate(0deg)' },
-              '100%': { transform: 'rotate(360deg)' },
-            },
-          }}
-        >
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: p.size,
-              height: p.size,
-              borderRadius: '50%',
-              bgcolor: p.color,
-              boxShadow: `0 0 ${p.size * 3}px ${p.color}`,
-            }}
-          />
-        </Box>
-      ))}
-    </Box>
+    />
   )
 }
 
@@ -800,8 +908,8 @@ export function ChartPanel({
                 ref={chartRef}
                 sx={{ position: 'absolute', inset: 0 }}
               />
-              {type === 'gauge' && options?.gaugeParticles && chartData && (
-                <GaugeParticles colors={options?.gaugeColors} isDark={isDark} />
+              {type === 'gauge' && options?.gaugeParticles !== false && (
+                <GaugeCanvasParticles active={!(!chartData)} colors={options?.gaugeColors} isDark={isDark} />
               )}
             </Box>
           )}
