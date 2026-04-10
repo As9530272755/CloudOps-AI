@@ -30,6 +30,11 @@ func NewK8sResourceService(k8sManager *K8sManager) *K8sResourceService {
 	}
 }
 
+// SearchResources 全局资源搜索
+func (s *K8sResourceService) SearchResources(ctx context.Context, keyword string, limit int) ([]SearchResult, error) {
+	return s.k8sManager.SearchGlobalResources(keyword, limit)
+}
+
 // ListResources 列出资源
 func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace string, page, limit int) ([]map[string]interface{}, int, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)

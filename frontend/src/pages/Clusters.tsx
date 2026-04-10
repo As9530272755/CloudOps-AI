@@ -26,6 +26,7 @@ import {
   MenuItem,
   Alert,
   CircularProgress,
+  Autocomplete,
 } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -38,6 +39,7 @@ import {
 } from '@mui/icons-material'
 
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest } from '../lib/cluster-api'
+import { k8sAPI, SearchResourceItem, resourceLabels } from '../lib/k8s-api'
 
 // 状态颜色映射
 const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -76,6 +78,27 @@ export default function Clusters() {
     auth_type: '',
   })
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchOptions, setSearchOptions] = useState<SearchResourceItem[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchOptions([])
+      return
+    }
+    const timer = setTimeout(() => {
+      setSearchLoading(true)
+      k8sAPI.searchResources(searchQuery, 20)
+        .then((res) => {
+          if (res.success && res.data) {
+            setSearchOptions(res.data)
+          }
+        })
+        .catch(() => setSearchOptions([]))
+        .finally(() => setSearchLoading(false))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   // 加载集群列表
   const loadClusters = async () => {
@@ -198,16 +221,48 @@ export default function Clusters() {
       <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
         <CardContent>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-            <TextField
-              label="全局搜索"
-              placeholder="名称 / 显示名 / Server"
+            <Autocomplete
+              freeSolo
               size="small"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 18 }} />,
+              sx={{ minWidth: 360 }}
+              inputValue={searchQuery}
+              onInputChange={(_, value) => setSearchQuery(value)}
+              options={searchOptions}
+              filterOptions={(x) => x}
+              loading={searchLoading}
+              noOptionsText="未找到匹配资源"
+              getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
+              onChange={(_, value) => {
+                if (value && typeof value !== 'string') {
+                  navigate(`/clusters/${value.cluster_id}`)
+                }
               }}
-              sx={{ minWidth: 260 }}
+              renderOption={(props, option) => (
+                <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 140 }}>{option.name}</Typography>
+                  <Chip label={resourceLabels[option.kind] || option.kind} size="small" sx={{ fontSize: 10, height: 18 }} />
+                  <Typography variant="caption" sx={{ color: 'text.secondary', minWidth: 80 }}>{option.namespace}</Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1, textAlign: 'right' }}>{option.cluster_name}</Typography>
+                </Box>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="全局资源搜索"
+                  placeholder="输入资源名称（Pod / Deployment / Service 等）"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 18 }} />,
+                    endAdornment: (
+                      <>
+                        {searchLoading ? <CircularProgress color="inherit" size={16} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              ListboxProps={{ style: { maxHeight: 320 } }}
             />
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <InputLabel>状态</InputLabel>

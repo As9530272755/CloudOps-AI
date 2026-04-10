@@ -63,6 +63,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			protected.GET("/clusters/:id/namespaces", r.k8sHandler.GetNamespaces)
 			protected.GET("/clusters/:id/stats", r.k8sHandler.GetClusterStats)
 			protected.POST("/clusters/:id/refresh", r.k8sHandler.RefreshCluster)
+			protected.GET("/search/resources", r.k8sHandler.SearchResources)
 			protected.GET("/clusters/:id/resources/:kind", r.k8sHandler.ListResources)
 			protected.GET("/clusters/:id/resources/:kind/:name/yaml", r.k8sHandler.GetResourceYAML)
 			protected.GET("/clusters/:id/resources/:kind/:name", r.k8sHandler.GetResource)

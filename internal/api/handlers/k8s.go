@@ -85,6 +85,31 @@ func (h *K8sHandler) GetResourceYAML(c *gin.Context) {
 	})
 }
 
+// SearchResources 全局资源搜索
+// GET /api/v1/search/resources?keyword=xxx&limit=20
+func (h *K8sHandler) SearchResources(c *gin.Context) {
+	keyword := c.Query("keyword")
+	if keyword == "" {
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": []interface{}{}})
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	results, err := h.k8sService.SearchResources(c.Request.Context(), keyword, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    results,
+	})
+}
+
 // GetResource 获取资源详情
 // GET /api/v1/clusters/:id/resources/:kind/:name
 // 或 GET /api/v1/clusters/:id/resources/:kind/:namespace/:name

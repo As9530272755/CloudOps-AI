@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,6 +99,184 @@ func (km *K8sManager) GetClient(clusterID uint) *kubernetes.Clientset {
 		return c.Client
 	}
 	return nil
+}
+
+// SearchResult 全局资源搜索结果
+type SearchResult struct {
+	ClusterID   uint   `json:"cluster_id"`
+	ClusterName string `json:"cluster_name"`
+	Kind        string `json:"kind"`
+	Namespace   string `json:"namespace"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+}
+
+// SearchGlobalResources 跨集群全局搜索资源（按名称模糊匹配）
+func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	keywordLower := strings.ToLower(keyword)
+
+	km.mu.RLock()
+	clients := make(map[uint]*ClusterClient)
+	for id, cc := range km.clients {
+		clients[id] = cc
+	}
+	km.mu.RUnlock()
+
+	var result []SearchResult
+
+	// helper: append from store
+	appendFromStore := func(cc *ClusterClient, kind string, store cache.Store, matchFunc func(obj interface{}) (SearchResult, bool)) {
+		if store == nil {
+			return
+		}
+		for _, obj := range store.List() {
+			if len(result) >= limit {
+				return
+			}
+			if r, ok := matchFunc(obj); ok {
+				result = append(result, r)
+			}
+		}
+	}
+
+	for id, cc := range clients {
+		// fetch cluster name
+		var clusterName string
+		var cluster model.Cluster
+		if err := km.db.First(&cluster, id).Error; err == nil {
+			clusterName = cluster.DisplayName
+			if clusterName == "" {
+				clusterName = cluster.Name
+			}
+		}
+
+		appendFromStore(cc, "pods", cc.PodStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.Pod)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "pods", Namespace: v.Namespace, Name: v.Name, Status: string(v.Status.Phase)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "deployments", cc.DeploymentStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*appsv1.Deployment)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "deployments", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "statefulsets", cc.StatefulSetStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*appsv1.StatefulSet)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "statefulsets", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "daemonsets", cc.DaemonSetStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*appsv1.DaemonSet)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "daemonsets", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.NumberReady, v.Status.DesiredNumberScheduled)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "services", cc.ServiceStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.Service)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "services", Namespace: v.Namespace, Name: v.Name, Status: string(v.Spec.Type)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "ingresses", cc.IngressStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*networkingv1.Ingress)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "ingresses", Namespace: v.Namespace, Name: v.Name, Status: ""}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "configmaps", cc.ConfigMapStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.ConfigMap)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "configmaps", Namespace: v.Namespace, Name: v.Name, Status: ""}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "secrets", cc.SecretStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.Secret)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "secrets", Namespace: v.Namespace, Name: v.Name, Status: ""}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "nodes", cc.NodeStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.Node)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				status := "Unknown"
+				for _, c := range v.Status.Conditions {
+					if c.Type == corev1.NodeReady {
+						if c.Status == corev1.ConditionTrue {
+							status = "Ready"
+						} else {
+							status = "NotReady"
+						}
+						break
+					}
+				}
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "nodes", Namespace: "-", Name: v.Name, Status: status}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "namespaces", cc.NamespaceStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.Namespace)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "namespaces", Namespace: "-", Name: v.Name, Status: string(v.Status.Phase)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "events", cc.EventStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.Event)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) || strings.Contains(strings.ToLower(v.Reason), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "events", Namespace: v.Namespace, Name: v.Name, Status: v.Reason}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+	}
+
+	return result, nil
 }
 
 // GetClusterClient 获取完整ClusterClient（含Store）

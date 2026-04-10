@@ -25,6 +25,21 @@ export interface NamespacesResult {
   error?: string
 }
 
+export interface SearchResourceItem {
+  cluster_id: number
+  cluster_name: string
+  kind: string
+  namespace: string
+  name: string
+  status: string
+}
+
+export interface SearchResourcesResult {
+  success: boolean
+  data?: SearchResourceItem[]
+  error?: string
+}
+
 export interface ClusterStats {
   [key: string]: number
 }
@@ -36,6 +51,12 @@ export interface ClusterStatsResult {
 }
 
 export const k8sAPI = {
+  // 全局资源搜索
+  searchResources: async (keyword: string, limit: number = 20) => {
+    const response = await api.get(`/search/resources?keyword=${encodeURIComponent(keyword)}&limit=${limit}`)
+    return response.data as SearchResourcesResult
+  },
+
   // 获取命名空间列表
   getNamespaces: async (clusterId: number) => {
     const response = await api.get(`/clusters/${clusterId}/namespaces`)
