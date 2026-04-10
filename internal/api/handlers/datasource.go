@@ -125,6 +125,31 @@ func (h *DatasourceHandler) TestConnection(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 }
 
+// GetMetrics 获取指标名列表
+func (h *DatasourceHandler) GetMetrics(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+
+	tenantID, _ := c.Get("tenant_id")
+	ds, err := h.dsService.GetDataSource(c.Request.Context(), tenantID.(uint), uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "datasource not found"})
+		return
+	}
+
+	match := c.Query("match")
+	metrics, err := h.dsService.GetPrometheusMetrics(c.Request.Context(), ds, match)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": metrics})
+}
+
 // ProxyQuery 代理查询
 func (h *DatasourceHandler) ProxyQuery(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

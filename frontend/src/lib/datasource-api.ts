@@ -63,4 +63,8 @@ export const datasourceAPI = {
     const response = await api.post(`/datasources/${id}/query`, req)
     return response.data
   },
+  getMetrics: async (id: number, match?: string) => {
+    const response = await api.get(`/datasources/${id}/metrics`, { params: { match } })
+    return response.data
+  },
 }

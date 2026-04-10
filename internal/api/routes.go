@@ -76,6 +76,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				ds.PUT("/:id", r.dsHandler.UpdateDataSource)
 				ds.DELETE("/:id", r.dsHandler.DeleteDataSource)
 				ds.POST("/:id/test", r.dsHandler.TestConnection)
+				ds.GET("/:id/metrics", r.dsHandler.GetMetrics)
 				ds.POST("/:id/query", r.dsHandler.ProxyQuery)
 			}
 

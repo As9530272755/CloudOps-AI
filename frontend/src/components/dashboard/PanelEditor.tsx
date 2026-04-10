@@ -14,6 +14,7 @@ import {
   Toolbar,
   IconButton,
   useTheme,
+  Autocomplete,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { ChartPanel } from '../charts/ChartPanel'
@@ -40,6 +41,8 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
   const [position, setPosition] = useState(() => initialData?.position || DEFAULT_POSITION)
   const [options, setOptions] = useState(initialData?.options || '{}')
   const [error, setError] = useState('')
+  const [metrics, setMetrics] = useState<string[]>([])
+  const [metricsLoading, setMetricsLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -54,6 +57,21 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
       }
     }
   }, [open, initialData])
+
+  useEffect(() => {
+    if (!open || !dataSourceId) return
+    const loadMetrics = async () => {
+      setMetricsLoading(true)
+      try {
+        const result = await datasourceAPI.getMetrics(dataSourceId)
+        if (result.success && Array.isArray(result.data)) {
+          setMetrics(result.data)
+        }
+      } catch {}
+      setMetricsLoading(false)
+    }
+    loadMetrics()
+  }, [open, dataSourceId])
 
   const loadDataSources = async () => {
     try {
@@ -236,15 +254,29 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
               </Select>
             </FormControl>
 
-            <TextField
-              label="PromQL 查询"
+            <Autocomplete
+              freeSolo
+              options={metrics}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              fullWidth
-              multiline
-              rows={3}
-              size="small"
-              placeholder="例如：up"
+              onChange={(_, newValue) => setQuery(newValue || '')}
+              inputValue={query}
+              onInputChange={(_, newInputValue) => setQuery(newInputValue)}
+              filterOptions={(options, state) => {
+                const v = state.inputValue.toLowerCase()
+                return options.filter((o) => o.toLowerCase().includes(v))
+              }}
+              loading={metricsLoading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="PromQL 查询"
+                  fullWidth
+                  multiline
+                  rows={3}
+                  size="small"
+                  placeholder="例如：up"
+                />
+              )}
             />
 
             <TextField

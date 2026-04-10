@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -148,6 +149,69 @@ type ProxyQueryResponse struct {
 	Status string      `json:"status"`
 	Data   interface{} `json:"data,omitempty"`
 	Error  string      `json:"error,omitempty"`
+}
+
+// GetPrometheusMetrics 获取 Prometheus 指标名列表
+func (s *DatasourceService) GetPrometheusMetrics(ctx context.Context, ds *model.DataSource, match string) ([]string, error) {
+	if ds.Type != "prometheus" {
+		return nil, fmt.Errorf("unsupported datasource type: %s", ds.Type)
+	}
+
+	targetURL := ds.URL + "/api/v1/label/__name__/values"
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if ds.Config != "" {
+		var cfg map[string]interface{}
+		if json.Unmarshal([]byte(ds.Config), &cfg) == nil {
+			if headers, ok := cfg["headers"].(map[string]interface{}); ok {
+				for k, v := range headers {
+					httpReq.Header.Set(k, fmt.Sprintf("%v", v))
+				}
+			}
+		}
+	}
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+		Error  string   `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse error: %w", err)
+	}
+	if result.Status != "success" {
+		return nil, fmt.Errorf("prometheus error: %s", result.Error)
+	}
+
+	if match == "" {
+		return result.Data, nil
+	}
+
+	filtered := make([]string, 0)
+	lowerMatch := strings.ToLower(match)
+	for _, m := range result.Data {
+		if strings.Contains(strings.ToLower(m), lowerMatch) {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered, nil
 }
 
 // ProxyPrometheusQuery 代理 Prometheus 查询
