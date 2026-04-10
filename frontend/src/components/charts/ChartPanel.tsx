@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import { ChartType, PanelOptions } from './types'
 import { datasourceAPI } from '../../lib/datasource-api'
 
+// Grafana default color palette (from Grafana source code)
 const GRAFANA_COLORS = [
   '#7EB26D', '#EAB839', '#6ED0E0', '#EF843C', '#E24D42',
   '#1F78C1', '#BA43A9', '#705DA0', '#508642', '#CCA300',
@@ -13,15 +14,19 @@ const GRAFANA_COLORS = [
   '#C4162A', '#64B0C8', '#E0F9D7', '#8AB8FF', '#F9934E',
 ]
 
-interface ChartPanelProps {
-  title: string
-  type: ChartType
-  query: string
-  dataSourceId: number
-  options?: PanelOptions
-  start?: string
-  end?: string
-  step?: string
+// Grafana-style default field config
+const DEFAULT_OPTIONS: Required<Pick<PanelOptions, 'drawStyle' | 'lineWidth' | 'fillOpacity' | 'showPoints' | 'pointSize' | 'lineInterpolation'>> = {
+  drawStyle: 'line',
+  lineWidth: 1,
+  fillOpacity: 0,
+  showPoints: 'auto',
+  pointSize: 4,
+  lineInterpolation: 'linear',
+}
+
+function resolveOption<T extends keyof typeof DEFAULT_OPTIONS>(opts: PanelOptions | undefined, key: T): typeof DEFAULT_OPTIONS[T] {
+  const v = opts?.[key]
+  return (v !== undefined ? v : DEFAULT_OPTIONS[key]) as typeof DEFAULT_OPTIONS[T]
 }
 
 function formatSeriesName(metric: Record<string, string>) {
@@ -95,62 +100,66 @@ function formatPrometheusData(result: any, chartType: ChartType) {
   return { series, times }
 }
 
-export default function ChartPanel({
-  title,
-  type,
-  query,
-  dataSourceId,
-  options = {},
-  start,
-  end,
-  step,
-}: ChartPanelProps) {
+// Grafana-style auto points: show points when density is low
+// Heuristic: at least ~8px per data point on screen
+function shouldShowPoints(showPoints: 'auto' | 'always' | 'never', chartWidth: number, dataLength: number): 'circle' | 'none' {
+  if (showPoints === 'never') return 'none'
+  if (showPoints === 'always') return 'circle'
+  if (dataLength <= 1) return 'circle'
+  return chartWidth / dataLength > 8 ? 'circle' : 'none'
+}
+
+export function ChartPanel({ title, type, query, dataSourceId, options }: {
+  title: string
+  type: ChartType
+  query: string
+  dataSourceId: number
+  options?: PanelOptions
+}) {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
+  const [chartData, setChartData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [statValue, setStatValue] = useState<number | null>(null)
   const [tableData, setTableData] = useState<{ columns: string[]; rows: any[] } | null>(null)
-  const [chartData, setChartData] = useState<any>(null)
 
-  // 1. 拉取数据
   const loadData = useCallback(async () => {
-    if (!dataSourceId || !query) return
+    if (!query || !dataSourceId) return
     setLoading(true)
-    setError('')
-    setChartData(null)
+    setError(null)
+
     try {
-      const req: any = { query }
-      if (start && end) {
-        req.start = start
-        req.end = end
-        req.step = step || '15s'
-      }
-      const result = await datasourceAPI.query(dataSourceId, req)
+      const end = Math.floor(Date.now() / 1000)
+      const start = end - 3600 * 24
+      const step = 300
+      const result = await datasourceAPI.query(dataSourceId, { query, start: String(start), end: String(end), step: String(step) })
       if (!result.success) {
         setError(result.error || result.message || 'Query failed')
         return
       }
-      // 后端返回结构: { success, data: { status, data: { result } } }
       const promData = result.data?.data
       const formatted = formatPrometheusData({ data: promData }, type)
-      if (type === 'table' && formatted) {
-        setTableData(formatted as { columns: string[]; rows: any[] })
+      if (!formatted) {
+        setError('无数据')
+        return
+      }
+
+      if (type === 'stat') {
+        setStatValue((formatted as any).value)
+      } else if (type === 'table') {
+        setTableData(formatted as any)
       } else {
-        setTableData(null)
+        setChartData(formatted)
       }
-      if (type === 'stat' && formatted && formatted.value !== undefined) {
-        setStatValue(formatted.value)
-      }
-      setChartData(formatted)
     } catch (err: any) {
       setError(err.message || '加载数据失败')
     } finally {
       setLoading(false)
     }
-  }, [dataSourceId, query, type, start, end, step])
+  }, [dataSourceId, query, type])
 
-  // 2. 初始化 ECharts + ResizeObserver
+  // 初始化 ECharts + ResizeObserver
   useEffect(() => {
     if (!chartRef.current) return
     if (!chartInstance.current) {
@@ -171,22 +180,38 @@ export default function ChartPanel({
     }
   }, [])
 
-  // 3. 数据或类型变化时重新拉取
+  // 数据或类型变化时重新拉取
   useEffect(() => {
     loadData()
   }, [loadData])
 
-  // 4. chartData 准备好后绘制（Grafana 风格）
+  // chartData 准备好后绘制（Grafana 风格）
   useEffect(() => {
     if (!chartInstance.current || !chartData) return
     if (type === 'stat' || type === 'table') return
+
+    const showLegend = options?.legend !== false
+    const chartWidth = chartRef.current?.clientWidth || 400
+    const dataLength = chartData.times?.length || 1
+
+    // Resolve Grafana-style options with defaults
+    const drawStyle = resolveOption(options, 'drawStyle')
+    const lineWidth = resolveOption(options, 'lineWidth')
+    const fillOpacity = resolveOption(options, 'fillOpacity')
+    const showPoints = resolveOption(options, 'showPoints')
+    const pointSize = resolveOption(options, 'pointSize')
+    const lineInterpolation = resolveOption(options, 'lineInterpolation')
 
     let option: echarts.EChartsOption = {}
 
     switch (type) {
       case 'line':
       case 'bar': {
-        const showLegend = options.legend !== false
+        const effectiveType = drawStyle === 'points' ? 'line' : (drawStyle === 'bar' ? 'bar' : 'line')
+        const symbol = drawStyle === 'points'
+          ? 'circle'
+          : shouldShowPoints(showPoints, chartWidth, dataLength)
+
         option = {
           backgroundColor: 'transparent',
           color: GRAFANA_COLORS,
@@ -237,19 +262,26 @@ export default function ChartPanel({
                 tooltip: { show: true },
               }
             : undefined,
-          series: chartData.series.map((s: any) => ({
-            name: s.name,
-            type,
-            data: s.data,
-            smooth: false,
-            symbol: 'none',
-            lineStyle: { width: 1.5 },
-            emphasis: {
-              lineStyle: { width: 2.5 },
-            },
-            // 只有用户明确配置才开 area
-            areaStyle: options.area ? { opacity: 0.15 } : undefined,
-          })),
+          series: chartData.series.map((s: any) => {
+            const isLine = effectiveType === 'line'
+            const areaOpacity = isLine && fillOpacity > 0 ? fillOpacity / 100 : 0
+
+            return {
+              name: s.name,
+              type: effectiveType,
+              data: s.data,
+              smooth: lineInterpolation === 'smooth',
+              symbol: symbol,
+              symbolSize: symbol === 'circle' ? pointSize : undefined,
+              lineStyle: isLine ? { width: lineWidth } : undefined,
+              itemStyle: isLine ? undefined : undefined,
+              // Grafana: fill only when fillOpacity > 0
+              areaStyle: areaOpacity > 0 ? { opacity: areaOpacity } : undefined,
+              emphasis: {
+                lineStyle: { width: isLine ? Math.max(lineWidth + 1, 2) : undefined },
+              },
+            }
+          }),
         }
         break
       }
@@ -263,7 +295,7 @@ export default function ChartPanel({
             borderColor: '#374151',
             textStyle: { color: '#f3f4f6' },
           },
-          legend: options.legend !== false
+          legend: options?.legend !== false
             ? { type: 'scroll', orient: 'vertical', right: 8, top: 'center', textStyle: { fontSize: 11 } }
             : undefined,
           series: [{
@@ -289,8 +321,8 @@ export default function ChartPanel({
           },
           series: [{
             type: 'gauge',
-            min: options.min ?? 0,
-            max: options.max ?? 100,
+            min: options?.min ?? 0,
+            max: options?.max ?? 100,
             detail: { formatter: '{value}', fontSize: 24, color: '#374151' },
             data: [{ value: chartData.value, name: chartData.name }],
             axisLine: { lineStyle: { width: 12, color: [
@@ -338,9 +370,9 @@ export default function ChartPanel({
         {type === 'stat' ? (
           <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
             <Typography variant="h3" sx={{ fontWeight: 700, color: '#007AFF' }}>
-              {statValue !== null ? statValue.toFixed(options.decimals ?? 1) : '-'}
+              {statValue !== null ? statValue.toFixed(options?.decimals ?? 1) : '-'}
             </Typography>
-            {options.unit && (
+            {options?.unit && (
               <Typography variant="caption" color="text.secondary">{options.unit}</Typography>
             )}
           </Box>

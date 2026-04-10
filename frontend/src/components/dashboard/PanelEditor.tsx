@@ -15,7 +15,7 @@ import {
   Grid,
   Alert,
 } from '@mui/material'
-import ChartPanel from '../charts/ChartPanel'
+import { ChartPanel } from '../charts/ChartPanel'
 import { DataSource, datasourceAPI } from '../../lib/datasource-api'
 import { CreatePanelRequest } from '../../lib/dashboard-api'
 

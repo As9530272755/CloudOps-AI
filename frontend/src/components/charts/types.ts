@@ -7,6 +7,7 @@ export interface PanelPosition {
   h: number
 }
 
+// Grafana-style field config defaults (from Grafana source: GraphFieldConfig)
 export interface PanelOptions {
   unit?: string
   legend?: boolean
@@ -15,7 +16,17 @@ export interface PanelOptions {
   min?: number
   max?: number
   decimals?: number
-  area?: boolean
+
+  // Grafana-style line/bar/points config
+  drawStyle?: 'line' | 'bar' | 'points'
+  lineInterpolation?: 'linear' | 'smooth'
+  lineWidth?: number
+  lineStyle?: 'solid' | 'dash' | 'dot'
+  fillOpacity?: number // 0-100, Grafana default = 0
+  showPoints?: 'auto' | 'always' | 'never'
+  pointSize?: number
+  barAlignment?: 'before' | 'center' | 'after'
+  barWidthFactor?: number
 }
 
 export interface PanelData {

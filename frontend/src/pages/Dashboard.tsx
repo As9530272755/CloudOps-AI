@@ -26,7 +26,7 @@ import 'react-resizable/css/styles.css'
 import { glassEffect } from '../theme/theme'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel } from '../lib/dashboard-api'
-import ChartPanel from '../components/charts/ChartPanel'
+import { ChartPanel } from '../components/charts/ChartPanel'
 import PanelEditor from '../components/dashboard/PanelEditor'
 
 const timeRangeOptions = [
@@ -50,10 +50,6 @@ function getTimeRange(value: string) {
   return { start: now - (map[value] || 3600), end: now }
 }
 
-function formatUnix(t: number) {
-  return t.toString()
-}
-
 export default function Dashboard() {
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [dashboard, setDashboard] = useState<DashboardModel | null>(null)
@@ -65,9 +61,7 @@ export default function Dashboard() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
 
-  const { start, end } = useMemo(() => getTimeRange(timeRange), [timeRange])
-  const startStr = useMemo(() => formatUnix(start), [start])
-  const endStr = useMemo(() => formatUnix(end), [end])
+  useMemo(() => getTimeRange(timeRange), [timeRange])
 
   // Load clusters for stat cards
   const loadClusters = useCallback(async () => {
@@ -389,9 +383,6 @@ export default function Dashboard() {
                     query={panel.query}
                     dataSourceId={panel.data_source_id}
                     options={panel.options ? JSON.parse(panel.options) : {}}
-                    start={startStr}
-                    end={endStr}
-                    step="15s"
                   />
                 </Box>
               ))}
