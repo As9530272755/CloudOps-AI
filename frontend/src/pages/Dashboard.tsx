@@ -36,6 +36,9 @@ const timeRangeOptions = [
   { label: '6小时', value: '6h' },
   { label: '24小时', value: '24h' },
   { label: '7天', value: '7d' },
+  { label: '30天', value: '30d' },
+  { label: '180天', value: '180d' },
+  { label: '1年', value: '1y' },
 ]
 
 const refreshOptions = [
@@ -46,10 +49,29 @@ const refreshOptions = [
   { label: '5m', value: 300 },
 ]
 
-function getTimeRange(value: string) {
+function getQueryRange(value: string) {
   const now = Math.floor(Date.now() / 1000)
-  const map: Record<string, number> = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 }
-  return { start: now - (map[value] || 3600), end: now }
+  const durationMap: Record<string, number> = {
+    '1h': 3600,
+    '6h': 21600,
+    '24h': 86400,
+    '7d': 604800,
+    '30d': 2592000,
+    '180d': 15552000,
+    '1y': 31536000,
+  }
+  const stepMap: Record<string, number> = {
+    '1h': 15,
+    '6h': 60,
+    '24h': 60,
+    '7d': 300,
+    '30d': 900,
+    '180d': 3600,
+    '1y': 21600,
+  }
+  const duration = durationMap[value] || 3600
+  const step = stepMap[value] || 60
+  return { start: now - duration, end: now, step }
 }
 
 function sortPanelsByGridPos(panels: DashboardPanel[]): DashboardPanel[] {
@@ -121,7 +143,7 @@ export default function Dashboard() {
     return () => ro.disconnect()
   }, [panels.length, editMode])
 
-  useMemo(() => getTimeRange(timeRange), [timeRange])
+  const queryRange = useMemo(() => getQueryRange(timeRange), [timeRange])
 
   const loadClusters = useCallback(async () => {
     try {
@@ -319,6 +341,9 @@ export default function Dashboard() {
             options={parsedOptions}
             width={0}
             height={0}
+            start={queryRange.start}
+            end={queryRange.end}
+            step={queryRange.step}
             showMenu={editMode}
             onEdit={() => handleEditPanel(panel)}
             onDelete={() => handleDeletePanel(panel)}

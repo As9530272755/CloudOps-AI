@@ -195,6 +195,9 @@ export function ChartPanel({
   options,
   width,
   height,
+  start,
+  end,
+  step,
   onEdit,
   onDelete,
   onDuplicate,
@@ -207,6 +210,9 @@ export function ChartPanel({
   options?: PanelOptions
   width?: number
   height?: number
+  start?: number
+  end?: number
+  step?: number
   onEdit?: () => void
   onDelete?: () => void
   onDuplicate?: () => void
@@ -231,10 +237,10 @@ export function ChartPanel({
     setError(null)
 
     try {
-      const end = Math.floor(Date.now() / 1000)
-      const start = end - 3600 * 24
-      const step = 300
-      const result = await datasourceAPI.query(dataSourceId, { query, start: String(start), end: String(end), step: String(step) })
+      const endTs = end ?? Math.floor(Date.now() / 1000)
+      const startTs = start ?? (endTs - 3600 * 24)
+      const stepSec = step ?? 300
+      const result = await datasourceAPI.query(dataSourceId, { query, start: String(startTs), end: String(endTs), step: String(stepSec) })
       if (!result.success) {
         setError(result.error || result.message || 'Query failed')
         return
@@ -258,7 +264,7 @@ export function ChartPanel({
     } finally {
       setLoading(false)
     }
-  }, [dataSourceId, query, type])
+  }, [dataSourceId, query, type, start, end, step])
 
   // 初始化 ECharts + ResizeObserver
   useEffect(() => {
