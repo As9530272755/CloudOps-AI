@@ -39,6 +39,8 @@ export interface InspectionResultItem {
   score: number
   risk_level: string
   findings: any[]
+  report_html?: string
+  report_markdown?: string
   error_msg: string
   created_at: string
 }

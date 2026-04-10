@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,20 @@ import (
 	"github.com/cloudops/platform/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+// inspectionResultResp 用于把 Findings JSON 字符串解析为数组返回
+type inspectionResultResp struct {
+	model.InspectionResult
+	Findings []map[string]interface{} `json:"findings"`
+}
+
+func toInspectionResultResp(r model.InspectionResult) inspectionResultResp {
+	resp := inspectionResultResp{InspectionResult: r}
+	if r.Findings != "" && r.Findings != "null" {
+		_ = json.Unmarshal([]byte(r.Findings), &resp.Findings)
+	}
+	return resp
+}
 
 // InspectionHandler 巡检中心 Handler
 type InspectionHandler struct {
@@ -139,7 +154,12 @@ func (h *InspectionHandler) GetJob(c *gin.Context) {
 	}
 	var results []model.InspectionResult
 	h.inspectionService.DB().Where("job_id = ?", id).Find(&results)
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"job": job, "results": results}})
+
+	var resp []inspectionResultResp
+	for _, r := range results {
+		resp = append(resp, toInspectionResultResp(r))
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"job": job, "results": resp}})
 }
 
 // GetResult 单集群结果详情
@@ -150,7 +170,7 @@ func (h *InspectionHandler) GetResult(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "记录不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toInspectionResultResp(res)})
 }
 
 // DownloadReport 下载报告
