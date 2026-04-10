@@ -338,12 +338,12 @@ export default function MainLayout() {
           </Toolbar>
         </AppBar>
 
-        {/* 桌面端侧边栏收起时：左上角浮动工具条 */}
+        {/* 桌面端侧边栏收起时：左下角浮动工具条 */}
         {!open && !isMobile && (
           <Box
             sx={{
               position: 'fixed',
-              top: 16,
+              bottom: 16,
               left: 16,
               zIndex: 1300,
               display: 'flex',
