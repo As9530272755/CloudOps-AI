@@ -374,7 +374,14 @@ export default function NetworkTrace() {
 
         <FormControl sx={{ minWidth: 140 }} size="small">
           <InputLabel>Namespace</InputLabel>
-          <Select value={namespace} label="Namespace" onChange={(e) => setNamespace(e.target.value)}>
+          <Select
+            value={namespace}
+            label="Namespace"
+            onChange={(e) => {
+              setNamespace(e.target.value)
+              setPod('')
+            }}
+          >
             {namespaces.map((ns) => (
               <MenuItem key={ns} value={ns}>
                 {ns}
