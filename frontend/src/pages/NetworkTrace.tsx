@@ -243,6 +243,8 @@ export default function NetworkTrace() {
   }
 
   const [timeseriesData, setTimeseriesData] = useState<any>(null)
+  const [aiSummary, setAiSummary] = useState<string>('')
+
   const loadTimeseries = async (source: string, target: string, protocol: string) => {
     try {
       const res = await networkTraceAPI.getTimeseries(clusterId, source, target, protocol, duration)
@@ -298,7 +300,7 @@ export default function NetworkTrace() {
       })
       if (res.success) {
         setSnackbar({ open: true, message: `Ephemeral Container 已注入 ${target.pod}，正在抓包...`, severity: 'success' })
-        setDrawerTab(3)
+        setDrawerTab(4)
       } else {
         setSnackbar({ open: true, message: res.error || '抓包启动失败', severity: 'error' })
       }
@@ -315,6 +317,7 @@ export default function NetworkTrace() {
       const res = await networkTraceAPI.enhanceTopology(clusterId, { namespace, pod })
       if (res.success && res.data) {
         setTopology(res.data.topology)
+        setAiSummary(res.data.ai_summary || '')
         setSnackbar({ open: true, message: `拓扑已增强（抓包请求: ${res.data.topology.edges.reduce((sum, e) => sum + e.requests, 0)}，Prometheus RX: ${formatBytes(res.data.prometheus?.rx_bytes || 0)}/s）`, severity: 'success' })
       } else {
         setSnackbar({ open: true, message: res.error || '增强拓扑失败', severity: 'error' })
@@ -595,6 +598,12 @@ export default function NetworkTrace() {
                 {selectedNode.namespace && <Chip label={`NS: ${selectedNode.namespace}`} size="small" />}
                 {selectedNode.node && <Chip label={`Node: ${selectedNode.node}`} size="small" />}
               </Box>
+              {aiSummary && (
+                <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>🤖 AI 抓包总结</Typography>
+                  <Typography variant="body2">{aiSummary}</Typography>
+                </Alert>
+              )}
             </Box>
           )}
           {selectedEdge && (
@@ -636,6 +645,12 @@ export default function NetworkTrace() {
                 <Chip label={`延迟: ${selectedEdge.latencyP95}ms`} size="small" />
                 <Chip label={`成功率: ${selectedEdge.successRate}%`} size="small" />
               </Box>
+              {aiSummary && (
+                <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>🤖 AI 抓包总结</Typography>
+                  <Typography variant="body2">{aiSummary}</Typography>
+                </Alert>
+              )}
             </Box>
           )}
 
@@ -645,6 +660,7 @@ export default function NetworkTrace() {
             <Tab label="流量趋势" />
             <Tab label="L7 请求" />
             <Tab label="原始数据" />
+            <Tab label="AI 分析" />
             <Tab label="调试日志" />
           </Tabs>
 
@@ -685,6 +701,20 @@ export default function NetworkTrace() {
               </Box>
             )}
             {drawerTab === 3 && (
+              <Box sx={{ height: '100%', overflow: 'auto' }}>
+                {!aiSummary ? (
+                  <Box sx={{ color: 'text.secondary', textAlign: 'center', pt: 8 }}>
+                    暂无 AI 分析，请先点击「解析抓包」生成拓扑
+                  </Box>
+                ) : (
+                  <Alert severity="info" sx={{ borderRadius: 2, whiteSpace: 'pre-wrap' }}>
+                    <Typography variant="subtitle2" fontWeight={600} gutterBottom>🤖 AI 抓包总结</Typography>
+                    <Typography variant="body2">{aiSummary}</Typography>
+                  </Alert>
+                )}
+              </Box>
+            )}
+            {drawerTab === 4 && (
               <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                   <Button variant="outlined" size="small" disabled={debugLoading} onClick={handleFetchDebugLogs}>

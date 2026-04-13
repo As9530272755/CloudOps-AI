@@ -106,14 +106,15 @@ func (h *NetworkTraceHandler) EnhanceTopology(c *gin.Context) {
 		return
 	}
 
-	topo, pm, err := h.svc.EnhanceTopology(c.Request.Context(), uint(id), req.Namespace, req.Pod)
+	topo, pm, aiSummary, err := h.svc.EnhanceTopology(c.Request.Context(), uint(id), req.Namespace, req.Pod)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"topology": topo,
+		"topology":   topo,
 		"prometheus": pm,
+		"ai_summary": aiSummary,
 	}})
 }
 

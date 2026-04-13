@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudops/platform/internal/pkg/ai"
 	"github.com/cloudops/platform/internal/pkg/config"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -78,23 +79,25 @@ type FlowItem struct {
 
 // NetworkTraceService 网络追踪服务
 type NetworkTraceService struct {
-	mu        sync.RWMutex
-	cfg       *config.Config
-	settings  NetworkTraceSettings
-	filePath  string
-	k8sMgr    *K8sManager
-	dsService *DatasourceService
-	db        *gorm.DB
+	mu          sync.RWMutex
+	cfg         *config.Config
+	settings    NetworkTraceSettings
+	filePath    string
+	k8sMgr      *K8sManager
+	dsService   *DatasourceService
+	db          *gorm.DB
+	aiConfigSvc *AIConfigService
 }
 
 // NewNetworkTraceService 创建服务
-func NewNetworkTraceService(cfg *config.Config, k8sMgr *K8sManager, dsService *DatasourceService, db *gorm.DB) *NetworkTraceService {
+func NewNetworkTraceService(cfg *config.Config, k8sMgr *K8sManager, dsService *DatasourceService, db *gorm.DB, aiConfigSvc *AIConfigService) *NetworkTraceService {
 	s := &NetworkTraceService{
-		cfg:       cfg,
-		filePath:  "data/network_trace_settings.json",
-		k8sMgr:    k8sMgr,
-		dsService: dsService,
-		db:        db,
+		cfg:         cfg,
+		filePath:    "data/network_trace_settings.json",
+		k8sMgr:      k8sMgr,
+		dsService:   dsService,
+		db:          db,
+		aiConfigSvc: aiConfigSvc,
 		settings: NetworkTraceSettings{
 			DebugImage: cfg.NetworkTrace.DebugImage,
 		},
@@ -845,19 +848,20 @@ func (s *NetworkTraceService) GetPodTrafficMetrics(ctx context.Context, namespac
 	return metrics, nil
 }
 
-// EnhanceTopology 增强拓扑：K8s 逻辑拓扑 + Prometheus 流量 + 抓包解析
-func (s *NetworkTraceService) EnhanceTopology(ctx context.Context, clusterID uint, namespace, podName string) (*TopologyData, map[string]float64, error) {
+// EnhanceTopology 增强拓扑：K8s 逻辑拓扑 + Prometheus 流量 + 抓包解析 + AI 总结
+func (s *NetworkTraceService) EnhanceTopology(ctx context.Context, clusterID uint, namespace, podName string) (*TopologyData, map[string]float64, string, error) {
 	// 1. 基础逻辑拓扑
 	topo, err := s.BuildTopology(clusterID, namespace, podName)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	// 2. Prometheus 流量聚合（仅作为目标节点摘要，无法提供 Pod-to-Pod 关系）
 	pm, _ := s.GetPodTrafficMetrics(ctx, namespace, podName)
 
 	// 3. 尝试获取已有的抓包日志并解析成真实流量边
-	rawLogs, err := s.GetDebugLogs(ctx, clusterID, namespace, podName)
+	var rawLogs string
+	rawLogs, err = s.GetDebugLogs(ctx, clusterID, namespace, podName)
 	if err == nil && rawLogs != "" {
 		capturedTopo, _ := s.BuildTopologyFromCapture(clusterID, namespace, podName, rawLogs)
 		if capturedTopo != nil {
@@ -888,7 +892,23 @@ func (s *NetworkTraceService) EnhanceTopology(ctx context.Context, clusterID uin
 		}
 	}
 
-	return topo, pm, nil
+	// 5. AI 总结抓包内容
+	var aiSummary string
+	if s.aiConfigSvc != nil && rawLogs != "" {
+		provider, perr := s.aiConfigSvc.NewProvider()
+		if perr == nil {
+			prompt := fmt.Sprintf(
+				"你是一位 Kubernetes 网络运维专家。请根据下面 tcpdump 抓包日志，为普通工程师写一段 150 字以内的中文总结。需包含：1) 和谁通信；2) 用了什么协议；3) 流量大小；4) 是否有异常。\n\n%s",
+				rawLogs,
+			)
+			aiSummary, _ = provider.ChatCompletion(ctx, []ai.Message{
+				{Role: "system", Content: "你是一个专业的 K8s 网络分析师。"},
+				{Role: "user", Content: prompt},
+			})
+		}
+	}
+
+	return topo, pm, aiSummary, nil
 }
 
 // BuildTopologyFromCapture 将 tcpdump 原始日志解析为拓扑

@@ -18,11 +18,12 @@ type Router struct {
 	dashboardHandler    *handlers.DashboardHandler
 	inspectionHandler   *handlers.InspectionHandler
 	networkTraceHandler *handlers.NetworkTraceHandler
+	aiConfigHandler     *handlers.AIConfigHandler
 	jwtManager          *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService) *Router {
 	return &Router{
 		authHandler:         handlers.NewAuthHandler(jwtManager),
 		clusterHandler:      handlers.NewClusterHandler(clusterService),
@@ -31,6 +32,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		dashboardHandler:    handlers.NewDashboardHandler(dashboardService),
 		inspectionHandler:   handlers.NewInspectionHandler(inspectionService),
 		networkTraceHandler: handlers.NewNetworkTraceHandler(networkTraceService),
+		aiConfigHandler:     handlers.NewAIConfigHandler(aiConfigService),
 		jwtManager:          jwtManager,
 	}
 }
@@ -117,6 +119,11 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				inspection.GET("/jobs/:id/report", r.inspectionHandler.DownloadReport)
 				inspection.GET("/results/:id", r.inspectionHandler.GetResult)
 			}
+
+			// AI 平台配置
+			protected.GET("/settings/ai", r.aiConfigHandler.GetConfig)
+			protected.PUT("/settings/ai", r.aiConfigHandler.UpdateConfig)
+			protected.POST("/settings/ai/test", r.aiConfigHandler.TestConnection)
 
 			// 网络追踪
 			protected.GET("/network-trace/config", r.networkTraceHandler.GetConfig)

@@ -110,7 +110,7 @@ export const networkTraceAPI = {
   // 增强拓扑（K8s + Prometheus + 抓包）
   enhanceTopology: async (clusterId: number | string, data: { namespace: string; pod: string }) => {
     const res = await api.post(`/clusters/${clusterId}/network/flows/enhance`, data)
-    return res.data as { success: boolean; data?: { topology: FlowTopology; prometheus: PodTrafficMetrics }; error?: string }
+    return res.data as { success: boolean; data?: { topology: FlowTopology; prometheus: PodTrafficMetrics; ai_summary?: string }; error?: string }
   },
 
   // 调试 / 抓包

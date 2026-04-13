@@ -85,8 +85,12 @@ func main() {
 		log.Println("✅ 巡检调度器启动完成")
 	}
 
+	// 创建 AI 配置服务
+	aiConfigService := service.NewAIConfigService(cfg.Security.JWT.Secret)
+	log.Println("✅ AI 配置服务初始化完成")
+
 	// 创建网络追踪服务
-	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db)
+	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db, aiConfigService)
 	log.Println("✅ 网络追踪服务初始化完成")
 
 	// 设置运行模式
@@ -129,7 +133,7 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 
