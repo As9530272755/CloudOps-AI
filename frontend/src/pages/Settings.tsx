@@ -363,6 +363,7 @@ function AISettings() {
               fullWidth
               sx={{ mb: 2 }}
               placeholder="http://openclaw.internal:8080"
+              helperText="提示：127.0.0.1 / localhost 指向 CloudOps 服务端本身，如 OpenClaw 在您的个人电脑上，请填写本机局域网真实 IP"
             />
             <TextField
               label="API Token"
