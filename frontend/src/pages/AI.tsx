@@ -19,6 +19,7 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { aiChatAPI, Message } from '../lib/ai-chat-api'
 
 interface ChatMessage extends Message {
@@ -87,6 +88,7 @@ function ContentBlock({ content }: { content: string }) {
       }}
     >
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           code({ inline, className, children, ...props }: any) {
             if (inline) {
