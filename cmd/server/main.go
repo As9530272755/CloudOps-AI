@@ -85,6 +85,10 @@ func main() {
 		log.Println("✅ 巡检调度器启动完成")
 	}
 
+	// 创建网络追踪服务
+	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db)
+	log.Println("✅ 网络追踪服务初始化完成")
+
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -125,7 +129,7 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 

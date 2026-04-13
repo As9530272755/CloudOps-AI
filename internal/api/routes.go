@@ -11,25 +11,27 @@ import (
 
 // Router API 路由
 type Router struct {
-	authHandler       *handlers.AuthHandler
-	clusterHandler    *handlers.ClusterHandler
-	k8sHandler        *handlers.K8sHandler
-	dsHandler         *handlers.DatasourceHandler
-	dashboardHandler  *handlers.DashboardHandler
-	inspectionHandler *handlers.InspectionHandler
-	jwtManager        *auth.JWTManager
+	authHandler         *handlers.AuthHandler
+	clusterHandler      *handlers.ClusterHandler
+	k8sHandler          *handlers.K8sHandler
+	dsHandler           *handlers.DatasourceHandler
+	dashboardHandler    *handlers.DashboardHandler
+	inspectionHandler   *handlers.InspectionHandler
+	networkTraceHandler *handlers.NetworkTraceHandler
+	jwtManager          *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService) *Router {
 	return &Router{
-		authHandler:       handlers.NewAuthHandler(jwtManager),
-		clusterHandler:    handlers.NewClusterHandler(clusterService),
-		k8sHandler:        handlers.NewK8sHandler(k8sService),
-		dsHandler:         handlers.NewDatasourceHandler(dsService),
-		dashboardHandler:  handlers.NewDashboardHandler(dashboardService),
-		inspectionHandler: handlers.NewInspectionHandler(inspectionService),
-		jwtManager:        jwtManager,
+		authHandler:         handlers.NewAuthHandler(jwtManager),
+		clusterHandler:      handlers.NewClusterHandler(clusterService),
+		k8sHandler:          handlers.NewK8sHandler(k8sService),
+		dsHandler:           handlers.NewDatasourceHandler(dsService),
+		dashboardHandler:    handlers.NewDashboardHandler(dashboardService),
+		inspectionHandler:   handlers.NewInspectionHandler(inspectionService),
+		networkTraceHandler: handlers.NewNetworkTraceHandler(networkTraceService),
+		jwtManager:          jwtManager,
 	}
 }
 
@@ -115,6 +117,17 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				inspection.GET("/jobs/:id/report", r.inspectionHandler.DownloadReport)
 				inspection.GET("/results/:id", r.inspectionHandler.GetResult)
 			}
+
+			// 网络追踪
+			protected.GET("/network-trace/config", r.networkTraceHandler.GetConfig)
+			protected.PUT("/network-trace/config", r.networkTraceHandler.UpdateConfig)
+			protected.GET("/clusters/:id/network/flows/topology", r.networkTraceHandler.GetTopology)
+			protected.POST("/clusters/:id/network/flows/enhance", r.networkTraceHandler.EnhanceTopology)
+			protected.GET("/clusters/:id/network/flows/traffic", r.networkTraceHandler.GetPodTraffic)
+			protected.GET("/clusters/:id/network/flows/list", r.networkTraceHandler.GetFlowList)
+			protected.GET("/clusters/:id/network/flows/timeseries", r.networkTraceHandler.GetTimeseries)
+			protected.POST("/clusters/:id/network/debug", r.networkTraceHandler.CreateDebug)
+			protected.GET("/clusters/:id/network/debug/logs", r.networkTraceHandler.GetDebugLogs)
 
 			// TODO: 添加更多路由
 			// 日志管理

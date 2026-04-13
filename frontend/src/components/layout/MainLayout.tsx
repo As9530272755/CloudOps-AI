@@ -34,6 +34,7 @@ import {
   LightMode as LightModeIcon,
   Menu as MenuIcon,
   MenuOpen as MenuOpenIcon,
+  DeviceHub as NetworkTraceIcon,
 } from '@mui/icons-material'
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
@@ -44,6 +45,7 @@ const menuItems = [
   { path: '/', label: '仪表盘', icon: <DashboardIcon />, group: '概览' },
   { path: '/clusters', label: '集群管理', icon: <ClusterIcon />, group: 'Kubernetes' },
   { path: '/inspection', label: '巡检中心', icon: <InspectionIcon />, group: 'Kubernetes' },
+  { path: '/network-trace', label: '网络追踪', icon: <NetworkTraceIcon />, group: 'Kubernetes' },
   { path: '/data', label: '数据管理', icon: <DataIcon />, group: 'Kubernetes' },
   { path: '/logs', label: '日志管理', icon: <LogsIcon />, group: '运维' },
   { path: '/terminal', label: 'Web终端', icon: <TerminalIcon />, group: '运维' },

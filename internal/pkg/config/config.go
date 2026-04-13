@@ -9,13 +9,19 @@ import (
 
 // Config 主配置结构
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Kubernetes KubernetesConfig `mapstructure:"kubernetes"`
-	AI         AIConfig         `mapstructure:"ai"`
-	Security   SecurityConfig   `mapstructure:"security"`
-	Tenant     TenantConfig     `mapstructure:"tenant"`
-	Logging    LoggingConfig    `mapstructure:"logging"`
+	Server       ServerConfig       `mapstructure:"server"`
+	Database     DatabaseConfig     `mapstructure:"database"`
+	Kubernetes   KubernetesConfig   `mapstructure:"kubernetes"`
+	AI           AIConfig           `mapstructure:"ai"`
+	Security     SecurityConfig     `mapstructure:"security"`
+	Tenant       TenantConfig       `mapstructure:"tenant"`
+	Logging      LoggingConfig      `mapstructure:"logging"`
+	NetworkTrace NetworkTraceConfig `mapstructure:"network_trace"`
+}
+
+// NetworkTraceConfig 网络追踪配置
+type NetworkTraceConfig struct {
+	DebugImage string `mapstructure:"debug_image"`
 }
 
 // ServerConfig 服务配置
@@ -254,4 +260,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.output", "stdout")
+
+	// 网络追踪配置
+	v.SetDefault("network_trace.debug_image", "nicolaka/netshoot:latest")
 }

@@ -9,6 +9,7 @@ import ClusterDetail from './pages/ClusterDetail'
 import Inspection from './pages/Inspection'
 import Data from './pages/Data'
 import Logs from './pages/Logs'
+import NetworkTrace from './pages/NetworkTrace'
 import AI from './pages/AI'
 import Terminal from './pages/Terminal'
 import Users from './pages/Users'
@@ -56,6 +57,7 @@ function App() {
         <Route path="inspection" element={<Inspection />} />
         <Route path="data" element={<Data />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="network-trace" element={<NetworkTrace />} />
         <Route path="ai" element={<AI />} />
         <Route path="terminal" element={<Terminal />} />
         <Route path="users" element={<Users />} />
