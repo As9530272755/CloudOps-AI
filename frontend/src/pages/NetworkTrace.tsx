@@ -200,12 +200,12 @@ export default function NetworkTrace() {
   // Auto load when selection stable
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (clusterId && pod && namespace) {
+      if (clusterId && pod && namespace && pods.includes(pod)) {
         loadData()
       }
     }, 300)
     return () => clearTimeout(timer)
-  }, [clusterId, namespace, pod, duration, loadData])
+  }, [clusterId, namespace, pod, duration, pods, loadData])
 
   const filteredFlowList = flowList.filter((row) =>
     protocolFilter.length === 0 ? true : protocolFilter.includes(row.protocol)
