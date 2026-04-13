@@ -46,7 +46,7 @@ func (p *OllamaProvider) SetSessionID(id string) {
 func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message) (string, error) {
 	payload := map[string]interface{}{
 		"model":    p.Model,
-		"messages": messages,
+		"messages": toOllamaMessages(messages),
 		"stream":   false,
 	}
 
@@ -87,7 +87,7 @@ func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message)
 func (p *OllamaProvider) ChatCompletionStream(ctx context.Context, messages []Message, onChunk func(StreamResponse)) error {
 	payload := map[string]interface{}{
 		"model":    p.Model,
-		"messages": messages,
+		"messages": toOllamaMessages(messages),
 		"stream":   true,
 	}
 
@@ -178,6 +178,31 @@ func (p *OllamaProvider) ListModels(ctx context.Context) ([]string, error) {
 		}
 	}
 	return models, nil
+}
+
+func toOllamaMessages(messages []Message) []Message {
+	result := make([]Message, 0, len(messages))
+	for _, m := range messages {
+		if len(m.Images) > 0 {
+			cleaned := make([]string, 0, len(m.Images))
+			for _, img := range m.Images {
+				idx := strings.Index(img, ",")
+				if idx != -1 {
+					cleaned = append(cleaned, img[idx+1:])
+				} else {
+					cleaned = append(cleaned, img)
+				}
+			}
+			result = append(result, Message{
+				Role:    m.Role,
+				Content: m.Content,
+				Images:  cleaned,
+			})
+		} else {
+			result = append(result, m)
+		}
+	}
+	return result
 }
 
 func (p *OllamaProvider) HealthCheck(ctx context.Context) error {
