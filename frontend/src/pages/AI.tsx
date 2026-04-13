@@ -155,7 +155,7 @@ function buildSendMessages(msgs: ChatMessage[]): Message[] {
 
 export default function AI() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const saved = localStorage.getItem('cloudops-ai-messages')
+    const saved = localStorage.getItem('cloudops-ai-messages-v2')
     if (saved) {
       try {
         return JSON.parse(saved)
@@ -167,14 +167,12 @@ export default function AI() {
       {
         id: generateId(),
         role: 'system',
-        content:
-          '你是 CloudOps 平台的 AI 运维助手，精通 Kubernetes、Docker、Prometheus 等云原生技术。请用中文简洁准确地回答用户问题。',
+        content: '请用中文简洁准确地回答用户问题。',
       },
       {
         id: generateId(),
         role: 'assistant',
-        content:
-          '你好！我是 CloudOps AI 助手，可以帮你解答 Kubernetes 运维、故障排查、配置优化等问题。你想了解什么？',
+        content: '你好！有什么可以帮你的吗？',
       },
     ]
   })
@@ -199,7 +197,7 @@ export default function AI() {
       images: undefined,
     }))
     try {
-      localStorage.setItem('cloudops-ai-messages', JSON.stringify(toStore))
+      localStorage.setItem('cloudops-ai-messages-v2', JSON.stringify(toStore))
     } catch {
       // localStorage quota exceeded; silently ignore
     }
@@ -208,6 +206,11 @@ export default function AI() {
   useEffect(() => {
     localStorage.setItem('cloudops-ai-session-id', sessionId)
   }, [sessionId])
+
+  // 清理旧版消息缓存
+  useEffect(() => {
+    localStorage.removeItem('cloudops-ai-messages')
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -358,6 +361,7 @@ export default function AI() {
   const handleClear = () => {
     if (confirm('确定要清空当前对话吗？')) {
       setMessages((prev) => prev.filter((m) => m.role === 'system'))
+      localStorage.removeItem('cloudops-ai-messages-v2')
       localStorage.removeItem('cloudops-ai-messages')
       const newSession = generateId()
       setSessionId(newSession)
