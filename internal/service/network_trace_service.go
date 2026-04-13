@@ -150,12 +150,18 @@ func (s *NetworkTraceService) BuildTopology(clusterID uint, namespace, podName s
 		return nil, fmt.Errorf("集群 %d 未连接", clusterID)
 	}
 
-	// 1. 获取目标 Pod
+	// 1. 获取目标 Pod（优先从 cache，失败则 live get fallback）
+	var targetPod *corev1.Pod
 	targetObj, exists, err := cc.PodStore.GetByKey(namespace + "/" + podName)
-	if err != nil || !exists {
-		return nil, fmt.Errorf("Pod %s/%s 不存在", namespace, podName)
+	if err == nil && exists {
+		targetPod = targetObj.(*corev1.Pod)
+	} else {
+		livePod, getErr := cc.Client.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
+		if getErr != nil {
+			return nil, fmt.Errorf("Pod %s/%s 不存在", namespace, podName)
+		}
+		targetPod = livePod
 	}
-	targetPod := targetObj.(*corev1.Pod)
 
 	result := &TopologyData{
 		Target: TopologyNode{
