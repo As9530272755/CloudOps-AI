@@ -70,7 +70,7 @@ export default function NetworkTrace() {
   const [error, setError] = useState<string | null>(null)
   const [duration, setDuration] = useState<string>('5m')
   const [protocolFilter, setProtocolFilter] = useState<string[]>([])
-  const [podSearchQuery, setPodSearchQuery] = useState<string>('')
+  const [allPodsMap, setAllPodsMap] = useState<Record<string, string[]>>({})
 
   // Config dialog
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
@@ -114,6 +114,30 @@ export default function NetworkTrace() {
         if (!nsList.includes(namespace)) {
           setNamespace(nsList[0] || 'default')
         }
+        // 并行加载所有 namespace 的 pods，用于全局搜索
+        Promise.all(
+          nsList.map((ns: string) =>
+            k8sAPI
+              .getResources(Number(clusterId), 'pods', ns)
+              .then((res2: any) => {
+                const items = res2?.data?.items || (Array.isArray(res2?.data) ? res2.data : [])
+                const podNames = items
+                  .map((item: any) => {
+                    if (typeof item === 'string') return item
+                    return item?.name || item?.metadata?.name || String(item)
+                  })
+                  .filter((n: string) => n && n !== '[object Object]')
+                return { ns, podNames }
+              })
+              .catch(() => ({ ns, podNames: [] }))
+          )
+        ).then((results) => {
+          const map: Record<string, string[]> = {}
+          results.forEach(({ ns, podNames }) => {
+            map[ns] = podNames
+          })
+          setAllPodsMap(map)
+        })
       }
     })
   }, [clusterId])
@@ -361,7 +385,7 @@ export default function NetworkTrace() {
 
         <Autocomplete
           size="small"
-          options={pods.filter((p) => p.toLowerCase().includes(podSearchQuery.toLowerCase()))}
+          options={pods}
           value={pod}
           onChange={(_, v) => typeof v === 'string' && setPod(v)}
           getOptionLabel={(option) => typeof option === 'string' ? option : String(option)}
@@ -380,19 +404,43 @@ export default function NetworkTrace() {
           </Select>
         </FormControl>
 
-        <TextField
+        <Autocomplete
           size="small"
-          placeholder="全局搜索 Pod"
-          value={podSearchQuery}
-          onChange={(e) => setPodSearchQuery(e.target.value)}
-          sx={{ width: 180 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
+          freeSolo
+          clearOnBlur
+          clearOnEscape
+          value={null}
+          inputValue=""
+          options={Object.entries(allPodsMap).flatMap(([ns, podNames]) =>
+            podNames.map((p) => ({ namespace: ns, pod: p, label: `${p} (${ns})` }))
+          )}
+          filterOptions={(options, state) =>
+            options.filter((o) => o.label.toLowerCase().includes(state.inputValue.toLowerCase()))
+          }
+          getOptionLabel={(option) => (typeof option === 'string' ? option : option.label)}
+          isOptionEqualToValue={() => false}
+          onChange={(_, value) => {
+            if (value && typeof value !== 'string') {
+              setNamespace(value.namespace)
+              setPod(value.pod)
+            }
           }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              placeholder="全局搜索 Pod"
+              sx={{ width: 240 }}
+              InputProps={{
+                ...params.InputProps,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
+          sx={{ '& .MuiAutocomplete-clearIndicator': { display: 'none' } }}
         />
 
         <Box sx={{ flex: 1 }} />
