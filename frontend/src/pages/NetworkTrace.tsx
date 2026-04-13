@@ -406,11 +406,8 @@ export default function NetworkTrace() {
 
         <Autocomplete
           size="small"
-          freeSolo
-          clearOnBlur
           clearOnEscape
           value={null}
-          inputValue=""
           options={Object.entries(allPodsMap).flatMap(([ns, podNames]) =>
             podNames.map((p) => ({ namespace: ns, pod: p, label: `${p} (${ns})` }))
           )}
