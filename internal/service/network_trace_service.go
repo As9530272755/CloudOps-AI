@@ -501,6 +501,9 @@ func (s *NetworkTraceService) CreateEphemeralDebug(ctx context.Context, clusterI
 		if strings.Contains(msg, "Duplicate value") && strings.Contains(msg, "netshoot") {
 			return nil
 		}
+		if strings.Contains(msg, "already exists") {
+			return nil
+		}
 		// Pod 不支持临时容器（已终止、Job 完成、节点不支持等）
 		if strings.Contains(msg, "is not valid for pod") || strings.Contains(msg, "ephemeralContainers") && strings.Contains(msg, "Forbidden") {
 			return fmt.Errorf("该 Pod 当前状态不支持注入临时容器，可能原因：Pod 已终止、为单次 Job 或所在节点不支持 EphemeralContainers")
@@ -508,7 +511,7 @@ func (s *NetworkTraceService) CreateEphemeralDebug(ctx context.Context, clusterI
 		if strings.Contains(msg, "container runtime") || strings.Contains(msg, "runtime") {
 			return fmt.Errorf("该节点容器运行时不支持临时容器，请确认 kubelet 已开启 EphemeralContainers 特性")
 		}
-		return err
+		return fmt.Errorf("注入失败: %s", msg)
 	}
 	return nil
 }
@@ -856,7 +859,10 @@ func (s *NetworkTraceService) EnhanceTopology(ctx context.Context, clusterID uin
 	// 3. 尝试获取已有的抓包日志并解析成真实流量边
 	rawLogs, err := s.GetDebugLogs(ctx, clusterID, namespace, podName)
 	if err == nil && rawLogs != "" {
-		topo, _ = s.BuildTopologyFromCapture(clusterID, namespace, podName, rawLogs)
+		capturedTopo, _ := s.BuildTopologyFromCapture(clusterID, namespace, podName, rawLogs)
+		if capturedTopo != nil {
+			topo = capturedTopo
+		}
 	}
 
 	// 4. 将 Prometheus 聚合流量按比例分配到拓扑边上（仅有逻辑边时）
