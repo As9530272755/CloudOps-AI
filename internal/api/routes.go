@@ -19,11 +19,13 @@ type Router struct {
 	inspectionHandler   *handlers.InspectionHandler
 	networkTraceHandler *handlers.NetworkTraceHandler
 	aiConfigHandler     *handlers.AIConfigHandler
+	aiChatHandler       *handlers.AIChatHandler
+	aiTaskService       *service.AITaskService
 	jwtManager          *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiService *service.AIService, aiTaskSvc *service.AITaskService) *Router {
 	return &Router{
 		authHandler:         handlers.NewAuthHandler(jwtManager),
 		clusterHandler:      handlers.NewClusterHandler(clusterService),
@@ -33,6 +35,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		inspectionHandler:   handlers.NewInspectionHandler(inspectionService),
 		networkTraceHandler: handlers.NewNetworkTraceHandler(networkTraceService),
 		aiConfigHandler:     handlers.NewAIConfigHandler(aiConfigService),
+		aiChatHandler:       handlers.NewAIChatHandler(aiService, aiTaskSvc),
 		jwtManager:          jwtManager,
 	}
 }
@@ -124,7 +127,14 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			protected.GET("/settings/ai", r.aiConfigHandler.GetConfig)
 			protected.PUT("/settings/ai", r.aiConfigHandler.UpdateConfig)
 			protected.POST("/settings/ai/test", r.aiConfigHandler.TestConnection)
+			protected.GET("/settings/ai/models", r.aiConfigHandler.GetModels)
 
+			// AI 对话
+			protected.POST("/ai/chat", r.aiChatHandler.Chat)
+			protected.POST("/ai/chat/stream", r.aiChatHandler.ChatStream)
+
+			protected.POST("/ai/chat/task", r.aiChatHandler.CreateTask)
+			protected.GET("/ai/chat/task/:id", r.aiChatHandler.GetTask)
 			// 网络追踪
 			protected.GET("/network-trace/config", r.networkTraceHandler.GetConfig)
 			protected.PUT("/network-trace/config", r.networkTraceHandler.UpdateConfig)

@@ -25,6 +25,12 @@ export interface AITestResult {
   error?: string
 }
 
+export interface AIModelsResult {
+  success: boolean
+  data?: string[]
+  error?: string
+}
+
 export const aiAPI = {
   // 获取 AI 平台配置
   getConfig: async () => {
@@ -42,5 +48,11 @@ export const aiAPI = {
   testConnection: async () => {
     const response = await api.post('/settings/ai/test')
     return response.data as AITestResult
+  },
+
+  // 获取可用模型列表
+  listModels: async () => {
+    const response = await api.get('/settings/ai/models')
+    return response.data as AIModelsResult
   },
 }

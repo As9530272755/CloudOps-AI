@@ -45,3 +45,13 @@ func (h *AIConfigHandler) TestConnection(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "AI 平台连接成功"})
 }
+
+// GetModels 获取当前 AI 平台可用模型列表
+func (h *AIConfigHandler) GetModels(c *gin.Context) {
+	models, err := h.svc.ListModels()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": models})
+}

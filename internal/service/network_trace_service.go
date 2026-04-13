@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudops/platform/internal/pkg/ai"
 	"github.com/cloudops/platform/internal/pkg/config"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -86,18 +85,18 @@ type NetworkTraceService struct {
 	k8sMgr      *K8sManager
 	dsService   *DatasourceService
 	db          *gorm.DB
-	aiConfigSvc *AIConfigService
+	aiSvc *AIService
 }
 
 // NewNetworkTraceService 创建服务
-func NewNetworkTraceService(cfg *config.Config, k8sMgr *K8sManager, dsService *DatasourceService, db *gorm.DB, aiConfigSvc *AIConfigService) *NetworkTraceService {
+func NewNetworkTraceService(cfg *config.Config, k8sMgr *K8sManager, dsService *DatasourceService, db *gorm.DB, aiSvc *AIService) *NetworkTraceService {
 	s := &NetworkTraceService{
-		cfg:         cfg,
-		filePath:    "data/network_trace_settings.json",
-		k8sMgr:      k8sMgr,
-		dsService:   dsService,
-		db:          db,
-		aiConfigSvc: aiConfigSvc,
+		cfg:       cfg,
+		filePath:  "data/network_trace_settings.json",
+		k8sMgr:    k8sMgr,
+		dsService: dsService,
+		db:        db,
+		aiSvc:     aiSvc,
 		settings: NetworkTraceSettings{
 			DebugImage: cfg.NetworkTrace.DebugImage,
 		},
@@ -894,18 +893,8 @@ func (s *NetworkTraceService) EnhanceTopology(ctx context.Context, clusterID uin
 
 	// 5. AI 总结抓包内容
 	var aiSummary string
-	if s.aiConfigSvc != nil && rawLogs != "" {
-		provider, perr := s.aiConfigSvc.NewProvider()
-		if perr == nil {
-			prompt := fmt.Sprintf(
-				"你是一位 Kubernetes 网络运维专家。请根据下面 tcpdump 抓包日志，为普通工程师写一段 150 字以内的中文总结。需包含：1) 和谁通信；2) 用了什么协议；3) 流量大小；4) 是否有异常。\n\n%s",
-				rawLogs,
-			)
-			aiSummary, _ = provider.ChatCompletion(ctx, []ai.Message{
-				{Role: "system", Content: "你是一个专业的 K8s 网络分析师。"},
-				{Role: "user", Content: prompt},
-			})
-		}
+	if s.aiSvc != nil && rawLogs != "" {
+		aiSummary, _ = s.aiSvc.AnalyzeNetworkTrace(ctx, rawLogs)
 	}
 
 	return topo, pm, aiSummary, nil

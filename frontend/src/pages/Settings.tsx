@@ -272,21 +272,27 @@ function DataSourceSettings() {
 function AISettings() {
   const [config, setConfig] = useState<AIPlatformConfig>({
     provider: 'openclaw',
-    openclaw: { url: '', token: '', model: 'default' },
+    openclaw: { url: '', token: '', model: 'openclaw' },
     ollama: { url: '', model: 'llama3' },
   })
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [message, setMessage] = useState<{ text: string; severity: 'success' | 'error' } | null>(null)
-
   useEffect(() => {
     setLoading(true)
     aiAPI.getConfig().then((res) => {
       if (res.success && res.data) {
-        setConfig(res.data)
+        const data = res.data
+        if (data.provider === 'openclaw' && !data.openclaw.model) {
+          data.openclaw.model = 'openclaw'
+        }
+        if (data.provider === 'ollama' && !data.ollama.model) {
+          data.ollama.model = 'llama3'
+        }
+        setConfig(data)
       }
-    }).finally(() => setLoading(false))
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   const handleSave = async () => {
@@ -296,7 +302,9 @@ function AISettings() {
       const res = await aiAPI.updateConfig(config)
       if (res.success) {
         setMessage({ text: 'AI 平台配置已保存', severity: 'success' })
-        if (res.data) setConfig(res.data)
+        if (res.data) {
+          setConfig(res.data)
+        }
       } else {
         setMessage({ text: res.error || '保存失败', severity: 'error' })
       }
@@ -324,6 +332,8 @@ function AISettings() {
     }
   }
 
+
+
   if (loading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
   }
@@ -337,7 +347,23 @@ function AISettings() {
       )}
 
       <Card sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '16px' }}>
-        <Typography variant="h6" fontWeight={600} gutterBottom>🤖 AI 平台配置</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+          <Typography variant="h6" fontWeight={600}>🤖 AI 平台配置</Typography>
+          {(config.provider === 'openclaw' && config.openclaw.url) || (config.provider === 'ollama' && config.ollama.url) ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, borderRadius: '8px', bgcolor: 'success.light', color: 'success.contrastText' }}>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.dark' }} />
+              <Typography variant="caption" fontWeight={600}>
+                已对接 {config.provider === 'openclaw' ? 'OpenClaw' : 'Ollama'}
+                {config.provider === 'ollama' && config.ollama.model ? ` · ${config.ollama.model}` : ''}
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, borderRadius: '8px', bgcolor: 'action.selected', color: 'text.secondary' }}>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'text.disabled' }} />
+              <Typography variant="caption" fontWeight={600}>未配置</Typography>
+            </Box>
+          )}
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           配置 OpenClaw 或 Ollama 后，CloudOps 的 AI 助手、巡检报告、网络追踪分析等功能将自动具备智能总结能力。
         </Typography>
@@ -373,14 +399,6 @@ function AISettings() {
               fullWidth
               sx={{ mb: 2 }}
               placeholder="sk-xxxxxxxx"
-            />
-            <TextField
-              label="模型名称"
-              value={config.openclaw.model}
-              onChange={(e) => setConfig({ ...config, openclaw: { ...config.openclaw, model: e.target.value } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="default"
             />
           </>
         )}

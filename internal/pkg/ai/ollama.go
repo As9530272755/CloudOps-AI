@@ -1,11 +1,14 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -21,6 +24,7 @@ func NewOllamaProvider(baseURL, model string, timeout time.Duration) *OllamaProv
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	if model == "" {
 		model = "llama3"
 	}
@@ -33,6 +37,10 @@ func NewOllamaProvider(baseURL, model string, timeout time.Duration) *OllamaProv
 
 func (p *OllamaProvider) Name() string {
 	return "ollama"
+}
+
+func (p *OllamaProvider) SetSessionID(id string) {
+	// Ollama 无会话概念，空实现
 }
 
 func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message) (string, error) {
@@ -60,7 +68,8 @@ func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Ollama API 返回状态码 %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("Ollama API 返回状态码 %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -73,6 +82,102 @@ func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message)
 		return "", err
 	}
 	return result.Message.Content, nil
+}
+
+func (p *OllamaProvider) ChatCompletionStream(ctx context.Context, messages []Message, onChunk func(StreamResponse)) error {
+	payload := map[string]interface{}{
+		"model":    p.Model,
+		"messages": messages,
+		"stream":   true,
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/api/chat", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/x-ndjson")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Ollama API 返回状态码 %d: %s", resp.StatusCode, string(body))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		var result struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			Done bool `json:"done"`
+		}
+		if err := json.Unmarshal(line, &result); err != nil {
+			continue
+		}
+		onChunk(StreamResponse{Content: result.Message.Content, Done: result.Done})
+		if result.Done {
+			break
+		}
+	}
+	return nil
+}
+
+func (p *OllamaProvider) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Ollama API 返回状态码 %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(result.Models))
+	for _, m := range result.Models {
+		if m.Name != "" {
+			models = append(models, m.Name)
+		}
+	}
+	return models, nil
 }
 
 func (p *OllamaProvider) HealthCheck(ctx context.Context) error {

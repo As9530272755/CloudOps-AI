@@ -86,6 +86,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.InspectionJob{},
 		&model.InspectionResult{},
 		&model.InspectionRule{},
+		&model.AITask{},
 	)
 }
 

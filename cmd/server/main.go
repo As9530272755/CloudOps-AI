@@ -13,7 +13,9 @@ import (
 	"github.com/cloudops/platform/internal/pkg/config"
 	"github.com/cloudops/platform/internal/pkg/crypto"
 	"github.com/cloudops/platform/internal/pkg/database"
+	appredis "github.com/cloudops/platform/internal/pkg/redis"
 	"github.com/cloudops/platform/internal/service"
+	redislib "github.com/redis/go-redis/v9"
 )
 
 // @title CloudOps Platform API
@@ -89,8 +91,25 @@ func main() {
 	aiConfigService := service.NewAIConfigService(cfg.Security.JWT.Secret)
 	log.Println("✅ AI 配置服务初始化完成")
 
+	// 创建通用 AI 服务
+	aiService := service.NewAIService(aiConfigService)
+	log.Println("✅ AI 服务初始化完成")
+
+	// 初始化 Redis（可选，失败只打警告不退出）
+	var redisClient *redislib.Client
+	if rdb, err := appredis.InitRedis(cfg); err != nil {
+		log.Printf("⚠️ Redis 初始化失败（任务轮询将回退到内存）: %v", err)
+	} else {
+		redisClient = rdb
+		log.Println("✅ Redis 连接成功")
+	}
+
+	// 创建 AI 异步任务服务
+	aiTaskService := service.NewAITaskService(db, redisClient, aiService)
+	log.Println("✅ AI 任务服务初始化完成")
+
 	// 创建网络追踪服务
-	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db, aiConfigService)
+	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db, aiService)
 	log.Println("✅ 网络追踪服务初始化完成")
 
 	// 设置运行模式
@@ -133,7 +152,7 @@ func main() {
 	})
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiService, aiTaskService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 

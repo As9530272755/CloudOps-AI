@@ -55,16 +55,31 @@ func (s *AIConfigService) GetConfig() ai.PlatformConfig {
 }
 
 // GetRawConfig 获取未脱敏的原始配置（仅后端内部使用）
+// 注意：存储时 Token 被加密，此处会自动解密
 func (s *AIConfigService) GetRawConfig() ai.PlatformConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.config
+
+	cfg := s.config
+	if cfg.OpenClaw.Token != "" {
+		dec, err := s.encryptor.Decrypt(cfg.OpenClaw.Token)
+		if err == nil {
+			cfg.OpenClaw.Token = dec
+		}
+		// 如果解密失败，说明可能是明文旧数据，保持原值
+	}
+	return cfg
 }
 
 // UpdateConfig 更新配置
 func (s *AIConfigService) UpdateConfig(cfg ai.PlatformConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// OpenClaw 模型固定为 openclaw，不依赖用户输入
+	if cfg.Provider == "openclaw" {
+		cfg.OpenClaw.Model = "openclaw"
+	}
 
 	// 如果前端传的是掩码值（如 sk-****），说明用户没改 Token，保留原值
 	if isMasked(cfg.OpenClaw.Token) {
@@ -84,11 +99,11 @@ func (s *AIConfigService) UpdateConfig(cfg ai.PlatformConfig) error {
 // TestConnection 测试当前配置的 AI 平台连通性
 func (s *AIConfigService) TestConnection() error {
 	cfg := s.GetRawConfig()
-	provider, err := ai.NewProvider(cfg, 30*time.Second)
+	provider, err := ai.NewProvider(cfg, 120*time.Second)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := aiContext(15 * time.Second)
+	ctx, cancel := aiContext(60 * time.Second)
 	defer cancel()
 	return provider.HealthCheck(ctx)
 }
@@ -102,6 +117,17 @@ func (s *AIConfigService) NewProvider() (ai.Provider, error) {
 	return ai.NewProvider(cfg, 60*time.Second)
 }
 
+// ListModels 获取当前配置平台的可用模型列表
+func (s *AIConfigService) ListModels() ([]string, error) {
+	provider, err := s.NewProvider()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := aiContext(15 * time.Second)
+	defer cancel()
+	return provider.ListModels(ctx)
+}
+
 func (s *AIConfigService) load() error {
 	b, err := os.ReadFile(aiConfigFile)
 	if err != nil {
@@ -110,7 +136,17 @@ func (s *AIConfigService) load() error {
 		}
 		return err
 	}
-	return json.Unmarshal(b, &s.config)
+	if err := json.Unmarshal(b, &s.config); err != nil {
+		return err
+	}
+	// Backfill empty models with defaults
+	if s.config.Provider == "openclaw" && s.config.OpenClaw.Model == "" {
+		s.config.OpenClaw.Model = "openclaw"
+	}
+	if s.config.Provider == "ollama" && s.config.Ollama.Model == "" {
+		s.config.Ollama.Model = "llama3"
+	}
+	return nil
 }
 
 func (s *AIConfigService) save() error {

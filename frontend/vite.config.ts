@@ -27,5 +27,15 @@ export default defineConfig({
   preview: {
     port: 18000,
     host: '0.0.0.0',
+    proxy: {
+      '/api': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:9000',
+        ws: true,
+      },
+    },
   },
 })
