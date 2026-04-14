@@ -124,24 +124,21 @@ Browser → 后续请求 Header: Authorization: Bearer <token>
 Backend → AuthMiddleware → 校验 JWT → 注入 user_id 到 Context
 ```
 
-### 3.2 AI 异步任务轮询（新架构）
+### 3.2 AI SSE 流式对话（默认架构）
 
 ```
 1. User 发送消息（可能带图片）
-   Browser → POST /api/v1/ai/chat/task
-   Backend → 创建 AITask 记录（PG + Redis）→ 返回 task_id
-
-2. 后台 goroutine 执行 AI 调用
+   Browser → POST /api/v1/ai/chat/stream  (SSE)
    Backend → OpenClaw/Ollama 流式接口
-   → 每收到一个 chunk 更新 Redis
+   → 每收到一个 chunk 立即 flush 到前端
 
-3. 前端轮询
-   Browser → GET /api/v1/ai/chat/task/:id（每 2 秒）
-   Backend → 读取 Redis 返回当前 status + result
-
-4. 任务完成
-   Backend → Redis 更新 final status → PG 落盘最终结果
+2. 前端原生 DOM 增量渲染
+   Browser → fetch ReadableStream 解析 data: {...}
+   → StreamingMessage 组件通过 marked.parse() 直接写 innerHTML
+   → 流结束后一次性写回 React State
 ```
+
+> 注：后端仍保留 `POST /api/v1/ai/chat/task` + `GET /api/v1/ai/chat/task/:id` 异步任务接口，供需要后台离线分析的场景调用，但 AI 助手默认已改为直接 SSE 流式输出。
 
 ### 3.3 K8s 资源查询
 
