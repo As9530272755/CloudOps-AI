@@ -84,6 +84,23 @@ export const aiChatAPI = {
           }
         }
       }
+      // 处理可能残留的最后一行
+      if (buffer.trim()) {
+        const line = buffer.trim()
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') {
+            onMessage({ done: true })
+          } else {
+            try {
+              const parsed = JSON.parse(data)
+              onMessage(parsed)
+            } catch {
+              // ignore invalid json
+            }
+          }
+        }
+      }
       onMessage({ done: true })
     }).catch((err) => {
       onMessage({ error: err.message || '请求失败' })

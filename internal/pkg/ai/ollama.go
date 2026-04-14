@@ -45,9 +45,10 @@ func (p *OllamaProvider) SetSessionID(id string) {
 
 func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message) (string, error) {
 	payload := map[string]interface{}{
-		"model":    p.Model,
-		"messages": toOllamaMessages(messages),
-		"stream":   false,
+		"model":       p.Model,
+		"messages":    toOllamaMessages(messages),
+		"stream":      false,
+		"keep_alive":  "30m",
 	}
 
 	b, err := json.Marshal(payload)
@@ -86,9 +87,10 @@ func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message)
 
 func (p *OllamaProvider) ChatCompletionStream(ctx context.Context, messages []Message, onChunk func(StreamResponse)) error {
 	payload := map[string]interface{}{
-		"model":    p.Model,
-		"messages": toOllamaMessages(messages),
-		"stream":   true,
+		"model":       p.Model,
+		"messages":    toOllamaMessages(messages),
+		"stream":      true,
+		"keep_alive":  "30m",
 	}
 
 	b, err := json.Marshal(payload)

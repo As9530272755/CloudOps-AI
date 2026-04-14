@@ -21,6 +21,30 @@ func (s *AIService) getProvider() (ai.Provider, error) {
 	return s.configSvc.NewProvider()
 }
 
+// truncateMessages 截断消息数组，保留 system + 最近 limit 条，防止上下文过长导致超时
+func truncateMessages(messages []ai.Message, limit int) []ai.Message {
+	if len(messages) <= limit {
+		return messages
+	}
+	var system *ai.Message
+	var rest []ai.Message
+	for _, m := range messages {
+		if m.Role == "system" {
+			tmp := m
+			system = &tmp
+		} else {
+			rest = append(rest, m)
+		}
+	}
+	if len(rest) > limit {
+		rest = rest[len(rest)-limit:]
+	}
+	if system != nil {
+		return append([]ai.Message{*system}, rest...)
+	}
+	return rest
+}
+
 // GeneralChat 通用对话
 func (s *AIService) GeneralChat(ctx context.Context, messages []ai.Message) (string, error) {
 	return s.GeneralChatWithSession(ctx, "", messages)
@@ -33,7 +57,7 @@ func (s *AIService) GeneralChatWithSession(ctx context.Context, sessionID string
 		return "", err
 	}
 	provider.SetSessionID(sessionID)
-	return provider.ChatCompletion(ctx, messages)
+	return provider.ChatCompletion(ctx, truncateMessages(messages, 10))
 }
 
 // GeneralChatStream 通用流式对话
@@ -48,7 +72,7 @@ func (s *AIService) GeneralChatStreamWithSession(ctx context.Context, sessionID 
 		return err
 	}
 	provider.SetSessionID(sessionID)
-	return provider.ChatCompletionStream(ctx, messages, onChunk)
+	return provider.ChatCompletionStream(ctx, truncateMessages(messages, 10), onChunk)
 }
 
 // AnalyzeLogs 分析日志
