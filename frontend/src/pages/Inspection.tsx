@@ -82,6 +82,8 @@ export default function Inspection() {
   const [editingTask, setEditingTask] = useState<InspectionTask | null>(null)
   const [reportDialog, setReportDialog] = useState(false)
   const [selectedJob, setSelectedJob] = useState<{ job: InspectionJob; results: InspectionResultItem[] } | null>(null)
+  const [quickDialogOpen, setQuickDialogOpen] = useState(false)
+  const [quickClusterIds, setQuickClusterIds] = useState<number[]>([])
 
   // 表单
   const [form, setForm] = useState<Partial<InspectionTask>>({
@@ -173,10 +175,16 @@ export default function Inspection() {
     setTimeout(() => loadJobs(), 2000)
   }
 
-  const handleQuickInspect = async () => {
+  const handleQuickInspect = () => {
+    setQuickClusterIds(clusters.map(c => c.id))
+    setQuickDialogOpen(true)
+  }
+
+  const handleConfirmQuickInspect = async () => {
+    setQuickDialogOpen(false)
     setLoading(true)
     try {
-      const res = await inspectionAPI.quickInspect()
+      const res = await inspectionAPI.quickInspect({ cluster_ids: quickClusterIds })
       if (res.success) {
         setActiveTab(1)
         setTimeout(() => loadJobs(), 2000)
@@ -416,6 +424,36 @@ export default function Inspection() {
         </CardContent>
       </Card>
 
+      {/* 一键巡检集群选择弹窗 */}
+      <Dialog open={quickDialogOpen} onClose={() => setQuickDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
+        <DialogTitle sx={{ fontWeight: 600 }}>选择要巡检的集群</DialogTitle>
+        <DialogContent dividers>
+          <FormControl fullWidth sx={{ mt: 1 }}>
+            <InputLabel>关联集群</InputLabel>
+            <Select
+              multiple
+              value={quickClusterIds}
+              label="关联集群"
+              onChange={e => setQuickClusterIds(e.target.value as number[])}
+              renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name || id).join(', ')}
+            >
+              {clusters.map(c => (
+                <MenuItem key={c.id} value={c.id}>
+                  <Checkbox checked={quickClusterIds.includes(c.id)} />
+                  <ListItemText primary={c.display_name || c.name} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setQuickDialogOpen(false)} sx={{ textTransform: 'none' }}>取消</Button>
+          <Button variant="contained" onClick={handleConfirmQuickInspect} sx={{ background: 'linear-gradient(135deg, #FF9500 0%, #FFCC00 100%)', color: 'white', borderRadius: '12px', textTransform: 'none' }}>
+            开始巡检
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* 任务编辑弹窗 */}
       <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
         <DialogTitle sx={{ fontWeight: 600 }}>{editingTask ? '编辑巡检任务' : '新建巡检任务'}</DialogTitle>
@@ -445,7 +483,7 @@ export default function Inspection() {
                 value={form.cluster_ids || []}
                 label="关联集群"
                 onChange={e => setForm({ ...form, cluster_ids: e.target.value as number[] })}
-                renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name || id).join(', ')}
+                renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name).filter(Boolean).join(', ')}
               >
                 {clusters.map(c => (
                   <MenuItem key={c.id} value={c.id}>

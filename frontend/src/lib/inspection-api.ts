@@ -47,8 +47,8 @@ export interface InspectionResultItem {
 
 export const inspectionAPI = {
   // 一键快速巡检
-  quickInspect: async () => {
-    const res = await api.post('/inspection/quick')
+  quickInspect: async (payload?: { cluster_ids?: number[] }) => {
+    const res = await api.post('/inspection/quick', payload || {})
     return res.data as { success: boolean; data?: InspectionJob; message?: string; error?: string }
   },
 

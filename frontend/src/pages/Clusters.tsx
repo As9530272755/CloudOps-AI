@@ -32,13 +32,14 @@ import { useNavigate } from 'react-router-dom'
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
   Refresh as RefreshIcon,
   CloudQueue as ClusterIcon,
   ArrowForward as EnterIcon,
   Search as SearchIcon,
 } from '@mui/icons-material'
 
-import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest } from '../lib/cluster-api'
+import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest, UpdateClusterRequest } from '../lib/cluster-api'
 import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
 
 // 状态颜色映射
@@ -61,12 +62,14 @@ export default function Clusters() {
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [loading, setLoading] = useState(false)
   const [openDialog, setOpenDialog] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [authType, setAuthType] = useState<'kubeconfig' | 'token'>('kubeconfig')
   const [formData, setFormData] = useState<CreateClusterRequest>({
     name: '',
     display_name: '',
     description: '',
     auth_type: 'kubeconfig',
+    cluster_label_value: '',
     kubeconfig: '',
     token: '',
     server: '',
@@ -123,28 +126,69 @@ export default function Clusters() {
     loadClusters()
   }, [])
 
-  // 处理创建集群
-  const handleCreate = async () => {
+  const resetForm = () => {
+    setEditingId(null)
+    setAuthType('kubeconfig')
+    setFormData({
+      name: '',
+      display_name: '',
+      description: '',
+      auth_type: 'kubeconfig',
+      cluster_label_value: '',
+      kubeconfig: '',
+      token: '',
+      server: '',
+    })
+  }
+
+  const handleOpenCreate = () => {
+    resetForm()
+    setOpenDialog(true)
+  }
+
+  const handleOpenEdit = (cluster: Cluster) => {
+    setEditingId(cluster.id)
+    setFormData({
+      name: cluster.name,
+      display_name: cluster.display_name || '',
+      description: '',
+      auth_type: 'kubeconfig',
+      cluster_label_value: cluster.cluster_label_value || '',
+      kubeconfig: '',
+      token: '',
+      server: cluster.server || '',
+    })
+    setOpenDialog(true)
+  }
+
+  // 处理创建/编辑集群
+  const handleSave = async () => {
     try {
-      const result = await clusterAPI.createCluster({
-        ...formData,
-        auth_type: authType,
-      })
-      if (result.success) {
-        setOpenDialog(false)
-        setFormData({
-          name: '',
-          display_name: '',
-          description: '',
-          auth_type: 'kubeconfig',
-          kubeconfig: '',
-          token: '',
-          server: '',
+      if (editingId) {
+        const payload: UpdateClusterRequest = {
+          display_name: formData.display_name,
+          description: formData.description,
+          cluster_label_value: formData.cluster_label_value,
+        }
+        const result = await clusterAPI.updateCluster(editingId, payload)
+        if (result.success) {
+          setOpenDialog(false)
+          resetForm()
+          loadClusters()
+        }
+      } else {
+        const result = await clusterAPI.createCluster({
+          ...formData,
+          auth_type: authType,
         })
-        loadClusters()
+        if (result.success) {
+          setOpenDialog(false)
+          resetForm()
+          loadClusters()
+        }
       }
     } catch (err: any) {
-      setError(err.message || '创建集群失败')
+      setError(err.message || (editingId ? '更新集群失败' : '创建集群失败'))
     }
   }
 
@@ -196,7 +240,7 @@ export default function Clusters() {
             <Button
               variant="contained"
               startIcon={<AddIcon />}
-              onClick={() => setOpenDialog(true)}
+              onClick={handleOpenCreate}
               sx={{
                 background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
                 color: 'white',
@@ -413,6 +457,17 @@ export default function Clusters() {
                             <EnterIcon />
                           </IconButton>
                         </Tooltip>
+                        <Tooltip title="编辑">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenEdit(cluster)
+                            }}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="删除">
                           <IconButton
                             size="small"
@@ -448,7 +503,7 @@ export default function Clusters() {
         }}
       >
         <DialogTitle sx={{ fontWeight: 600 }}>
-          添加 Kubernetes 集群
+          {editingId ? '编辑 Kubernetes 集群' : '添加 Kubernetes 集群'}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
@@ -465,15 +520,16 @@ export default function Clusters() {
               </Select>
             </FormControl>
 
-            {/* 集群名称 */}
-            <TextField
-              label="集群名称"
-              placeholder="例如：prod-k8s"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              fullWidth
-              required
-            />
+            {!editingId && (
+              <TextField
+                label="集群名称"
+                placeholder="例如：prod-k8s"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                fullWidth
+                required
+              />
+            )}
 
             {/* 显示名称 */}
             <TextField
@@ -495,36 +551,50 @@ export default function Clusters() {
               rows={2}
             />
 
+            {/* 监控标签值 */}
+            <TextField
+              label="监控标签值"
+              placeholder="例如：ks、prod-bj"
+              value={formData.cluster_label_value}
+              onChange={(e) => setFormData({ ...formData, cluster_label_value: e.target.value })}
+              fullWidth
+              helperText="在全局 Prometheus / VM 数据源中，该集群对应的 extra_label 标签值"
+            />
+
             {/* 根据认证方式显示不同输入 */}
-            {authType === 'kubeconfig' ? (
-              <TextField
-                label="Kubeconfig"
-                placeholder="粘贴 kubeconfig YAML 内容..."
-                value={formData.kubeconfig}
-                onChange={(e) => setFormData({ ...formData, kubeconfig: e.target.value })}
-                fullWidth
-                multiline
-                rows={8}
-                required
-              />
-            ) : (
+            {!editingId && (
               <>
-                <TextField
-                  label="API Server 地址"
-                  placeholder="https://xxx:6443"
-                  value={formData.server}
-                  onChange={(e) => setFormData({ ...formData, server: e.target.value })}
-                  fullWidth
-                  required
-                />
-                <TextField
-                  label="Token"
-                  placeholder="ServiceAccount Token"
-                  value={formData.token}
-                  onChange={(e) => setFormData({ ...formData, token: e.target.value })}
-                  fullWidth
-                  required
-                />
+                {authType === 'kubeconfig' ? (
+                  <TextField
+                    label="Kubeconfig"
+                    placeholder="粘贴 kubeconfig YAML 内容..."
+                    value={formData.kubeconfig}
+                    onChange={(e) => setFormData({ ...formData, kubeconfig: e.target.value })}
+                    fullWidth
+                    multiline
+                    rows={8}
+                    required
+                  />
+                ) : (
+                  <>
+                    <TextField
+                      label="API Server 地址"
+                      placeholder="https://xxx:6443"
+                      value={formData.server}
+                      onChange={(e) => setFormData({ ...formData, server: e.target.value })}
+                      fullWidth
+                      required
+                    />
+                    <TextField
+                      label="Token"
+                      placeholder="ServiceAccount Token"
+                      value={formData.token}
+                      onChange={(e) => setFormData({ ...formData, token: e.target.value })}
+                      fullWidth
+                      required
+                    />
+                  </>
+                )}
               </>
             )}
           </Box>
@@ -537,7 +607,7 @@ export default function Clusters() {
             取消
           </Button>
           <Button
-            onClick={handleCreate}
+            onClick={handleSave}
             variant="contained"
             sx={{
               background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
@@ -547,7 +617,7 @@ export default function Clusters() {
               fontWeight: 600,
             }}
           >
-            确定添加
+            {editingId ? '保存' : '确定添加'}
           </Button>
         </DialogActions>
       </Dialog>

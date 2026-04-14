@@ -272,7 +272,12 @@ export default function NetworkTrace() {
   // 从当前选中的节点或链路解析抓包目标 Pod
   const resolveDebugTarget = () => {
     if (selectedNode) {
-      return { namespace: selectedNode.namespace || namespace, pod: selectedNode.name }
+      // 仅当节点本身是 Pod（target 或其他 pod）时才直接使用
+      if (selectedNode.id && selectedNode.id.startsWith('pod:')) {
+        return { namespace: selectedNode.namespace || namespace, pod: selectedNode.name }
+      }
+      // 选中的是 Service、Ingress、外部 IP 等，默认对当前追踪目标 Pod 抓包
+      return { namespace, pod }
     }
     if (selectedEdge) {
       // 优先尝试 target，再尝试 source，只匹配 pod:ns/name 格式
@@ -282,8 +287,10 @@ export default function NetworkTrace() {
           return { namespace: match[1], pod: match[2] }
         }
       }
+      // 链路两端都不是 Pod，也默认对当前追踪目标 Pod 抓包
+      return { namespace, pod }
     }
-    return null
+    return { namespace, pod }
   }
 
   // 启动 Ephemeral Container 抓包

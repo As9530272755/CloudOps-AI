@@ -11,12 +11,17 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/cache"
+
+	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apiextensionsinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/crypto"
@@ -33,7 +38,10 @@ type ClusterClient struct {
 	Health      bool
 	SyncReady   bool
 	SyncMu      sync.RWMutex
-	
+
+	ApiExtClient   apiextensionsclientset.Interface
+	ApiExtFactory  apiextensionsinformers.SharedInformerFactory
+
 	// Informer stores for fast memory access
 	NodeStore            cache.Store
 	NamespaceStore       cache.Store
@@ -58,6 +66,7 @@ type ClusterClient struct {
 	ClusterRoleStore     cache.Store
 	ClusterRoleBindingStore cache.Store
 	EventStore           cache.Store
+	CRDStore             cache.Store
 }
 
 // K8sManager K8s客户端与Informer管理器
@@ -274,6 +283,16 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		if len(result) >= limit {
 			break
 		}
+		appendFromStore(cc, "customresourcedefinitions", cc.CRDStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*v1.CustomResourceDefinition)
+			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "customresourcedefinitions", Namespace: "-", Name: v.Name, Status: string(v.Spec.Scope)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
 	}
 
 	return result, nil
@@ -334,6 +353,11 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		return nil, err
 	}
 
+	apiextClient, err := apiextensionsclientset.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
 	version, err := client.Discovery().ServerVersion()
 	if err != nil {
 		return nil, err
@@ -341,14 +365,17 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 
 	stopCh := make(chan struct{})
 	factory := informers.NewSharedInformerFactory(client, 10*time.Minute)
+	apiextFactory := apiextensionsinformers.NewSharedInformerFactory(apiextClient, 10*time.Minute)
 
 	cc := &ClusterClient{
-		Client:    client,
-		Config:    config,
-		Factory:   factory,
-		StopCh:    stopCh,
-		LastUsed:  time.Now(),
-		Health:    true,
+		Client:         client,
+		Config:         config,
+		Factory:        factory,
+		ApiExtClient:   apiextClient,
+		ApiExtFactory:  apiextFactory,
+		StopCh:         stopCh,
+		LastUsed:       time.Now(),
+		Health:         true,
 	}
 
 	// 注册所有资源类型的 Informer
@@ -375,8 +402,10 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	cc.ClusterRoleStore = factory.Rbac().V1().ClusterRoles().Informer().GetStore()
 	cc.ClusterRoleBindingStore = factory.Rbac().V1().ClusterRoleBindings().Informer().GetStore()
 	cc.EventStore = factory.Core().V1().Events().Informer().GetStore()
+	cc.CRDStore = apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetStore()
 
 	factory.Start(stopCh)
+	apiextFactory.Start(stopCh)
 
 	synced := []cache.InformerSynced{
 		factory.Core().V1().Nodes().Informer().HasSynced,
@@ -386,6 +415,7 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		factory.Apps().V1().StatefulSets().Informer().HasSynced,
 		factory.Apps().V1().DaemonSets().Informer().HasSynced,
 		factory.Core().V1().Services().Informer().HasSynced,
+		apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced,
 	}
 
 	ctxSync, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -519,7 +549,7 @@ func (km *K8sManager) HealthCheck(clusterID uint) bool {
 }
 
 // GetNamespacedResourceList 统一获取命名空间级资源（从 Store 内存读取）
-func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string, page, limit int) ([]interface{}, int, error) {
+func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string, keyword string, page, limit int) ([]interface{}, int, error) {
 	var store cache.Store
 	switch kind {
 	case "pods":
@@ -562,16 +592,19 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 
 	list := store.List()
 	var filtered []interface{}
+	keywordLower := strings.ToLower(keyword)
 	for _, obj := range list {
 		if ns := getNamespace(obj); namespace == "" || namespace == "all" || ns == namespace {
-			filtered = append(filtered, obj)
+			if keyword == "" || strings.Contains(strings.ToLower(getName(obj)), keywordLower) {
+				filtered = append(filtered, obj)
+			}
 		}
 	}
 	return paginate(filtered, page, limit)
 }
 
 // GetClusterResourceList 统一获取集群级资源（从 Store 内存读取）
-func (cc *ClusterClient) GetClusterResourceList(kind string, page, limit int) ([]interface{}, int, error) {
+func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, page, limit int) ([]interface{}, int, error) {
 	var store cache.Store
 	switch kind {
 	case "nodes":
@@ -586,14 +619,19 @@ func (cc *ClusterClient) GetClusterResourceList(kind string, page, limit int) ([
 		store = cc.ClusterRoleStore
 	case "clusterrolebindings":
 		store = cc.ClusterRoleBindingStore
+	case "customresourcedefinitions":
+		store = cc.CRDStore
 	default:
 		return nil, 0, fmt.Errorf("unsupported cluster resource kind: %s", kind)
 	}
 
 	list := store.List()
 	var result []interface{}
+	keywordLower := strings.ToLower(keyword)
 	for _, obj := range list {
-		result = append(result, obj)
+		if keyword == "" || strings.Contains(strings.ToLower(getName(obj)), keywordLower) {
+			result = append(result, obj)
+		}
 	}
 	return paginate(result, page, limit)
 }
@@ -635,6 +673,64 @@ func getNamespace(obj interface{}) string {
 		return v.Namespace
 	case *corev1.Event:
 		return v.Namespace
+	case *v1.CustomResourceDefinition:
+		return ""
+	default:
+		return ""
+	}
+}
+
+// getName 通用获取资源名称辅助函数
+func getName(obj interface{}) string {
+	switch v := obj.(type) {
+	case *corev1.Node:
+		return v.Name
+	case *corev1.Namespace:
+		return v.Name
+	case *corev1.Pod:
+		return v.Name
+	case *appsv1.Deployment:
+		return v.Name
+	case *appsv1.StatefulSet:
+		return v.Name
+	case *appsv1.DaemonSet:
+		return v.Name
+	case *appsv1.ReplicaSet:
+		return v.Name
+	case *batchv1.Job:
+		return v.Name
+	case *batchv1.CronJob:
+		return v.Name
+	case *corev1.Service:
+		return v.Name
+	case *networkingv1.Ingress:
+		return v.Name
+	case *corev1.Endpoints:
+		return v.Name
+	case *corev1.PersistentVolume:
+		return v.Name
+	case *corev1.PersistentVolumeClaim:
+		return v.Name
+	case *storagev1.StorageClass:
+		return v.Name
+	case *corev1.ConfigMap:
+		return v.Name
+	case *corev1.Secret:
+		return v.Name
+	case *corev1.ServiceAccount:
+		return v.Name
+	case *rbacv1.Role:
+		return v.Name
+	case *rbacv1.RoleBinding:
+		return v.Name
+	case *rbacv1.ClusterRole:
+		return v.Name
+	case *rbacv1.ClusterRoleBinding:
+		return v.Name
+	case *corev1.Event:
+		return v.Name
+	case *v1.CustomResourceDefinition:
+		return v.Name
 	default:
 		return ""
 	}
@@ -687,6 +783,9 @@ func (cc *ClusterClient) GetResourceByName(kind, namespace, name string) (interf
 		key = name
 	case "clusterrolebindings":
 		store = cc.ClusterRoleBindingStore
+		key = name
+	case "customresourcedefinitions":
+		store = cc.CRDStore
 		key = name
 	case "pods":
 		store = cc.PodStore

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -33,13 +34,14 @@ func NewClusterService(db *gorm.DB, encryptor *crypto.AES256Encrypt, k8sManager 
 
 // CreateClusterRequest 创建集群请求
 type CreateClusterRequest struct {
-	Name        string `json:"name" binding:"required"`
-	DisplayName string `json:"display_name"`
-	Description string `json:"description"`
-	AuthType    string `json:"auth_type" binding:"required"` // kubeconfig/token
-	KubeConfig  string `json:"kubeconfig,omitempty"`
-	Token       string `json:"token,omitempty"`
-	Server      string `json:"server,omitempty"`
+	Name              string `json:"name" binding:"required"`
+	DisplayName       string `json:"display_name"`
+	Description       string `json:"description"`
+	AuthType          string `json:"auth_type" binding:"required"` // kubeconfig/token
+	ClusterLabelValue string `json:"cluster_label_value"`
+	KubeConfig        string `json:"kubeconfig,omitempty"`
+	Token             string `json:"token,omitempty"`
+	Server            string `json:"server,omitempty"`
 }
 
 // CreateCluster 创建集群
@@ -85,13 +87,14 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 
 	// 3. 创建集群记录
 	cluster := &model.Cluster{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		DisplayName: req.DisplayName,
-		Description: req.Description,
-		AuthType:    req.AuthType,
-		Server:      server,
-		IsActive:    true,
+		TenantID:          tenantID,
+		Name:              req.Name,
+		DisplayName:       req.DisplayName,
+		Description:       req.Description,
+		AuthType:          req.AuthType,
+		ClusterLabelValue: req.ClusterLabelValue,
+		Server:            server,
+		IsActive:          true,
 	}
 
 	if err := s.db.Create(cluster).Error; err != nil {
@@ -174,16 +177,46 @@ func (s *ClusterService) DeleteCluster(ctx context.Context, userID uint, tenantI
 		return err
 	}
 
-	// 删除集群（级联删除secrets和metadata）
-	if err := s.db.Delete(&model.Cluster{}, clusterID).Error; err != nil {
+	// 物理删除关联数据
+	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterSecret{})
+	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterMetadata{})
+	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterPermission{})
+
+	// 物理删除集群（避免软删除导致唯一索引冲突）
+	if err := s.db.Unscoped().Delete(&model.Cluster{}, clusterID).Error; err != nil {
 		return err
+	}
+
+	// 清理巡检任务中引用的该集群ID
+	var tasks []model.InspectionTask
+	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tasks).Error; err == nil {
+		for _, task := range tasks {
+			var ids []uint
+			if json.Unmarshal([]byte(task.ClusterIDs), &ids) == nil {
+				newIDs := make([]uint, 0, len(ids))
+				for _, id := range ids {
+					if id != clusterID {
+						newIDs = append(newIDs, id)
+					}
+				}
+				if len(newIDs) != len(ids) {
+					if len(newIDs) == 0 {
+						// 无关联集群则禁用该任务
+						s.db.Model(&task).Updates(map[string]interface{}{"cluster_ids": "[]", "enabled": false})
+					} else {
+						b, _ := json.Marshal(newIDs)
+						s.db.Model(&task).Update("cluster_ids", string(b))
+					}
+				}
+			}
+		}
 	}
 
 	// 从K8s管理器移除
 	s.k8sManager.RemoveClient(clusterID)
 
 	// 记录审计日志
-	s.logAudit(ctx, userID, tenantID, &clusterID, cluster.Name, "delete", "cluster", 
+	s.logAudit(ctx, userID, tenantID, &clusterID, cluster.Name, "delete", "cluster",
 		fmt.Sprintf("%d", clusterID), "", "success", "", 0)
 
 	return nil
@@ -294,6 +327,30 @@ func (s *ClusterService) GetK8sClient(ctx context.Context, clusterID uint) (*kub
 	s.k8sManager.AddClient(clusterID, client)
 
 	return client, nil
+}
+
+// UpdateClusterRequest 更新集群请求
+type UpdateClusterRequest struct {
+	DisplayName       string `json:"display_name"`
+	Description       string `json:"description"`
+	ClusterLabelValue string `json:"cluster_label_value"`
+}
+
+// UpdateCluster 更新集群信息
+func (s *ClusterService) UpdateCluster(ctx context.Context, tenantID, clusterID uint, req *UpdateClusterRequest) (*model.Cluster, error) {
+	var cluster model.Cluster
+	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, clusterID).First(&cluster).Error; err != nil {
+		return nil, err
+	}
+
+	cluster.DisplayName = req.DisplayName
+	cluster.Description = req.Description
+	cluster.ClusterLabelValue = req.ClusterLabelValue
+
+	if err := s.db.WithContext(ctx).Save(&cluster).Error; err != nil {
+		return nil, err
+	}
+	return &cluster, nil
 }
 
 // logAudit 记录审计日志

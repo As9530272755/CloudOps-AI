@@ -406,8 +406,37 @@ export function ChartPanel({
             ],
             xAxis: {
               type: 'time',
+              min: (start ?? 0) * 1000,
+              max: (end ?? Math.floor(Date.now() / 1000)) * 1000,
               axisLine: { lineStyle: { color: axisColor } },
-              axisLabel: { color: labelColor, fontSize: 10, rotate: 0, formatter: '{MM}-{dd} {HH}:{mm}' },
+              axisLabel: {
+                color: labelColor,
+                fontSize: 10,
+                rotate: 0,
+                hideOverlap: true,
+                formatter: (value: number) => {
+                  const rangeSec = (end ?? Math.floor(Date.now() / 1000)) - (start ?? 0)
+                  const d = new Date(value)
+                  const MM = (d.getMonth() + 1).toString().padStart(2, '0')
+                  const dd = d.getDate().toString().padStart(2, '0')
+                  const HH = d.getHours().toString().padStart(2, '0')
+                  const mm = d.getMinutes().toString().padStart(2, '0')
+                  if (rangeSec <= 21600) {
+                    // <= 6小时：只显示 时:分
+                    return `${HH}:${mm}`
+                  } else if (rangeSec <= 86400) {
+                    // <= 24小时：显示 日 时:分
+                    return `${MM}-${dd} ${HH}:${mm}`
+                  } else if (rangeSec <= 604800) {
+                    // <= 7天：显示 月-日 时:00（整点）
+                    return `${MM}-${dd} ${HH}:00`
+                  } else {
+                    // > 7天：显示 年-月-日
+                    const yyyy = d.getFullYear()
+                    return `${yyyy}-${MM}-${dd}`
+                  }
+                },
+              },
               splitLine: { show: false },
             },
             yAxis: {
@@ -566,7 +595,7 @@ export function ChartPanel({
     } catch (e) {
       console.error('ECharts render error:', e)
     }
-  }, [chartData, type, options, isDark, palette])
+  }, [chartData, type, options, isDark, palette, start, end])
 
   const legendPlacement = options?.legendPlacement ?? 'bottom'
   const showCustomLegend = options?.legend !== false && legendPlacement !== 'hidden' && (type === 'line' || type === 'bar' || type === 'area' || type === 'scatter' || type === 'pie')

@@ -192,9 +192,13 @@ func (h *InspectionHandler) TriggerTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "巡检任务已触发"})
 }
 
-// QuickInspect 一键快速巡检所有活跃集群
+// QuickInspect 一键快速巡检
 func (h *InspectionHandler) QuickInspect(c *gin.Context) {
-	job, err := h.inspectionService.QuickInspect(c.Request.Context())
+	var req struct {
+		ClusterIDs []uint `json:"cluster_ids"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	job, err := h.inspectionService.QuickInspect(c.Request.Context(), req.ClusterIDs)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return

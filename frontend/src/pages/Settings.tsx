@@ -41,8 +41,10 @@ function DataSourceSettings() {
     type: 'prometheus',
     url: '',
     config: '',
+    cluster_id: undefined,
     is_default: false,
   })
+  const [labelName, setLabelName] = useState('')
   const [error, setError] = useState('')
   const [testingId, setTestingId] = useState<number | null>(null)
 
@@ -70,11 +72,19 @@ function DataSourceSettings() {
         type: ds.type,
         url: ds.url,
         config: ds.config,
+        cluster_id: ds.cluster_id,
         is_default: ds.is_default,
       })
+      let parsedLabel = ''
+      try {
+        const cfg = JSON.parse(ds.config || '{}')
+        parsedLabel = cfg.cluster_label_name || ''
+      } catch {}
+      setLabelName(parsedLabel)
     } else {
       setEditingId(null)
-      setForm({ name: '', type: 'prometheus', url: '', config: '', is_default: false })
+      setForm({ name: '', type: 'prometheus', url: '', config: '', cluster_id: undefined, is_default: false })
+      setLabelName('')
     }
     setDialogOpen(true)
     setError('')
@@ -86,10 +96,20 @@ function DataSourceSettings() {
       return
     }
     try {
-      if (editingId) {
-        await datasourceAPI.update(editingId, form)
+      let cfg: any = {}
+      try {
+        cfg = JSON.parse(form.config || '{}')
+      } catch {}
+      if (labelName.trim()) {
+        cfg.cluster_label_name = labelName.trim()
       } else {
-        await datasourceAPI.create(form)
+        delete cfg.cluster_label_name
+      }
+      const payload = { ...form, config: JSON.stringify(cfg) }
+      if (editingId) {
+        await datasourceAPI.update(editingId, payload)
+      } else {
+        await datasourceAPI.create(payload)
       }
       setDialogOpen(false)
       load()
@@ -248,6 +268,23 @@ function DataSourceSettings() {
               placeholder="http://prometheus:9090"
             />
             <TextField
+              label="集群区分标签名"
+              value={labelName}
+              onChange={(e) => setLabelName(e.target.value)}
+              fullWidth
+              placeholder="cluster"
+              helperText="用于 VictoriaMetrics / promxy 的 extra_label 过滤，如 cluster、env、team"
+            />
+            <TextField
+              label="关联集群 ID"
+              value={form.cluster_id ?? ''}
+              onChange={(e) => setForm({ ...form, cluster_id: e.target.value ? Number(e.target.value) : undefined })}
+              fullWidth
+              type="number"
+              placeholder="留空表示全局数据源（可被多个集群共用）"
+              helperText="专属数据源直接绑定单个集群，不经过标签过滤"
+            />
+            <TextField
               label="配置 (JSON)"
               value={form.config}
               onChange={(e) => setForm({ ...form, config: e.target.value })}
@@ -272,8 +309,8 @@ function DataSourceSettings() {
 function AISettings() {
   const [config, setConfig] = useState<AIPlatformConfig>({
     provider: 'openclaw',
-    openclaw: { url: '', token: '', model: 'openclaw' },
-    ollama: { url: '', model: 'llama3' },
+    openclaw: { url: '', token: '', model: 'openclaw', timeout: 300 },
+    ollama: { url: '', model: 'llama3', timeout: 600 },
   })
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -289,6 +326,12 @@ function AISettings() {
         }
         if (data.provider === 'ollama' && !data.ollama.model) {
           data.ollama.model = 'llama3'
+        }
+        if (data.provider === 'openclaw' && !data.openclaw.timeout) {
+          data.openclaw.timeout = 300
+        }
+        if (data.provider === 'ollama' && !data.ollama.timeout) {
+          data.ollama.timeout = 600
         }
         setConfig(data)
       }
@@ -400,6 +443,16 @@ function AISettings() {
               sx={{ mb: 2 }}
               placeholder="sk-xxxxxxxx"
             />
+            <TextField
+              label="请求超时时长（秒）"
+              type="number"
+              value={config.openclaw.timeout ?? 300}
+              onChange={(e) => setConfig({ ...config, openclaw: { ...config.openclaw, timeout: parseInt(e.target.value) || 300 } })}
+              fullWidth
+              sx={{ mb: 2 }}
+              placeholder="300"
+              helperText="建议 60 ~ 600 秒，根据 OpenClaw 下游模型响应速度调整"
+            />
           </>
         )}
 
@@ -420,6 +473,16 @@ function AISettings() {
               fullWidth
               sx={{ mb: 2 }}
               placeholder="llama3"
+            />
+            <TextField
+              label="请求超时时长（秒）"
+              type="number"
+              value={config.ollama.timeout ?? 600}
+              onChange={(e) => setConfig({ ...config, ollama: { ...config.ollama, timeout: parseInt(e.target.value) || 600 } })}
+              fullWidth
+              sx={{ mb: 2 }}
+              placeholder="600"
+              helperText="Ollama 首次加载模型较慢，建议 300 ~ 1200 秒"
             />
           </>
         )}

@@ -85,6 +85,33 @@ func (h *ClusterHandler) GetCluster(c *gin.Context) {
 	})
 }
 
+// UpdateCluster 更新集群
+func (h *ClusterHandler) UpdateCluster(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cluster id"})
+		return
+	}
+
+	var req service.UpdateClusterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tenantID, _ := c.Get("tenant_id")
+	cluster, err := h.clusterService.UpdateCluster(c.Request.Context(), tenantID.(uint), uint(id), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    cluster,
+	})
+}
+
 // DeleteCluster 删除集群
 func (h *ClusterHandler) DeleteCluster(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

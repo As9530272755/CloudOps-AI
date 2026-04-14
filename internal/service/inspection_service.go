@@ -337,10 +337,14 @@ func (s *InspectionService) checkNodeResources(cc *ClusterClient, clusterID uint
 	if err := s.db.Where("cluster_id = ?", clusterID).First(&meta).Error; err != nil {
 		return findings
 	}
-	if promData != nil {
+	if promData != nil && promData.HasProm {
 		findings = append(findings, Finding{Category: "resource", Name: "节点资源使用汇总", Level: "pass", Actual: fmt.Sprintf("节点数 %d | 总内存 %.1f GB | 已用 %.1f GB", promData.NodeCount, promData.TotalMemGB, promData.UsedMemGB), Message: "已采集 Prometheus 实时指标", Weight: 10})
 	} else {
-		findings = append(findings, Finding{Category: "resource", Name: "节点资源使用", Level: "pass", Actual: fmt.Sprintf("节点数 %d", meta.NodeCount), Message: "集群规模正常", Weight: 10})
+		actual := fmt.Sprintf("节点数 %d", meta.NodeCount)
+		if promData != nil {
+			actual = fmt.Sprintf("节点数 %d | 总内存 %.1f GB", meta.NodeCount, promData.TotalMemGB)
+		}
+		findings = append(findings, Finding{Category: "resource", Name: "节点资源使用", Level: "pass", Actual: actual, Message: "未配置 Prometheus 实时指标", Weight: 10})
 	}
 	return findings
 }
@@ -447,35 +451,36 @@ type PrometheusData struct {
 }
 
 func (s *InspectionService) queryPrometheusData(ctx context.Context, tenantID uint, clusterID uint, cc *ClusterClient) *PrometheusData {
-	var dsList []model.DataSource
-	if err := s.db.Where("tenant_id = ? AND type = ? AND is_active = ?", tenantID, "prometheus", true).Find(&dsList).Error; err != nil || len(dsList) == 0 {
-		return nil
-	}
-	ds := dsList[0]
-
 	data := &PrometheusData{
-		PodStatus: make(map[string]int),
-		HasProm:   true,
+		PodStatus:   make(map[string]int),
+		NodeDetails: make([]NodeDetail, 0),
 	}
 
-	// 1. 节点实时资源使用率（%）
-	cpuMap := s.queryPromQLMap(ctx, ds, `100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`)
-	memMap := s.queryPromQLMap(ctx, ds, `100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100`)
-	diskMap := s.queryPromQLMap(ctx, ds, `100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100`)
-	coreMap := s.queryPromQLMap(ctx, ds, `count(node_cpu_seconds_total{mode="idle"}) by (instance)`)
-
-	// 2. Pod 状态分布（sum 而非 count）
-	data.PodStatus["Running"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Running"}))`))
-	data.PodStatus["Pending"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Pending"}))`))
-	data.PodStatus["Failed"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Failed"}))`))
-	data.PodStatus["Succeeded"] = int(s.queryPromQLScalar(ctx, ds, `sum(max by (namespace, pod) (kube_pod_status_phase{phase="Succeeded"}))`))
-
-	// 3. 节点数 / Pod 总数
-	data.NodeCount = len(cc.NodeStore.List())
-	data.PodCount = len(cc.PodStore.List())
-
-	// 4. K8s Node 列表，构建 instance -> 节点详情映射
+	// ========== 1. 基础数据：始终从 K8s Informer 获取（不依赖 Prometheus） ==========
 	nodeItems := cc.NodeStore.List()
+	data.NodeCount = len(nodeItems)
+	podItems := cc.PodStore.List()
+	data.PodCount = len(podItems)
+
+	// Pod 状态分布（直接遍历 informer 缓存）
+	for _, obj := range podItems {
+		pod := obj.(*corev1.Pod)
+		switch pod.Status.Phase {
+		case corev1.PodRunning:
+			data.PodStatus["Running"]++
+		case corev1.PodPending:
+			data.PodStatus["Pending"]++
+		case corev1.PodFailed:
+			data.PodStatus["Failed"]++
+		case corev1.PodSucceeded:
+			data.PodStatus["Succeeded"]++
+		}
+	}
+	if data.PodCount > 0 {
+		data.HealthyRate = float64(data.PodStatus["Running"]) * 100.0 / float64(data.PodCount)
+	}
+
+	// 节点详情基础信息 + 总资源（从 Node Capacity 获取）
 	ipToDetail := make(map[string]*NodeDetail)
 	for _, obj := range nodeItems {
 		node := obj.(*corev1.Node)
@@ -517,69 +522,130 @@ func (s *InspectionService) queryPrometheusData(ctx context.Context, tenantID ui
 		} else {
 			nd.Schedulable = "可调度"
 		}
+		// CPU cores from K8s capacity
+		if cpuQ := node.Status.Capacity.Cpu(); cpuQ != nil {
+			cores := float64(cpuQ.MilliValue()) / 1000.0
+			nd.CPUCore = int(cores)
+			data.TotalCPU += cores
+		}
+		// Memory from K8s capacity
+		if memQ := node.Status.Capacity.Memory(); memQ != nil {
+			memBytes := float64(memQ.Value())
+			data.TotalMemGB += memBytes / 1024 / 1024 / 1024
+		}
 		ipToDetail[nd.IP] = nd
 	}
 
-	// 5. 将 Prometheus instance 与 K8s Node 做融合匹配
-	var matchedDetails []NodeDetail
-	for ip, detail := range ipToDetail {
-		// 优先精确匹配 instance = ip:port
-		found := false
-		for inst, cpu := range cpuMap {
-			if strings.HasPrefix(inst, ip+":") {
-				detail.CPUUsage = cpu
-				detail.MemoryUsage = memMap[inst]
-				detail.DiskUsage = diskMap[inst]
-				var cores float64
-				fmt.Sscanf(fmt.Sprintf("%v", coreMap[inst]), "%f", &cores)
-				detail.CPUCore = int(cores)
-				data.TotalCPU += cores
+	// ========== 2. Prometheus 增强数据（可选） ==========
+	// 辅助函数：用指定数据源尝试填充 Prometheus 指标，返回是否成功匹配当前集群
+	tryFill := func(ds model.DataSource, extraLabels map[string]string) bool {
+		cpuMap := s.queryPromQLMap(ctx, ds, `100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`, extraLabels)
+		memMap := s.queryPromQLMap(ctx, ds, `100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100`, extraLabels)
+		diskMap := s.queryPromQLMap(ctx, ds, `100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100`, extraLabels)
+		coreMap := s.queryPromQLMap(ctx, ds, `count(node_cpu_seconds_total{mode="idle"}) by (instance)`, extraLabels)
+
+		var matchedDetails []NodeDetail
+		matchedCount := 0
+		for _, detail := range ipToDetail {
+			found := false
+			for inst, cpu := range cpuMap {
+				// 支持 IP:port 格式 或 node name 精确匹配
+				if strings.HasPrefix(inst, detail.IP+":") || inst == detail.Name {
+					detail.CPUUsage = cpu
+					detail.MemoryUsage = memMap[inst]
+					detail.DiskUsage = diskMap[inst]
+					var cores float64
+					fmt.Sscanf(fmt.Sprintf("%v", coreMap[inst]), "%f", &cores)
+					if detail.CPUCore == 0 && cores > 0 {
+						detail.CPUCore = int(cores)
+					}
+					matchedDetails = append(matchedDetails, *detail)
+					found = true
+					matchedCount++
+					break
+				}
+			}
+			if !found {
 				matchedDetails = append(matchedDetails, *detail)
-				found = true
-				break
 			}
 		}
-		if !found {
-			matchedDetails = append(matchedDetails, *detail)
+
+		if matchedCount == 0 {
+			return false
+		}
+
+		data.HasProm = true
+		data.NodeDetails = matchedDetails
+
+		data.CpuTop = topNByCPU(data.NodeDetails, 10)
+		data.MemTop = topNByMem(data.NodeDetails, 10)
+		data.DiskTop = topNByDisk(data.NodeDetails, 10)
+
+		promTotalMemGB := s.queryPromQLScalar(ctx, ds, `sum(max by (instance) (node_memory_MemTotal_bytes)) / 1024 / 1024 / 1024`, extraLabels)
+		if promTotalMemGB > 0 {
+			data.TotalMemGB = promTotalMemGB
+		}
+		data.UsedMemGB = s.queryPromQLScalar(ctx, ds, `sum(max by (instance) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)) / 1024 / 1024 / 1024`, extraLabels)
+		if data.TotalMemGB > 0 {
+			data.MemRate = data.UsedMemGB / data.TotalMemGB * 100
+		}
+		var cpuSum float64
+		for _, nd := range data.NodeDetails {
+			cpuSum += nd.CPUUsage
+		}
+		if len(data.NodeDetails) > 0 {
+			data.AvgCPURate = cpuSum / float64(len(data.NodeDetails))
+		}
+		return true
+	}
+
+	// 2.1 查找专属数据源（ClusterID 精确匹配）
+	var dedicatedDS model.DataSource
+	if err := s.db.Where("cluster_id = ? AND type = ? AND is_active = ?", clusterID, "prometheus", true).First(&dedicatedDS).Error; err == nil {
+		if tryFill(dedicatedDS, nil) {
+			return data
 		}
 	}
-	data.NodeDetails = matchedDetails
 
-	// 6. TOP10
-	data.CpuTop = topNByCPU(data.NodeDetails, 10)
-	data.MemTop = topNByMem(data.NodeDetails, 10)
-	data.DiskTop = topNByDisk(data.NodeDetails, 10)
+	// 2.2 查找全局数据源 + 集群标签过滤（遍历所有全局数据源，直到有一个成功匹配）
+	var cluster model.Cluster
+	if err := s.db.First(&cluster, clusterID).Error; err == nil {
+		var globalDSList []model.DataSource
+		if err := s.db.Where("tenant_id = ? AND (cluster_id IS NULL OR cluster_id = 0) AND type = ? AND is_active = ?", tenantID, "prometheus", true).Find(&globalDSList).Error; err == nil && len(globalDSList) > 0 {
+			for _, globalDS := range globalDSList {
+				extraLabels := make(map[string]string)
+				if cluster.ClusterLabelValue != "" {
+					labelName := "cluster"
+					if globalDS.Config != "" {
+						var cfg map[string]interface{}
+						if json.Unmarshal([]byte(globalDS.Config), &cfg) == nil {
+							if v, ok := cfg["cluster_label_name"].(string); ok && v != "" {
+								labelName = v
+							}
+						}
+					}
+					extraLabels[labelName] = cluster.ClusterLabelValue
+				}
+				if tryFill(globalDS, extraLabels) {
+					return data
+				}
+			}
+		}
+	}
 
-	// 7. 总资源与平均使用率
-	data.TotalMemGB = s.queryPromQLScalar(ctx, ds, `sum(max by (instance) (node_memory_MemTotal_bytes)) / 1024 / 1024 / 1024`)
-	data.UsedMemGB = s.queryPromQLScalar(ctx, ds, `sum(max by (instance) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)) / 1024 / 1024 / 1024`)
-	if data.TotalMemGB > 0 {
-		data.MemRate = data.UsedMemGB / data.TotalMemGB * 100
+	// 2.3 都没有，返回 K8s 原生数据
+	for _, nd := range ipToDetail {
+		data.NodeDetails = append(data.NodeDetails, *nd)
 	}
-	var cpuSum float64
-	for _, nd := range data.NodeDetails {
-		cpuSum += nd.CPUUsage
-	}
-	if len(data.NodeDetails) > 0 {
-		data.AvgCPURate = cpuSum / float64(len(data.NodeDetails))
-	}
-	totalPods := 0
-	for _, v := range data.PodStatus {
-		totalPods += v
-	}
-	if totalPods > 0 && data.PodCount > 0 {
-		data.HealthyRate = float64(data.PodStatus["Running"]) * 100.0 / float64(data.PodCount)
-	}
-
 	return data
 }
 
-func (s *InspectionService) queryPromQLMap(ctx context.Context, ds model.DataSource, query string) map[string]float64 {
+func (s *InspectionService) queryPromQLMap(ctx context.Context, ds model.DataSource, query string, extraLabels map[string]string) map[string]float64 {
 	res := make(map[string]float64)
 	if s.dsService == nil {
 		return res
 	}
-	resp, err := s.dsService.ProxyPrometheusQuery(ctx, &ds, &ProxyQueryRequest{Query: query})
+	resp, err := s.dsService.ProxyPrometheusQuery(ctx, &ds, &ProxyQueryRequest{Query: query, ExtraLabels: extraLabels})
 	if err != nil || resp == nil || resp.Status != "success" {
 		return res
 	}
@@ -630,11 +696,11 @@ func (s *InspectionService) queryPromQLMap(ctx context.Context, ds model.DataSou
 	return res
 }
 
-func (s *InspectionService) queryPromQLScalar(ctx context.Context, ds model.DataSource, query string) float64 {
+func (s *InspectionService) queryPromQLScalar(ctx context.Context, ds model.DataSource, query string, extraLabels map[string]string) float64 {
 	if s.dsService == nil {
 		return 0
 	}
-	resp, err := s.dsService.ProxyPrometheusQuery(ctx, &ds, &ProxyQueryRequest{Query: query})
+	resp, err := s.dsService.ProxyPrometheusQuery(ctx, &ds, &ProxyQueryRequest{Query: query, ExtraLabels: extraLabels})
 	if err != nil || resp == nil || resp.Status != "success" {
 		return 0
 	}
@@ -798,20 +864,34 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 
 		// 三、资源使用情况
 		sb.WriteString("<h3>三、资源使用情况</h3>")
+		if !promData.HasProm {
+			sb.WriteString("<p><i>未配置 Prometheus 数据源，以下仅展示静态资源信息。</i></p>")
+		}
 		sb.WriteString("<h4>3.1 内存资源</h4>")
 		sb.WriteString("<table border='1' cellpadding='6' cellspacing='0'><tr><th>指标</th><th>数值</th></tr>")
 		sb.WriteString(fmt.Sprintf("<tr><td>总内存</td><td>%.1f GB</td></tr>", promData.TotalMemGB))
-		sb.WriteString(fmt.Sprintf("<tr><td>已用内存</td><td>%.1f GB</td></tr>", promData.UsedMemGB))
-		sb.WriteString(fmt.Sprintf("<tr><td>可用内存</td><td>%.1f GB</td></tr>", promData.TotalMemGB-promData.UsedMemGB))
-		sb.WriteString(fmt.Sprintf("<tr><td>使用率</td><td>%.1f%%</td></tr>", promData.MemRate))
+		if promData.HasProm {
+			sb.WriteString(fmt.Sprintf("<tr><td>已用内存</td><td>%.1f GB</td></tr>", promData.UsedMemGB))
+			sb.WriteString(fmt.Sprintf("<tr><td>可用内存</td><td>%.1f GB</td></tr>", promData.TotalMemGB-promData.UsedMemGB))
+			sb.WriteString(fmt.Sprintf("<tr><td>使用率</td><td>%.1f%%</td></tr>", promData.MemRate))
+		} else {
+			sb.WriteString("<tr><td>已用内存</td><td>-</td></tr>")
+			sb.WriteString("<tr><td>可用内存</td><td>-</td></tr>")
+			sb.WriteString("<tr><td>使用率</td><td>-</td></tr>")
+		}
 		sb.WriteString("</table>")
 
 		sb.WriteString("<h4>3.2 资源置备比分析</h4>")
 		sb.WriteString("<table border='1' cellpadding='6' cellspacing='0'><tr><th>资源类型</th><th>总量</th><th>已用/平均</th><th>使用率</th><th>评估</th></tr>")
-		cpuEval := evaluateRate(promData.AvgCPURate, 70, 85)
-		memEval := evaluateRate(promData.MemRate, 80, 90)
-		sb.WriteString(fmt.Sprintf("<tr><td>CPU 物理核心</td><td>%.0f 核</td><td>平均 %.1f%%</td><td>%.1f%%</td><td>%s</td></tr>", promData.TotalCPU, promData.AvgCPURate, promData.AvgCPURate, cpuEval))
-		sb.WriteString(fmt.Sprintf("<tr><td>内存</td><td>%.1f GB</td><td>%.1f GB</td><td>%.1f%%</td><td>%s</td></tr>", promData.TotalMemGB, promData.UsedMemGB, promData.MemRate, memEval))
+		if promData.HasProm {
+			cpuEval := evaluateRate(promData.AvgCPURate, 70, 85)
+			memEval := evaluateRate(promData.MemRate, 80, 90)
+			sb.WriteString(fmt.Sprintf("<tr><td>CPU 物理核心</td><td>%.0f 核</td><td>平均 %.1f%%</td><td>%.1f%%</td><td>%s</td></tr>", promData.TotalCPU, promData.AvgCPURate, promData.AvgCPURate, cpuEval))
+			sb.WriteString(fmt.Sprintf("<tr><td>内存</td><td>%.1f GB</td><td>%.1f GB</td><td>%.1f%%</td><td>%s</td></tr>", promData.TotalMemGB, promData.UsedMemGB, promData.MemRate, memEval))
+		} else {
+			sb.WriteString(fmt.Sprintf("<tr><td>CPU 物理核心</td><td>%.0f 核</td><td>-</td><td>-</td><td>-</td></tr>", promData.TotalCPU))
+			sb.WriteString(fmt.Sprintf("<tr><td>内存</td><td>%.1f GB</td><td>-</td><td>-</td><td>-</td></tr>", promData.TotalMemGB))
+		}
 		sb.WriteString("</table>")
 
 		// 四、节点资源使用详情
@@ -819,13 +899,18 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		sb.WriteString(fmt.Sprintf("<p>全部节点资源使用表 (%d 个节点)</p>", len(promData.NodeDetails)))
 		sb.WriteString("<table border='1' cellpadding='6' cellspacing='0'><tr><th>#</th><th>主机名</th><th>IP 地址</th><th>角色</th><th>物理核</th><th>CPU%</th><th>内存%</th><th>磁盘%</th><th>节点状态</th><th>调度状态</th></tr>")
 		for i, nd := range promData.NodeDetails {
-			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%.1f%%</td><td>%.1f%%</td><td>%.1f%%</td><td>%s</td><td>%s</td></tr>",
-				i+1, nd.Name, nd.IP, nd.Role, nd.CPUCore, nd.CPUUsage, nd.MemoryUsage, nd.DiskUsage, nd.NodeStatus, nd.Schedulable))
+			if promData.HasProm {
+				sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%.1f%%</td><td>%.1f%%</td><td>%.1f%%</td><td>%s</td><td>%s</td></tr>",
+					i+1, nd.Name, nd.IP, nd.Role, nd.CPUCore, nd.CPUUsage, nd.MemoryUsage, nd.DiskUsage, nd.NodeStatus, nd.Schedulable))
+			} else {
+				sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>-</td><td>-</td><td>-</td><td>%s</td><td>%s</td></tr>",
+					i+1, nd.Name, nd.IP, nd.Role, nd.CPUCore, nd.NodeStatus, nd.Schedulable))
+			}
 		}
 		sb.WriteString("</table>")
 
 		// 4.3 CPU TOP10
-		if len(promData.CpuTop) > 0 {
+		if promData.HasProm && len(promData.CpuTop) > 0 {
 			sb.WriteString("<h4>4.3 CPU 使用率 TOP 10</h4>")
 			sb.WriteString("<table border='1' cellpadding='6' cellspacing='0'><tr><th>排名</th><th>节点名称</th><th>CPU%</th><th>调度状态</th><th>物理核</th></tr>")
 			for i, nd := range promData.CpuTop {
@@ -838,7 +923,7 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		}
 
 		// 4.4 Mem TOP10
-		if len(promData.MemTop) > 0 {
+		if promData.HasProm && len(promData.MemTop) > 0 {
 			sb.WriteString("<h4>4.4 内存使用率 TOP 10</h4>")
 			sb.WriteString("<table border='1' cellpadding='6' cellspacing='0'><tr><th>排名</th><th>节点名称</th><th>内存%</th><th>调度状态</th><th>物理核</th></tr>")
 			for i, nd := range promData.MemTop {
@@ -851,7 +936,7 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		}
 
 		// 4.5 Disk TOP10
-		if len(promData.DiskTop) > 0 {
+		if promData.HasProm && len(promData.DiskTop) > 0 {
 			sb.WriteString("<h4>4.5 磁盘使用率 TOP 10</h4>")
 			sb.WriteString("<table border='1' cellpadding='6' cellspacing='0'><tr><th>排名</th><th>节点名称</th><th>磁盘%</th><th>调度状态</th><th>物理核</th></tr>")
 			for i, nd := range promData.DiskTop {
@@ -881,8 +966,13 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		sb.WriteString(riskRowHTML("Failed Pod", fmt.Sprintf("%d 个", failedCnt), ">30", failedCnt, 30))
 		sb.WriteString(riskRowHTML("Pending Pod", fmt.Sprintf("%d 个", pendingCnt), ">50", pendingCnt, 50))
 		sb.WriteString(riskRowHTML("集群健康率", fmt.Sprintf("%.1f%%", promData.HealthyRate), "<95%", promData.HealthyRate < 95, 0))
-		sb.WriteString(riskRowHTML("内存使用率", fmt.Sprintf("%.1f%%", promData.MemRate), ">80%", promData.MemRate, 80))
-		sb.WriteString(riskRowHTML("CPU 平均使用率", fmt.Sprintf("%.1f%%", promData.AvgCPURate), ">70%", promData.AvgCPURate, 70))
+		if promData.HasProm {
+			sb.WriteString(riskRowHTML("内存使用率", fmt.Sprintf("%.1f%%", promData.MemRate), ">80%", promData.MemRate, 80))
+			sb.WriteString(riskRowHTML("CPU 平均使用率", fmt.Sprintf("%.1f%%", promData.AvgCPURate), ">70%", promData.AvgCPURate, 70))
+		} else {
+			sb.WriteString("<tr><td>内存使用率</td><td>-</td><td>&gt;80%</td><td>未配置 Prometheus</td></tr>")
+			sb.WriteString("<tr><td>CPU 平均使用率</td><td>-</td><td>&gt;70%</td><td>未配置 Prometheus</td></tr>")
+		}
 		sb.WriteString(riskRowHTML("禁止调度节点占比", fmt.Sprintf("%.1f%%", unschedRate), ">20%", unschedRate, 20))
 		sb.WriteString("</table>")
 
@@ -905,22 +995,24 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 			problems = append(problems, fmt.Sprintf("<li>%d 个节点被禁止调度 (%.1f%%): %s</li>", unschedCount, float64(unschedCount)*100/float64(promData.NodeCount), strings.Join(unschedNames, ", ")))
 			suggestions = append(suggestions, fmt.Sprintf("<li>检查禁止调度节点原因: <code>kubectl get nodes %s -o jsonpath='{{range .items[*]}} {{.metadata.name}}\\t{{.spec.taints}}\\n{{end}}'</code></li>", strings.Join(takeFirst(unschedNames, 5), " ")))
 		}
-		if promData.MemRate > 80 {
+		if promData.HasProm && promData.MemRate > 80 {
 			problems = append(problems, "<li>集群内存使用率超过 80%</li>")
 			suggestions = append(suggestions, "<li>关注内存压力节点，考虑扩容或驱逐低优先级 Pod</li>")
 		}
-		if promData.AvgCPURate > 70 {
+		if promData.HasProm && promData.AvgCPURate > 70 {
 			problems = append(problems, "<li>集群 CPU 平均使用率超过 70%</li>")
 			suggestions = append(suggestions, "<li>排查高 CPU 节点应用负载</li>")
 		}
 		// 磁盘 top3
 		var diskWarn []string
-		for i, nd := range promData.DiskTop {
-			if i >= 3 {
-				break
-			}
-			if nd.DiskUsage > 70 {
-				diskWarn = append(diskWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.DiskUsage))
+		if promData.HasProm {
+			for i, nd := range promData.DiskTop {
+				if i >= 3 {
+					break
+				}
+				if nd.DiskUsage > 70 {
+					diskWarn = append(diskWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.DiskUsage))
+				}
 			}
 		}
 		if len(diskWarn) > 0 {
@@ -929,12 +1021,14 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		}
 		// 内存 top3
 		var memWarn []string
-		for i, nd := range promData.MemTop {
-			if i >= 3 {
-				break
-			}
-			if nd.MemoryUsage > 80 {
-				memWarn = append(memWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.MemoryUsage))
+		if promData.HasProm {
+			for i, nd := range promData.MemTop {
+				if i >= 3 {
+					break
+				}
+				if nd.MemoryUsage > 80 {
+					memWarn = append(memWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.MemoryUsage))
+				}
 			}
 		}
 		if len(memWarn) > 0 {
@@ -943,12 +1037,14 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		}
 		// CPU top3
 		var cpuWarn []string
-		for i, nd := range promData.CpuTop {
-			if i >= 3 {
-				break
-			}
-			if nd.CPUUsage > 50 {
-				cpuWarn = append(cpuWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.CPUUsage))
+		if promData.HasProm {
+			for i, nd := range promData.CpuTop {
+				if i >= 3 {
+					break
+				}
+				if nd.CPUUsage > 50 {
+					cpuWarn = append(cpuWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.CPUUsage))
+				}
 			}
 		}
 		if len(cpuWarn) > 0 {
@@ -966,10 +1062,10 @@ func generateHTMLReport(cluster model.Cluster, findings []Finding, score int, ri
 		sb.WriteString("<h3>七、总结</h3>")
 		sb.WriteString(fmt.Sprintf("<p>集群整体状态: <b>%s</b></p>", riskText))
 		sb.WriteString("<p><b>优势:</b></p><ul>")
-		if promData.AvgCPURate < 70 {
+		if promData.HasProm && promData.AvgCPURate < 70 {
 			sb.WriteString("<li>集群整体 CPU 使用率健康</li>")
 		}
-		if promData.MemRate < 80 {
+		if promData.HasProm && promData.MemRate < 80 {
 			sb.WriteString("<li>集群整体内存使用率健康</li>")
 		}
 		if notReadyCount == 0 {
@@ -1067,33 +1163,52 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 		}
 
 		sb.WriteString("### 三、资源使用情况\n")
+		if !promData.HasProm {
+			sb.WriteString("*未配置 Prometheus 数据源，以下仅展示静态资源信息。*\n\n")
+		}
 		sb.WriteString("#### 3.1 内存资源\n")
 		sb.WriteString("| 指标 | 数值 |\n")
 		sb.WriteString("|------|------|\n")
 		sb.WriteString(fmt.Sprintf("| 总内存 | %.1f GB |\n", promData.TotalMemGB))
-		sb.WriteString(fmt.Sprintf("| 已用内存 | %.1f GB |\n", promData.UsedMemGB))
-		sb.WriteString(fmt.Sprintf("| 可用内存 | %.1f GB |\n", promData.TotalMemGB-promData.UsedMemGB))
-		sb.WriteString(fmt.Sprintf("| 使用率 | %.1f%% |\n\n", promData.MemRate))
+		if promData.HasProm {
+			sb.WriteString(fmt.Sprintf("| 已用内存 | %.1f GB |\n", promData.UsedMemGB))
+			sb.WriteString(fmt.Sprintf("| 可用内存 | %.1f GB |\n", promData.TotalMemGB-promData.UsedMemGB))
+			sb.WriteString(fmt.Sprintf("| 使用率 | %.1f%% |\n\n", promData.MemRate))
+		} else {
+			sb.WriteString("| 已用内存 | - |\n")
+			sb.WriteString("| 可用内存 | - |\n")
+			sb.WriteString("| 使用率 | - |\n\n")
+		}
 
 		sb.WriteString("#### 3.2 资源置备比分析\n")
 		sb.WriteString("| 资源类型 | 总量 | 已用/平均 | 使用率 | 评估 |\n")
 		sb.WriteString("|----------|------|-----------|--------|------|\n")
-		cpuEval := evaluateRate(promData.AvgCPURate, 70, 85)
-		memEval := evaluateRate(promData.MemRate, 80, 90)
-		sb.WriteString(fmt.Sprintf("| CPU 物理核心 | %.0f 核 | 平均 %.1f%% | %.1f%% | %s |\n", promData.TotalCPU, promData.AvgCPURate, promData.AvgCPURate, cpuEval))
-		sb.WriteString(fmt.Sprintf("| 内存 | %.1f GB | %.1f GB | %.1f%% | %s |\n\n", promData.TotalMemGB, promData.UsedMemGB, promData.MemRate, memEval))
+		if promData.HasProm {
+			cpuEval := evaluateRate(promData.AvgCPURate, 70, 85)
+			memEval := evaluateRate(promData.MemRate, 80, 90)
+			sb.WriteString(fmt.Sprintf("| CPU 物理核心 | %.0f 核 | 平均 %.1f%% | %.1f%% | %s |\n", promData.TotalCPU, promData.AvgCPURate, promData.AvgCPURate, cpuEval))
+			sb.WriteString(fmt.Sprintf("| 内存 | %.1f GB | %.1f GB | %.1f%% | %s |\n\n", promData.TotalMemGB, promData.UsedMemGB, promData.MemRate, memEval))
+		} else {
+			sb.WriteString(fmt.Sprintf("| CPU 物理核心 | %.0f 核 | - | - | - |\n", promData.TotalCPU))
+			sb.WriteString(fmt.Sprintf("| 内存 | %.1f GB | - | - | - |\n\n", promData.TotalMemGB))
+		}
 
 		sb.WriteString("### 四、节点资源使用详情\n")
 		sb.WriteString(fmt.Sprintf("全部节点资源使用表 (%d 个节点)\n\n", len(promData.NodeDetails)))
 		sb.WriteString("| # | 主机名 | IP 地址 | 角色 | 物理核 | CPU% | 内存% | 磁盘% | 节点状态 | 调度状态 |\n")
 		sb.WriteString("|---|--------|---------|------|--------|------|------|------|----------|----------|\n")
 		for i, nd := range promData.NodeDetails {
-			sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %d | %.1f%% | %.1f%% | %.1f%% | %s | %s |\n",
-				i+1, nd.Name, nd.IP, nd.Role, nd.CPUCore, nd.CPUUsage, nd.MemoryUsage, nd.DiskUsage, nd.NodeStatus, nd.Schedulable))
+			if promData.HasProm {
+				sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %d | %.1f%% | %.1f%% | %.1f%% | %s | %s |\n",
+					i+1, nd.Name, nd.IP, nd.Role, nd.CPUCore, nd.CPUUsage, nd.MemoryUsage, nd.DiskUsage, nd.NodeStatus, nd.Schedulable))
+			} else {
+				sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %d | - | - | - | %s | %s |\n",
+					i+1, nd.Name, nd.IP, nd.Role, nd.CPUCore, nd.NodeStatus, nd.Schedulable))
+			}
 		}
 		sb.WriteString("\n")
 
-		if len(promData.CpuTop) > 0 {
+		if promData.HasProm && len(promData.CpuTop) > 0 {
 			sb.WriteString("#### 4.3 CPU 使用率 TOP 10\n")
 			sb.WriteString("| 排名 | 节点名称 | CPU% | 调度状态 | 物理核 |\n")
 			sb.WriteString("|------|----------|------|----------|--------|\n")
@@ -1105,7 +1220,7 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 			}
 			sb.WriteString("\n")
 		}
-		if len(promData.MemTop) > 0 {
+		if promData.HasProm && len(promData.MemTop) > 0 {
 			sb.WriteString("#### 4.4 内存使用率 TOP 10\n")
 			sb.WriteString("| 排名 | 节点名称 | 内存% | 调度状态 | 物理核 |\n")
 			sb.WriteString("|------|----------|-------|----------|--------|\n")
@@ -1117,7 +1232,7 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 			}
 			sb.WriteString("\n")
 		}
-		if len(promData.DiskTop) > 0 {
+		if promData.HasProm && len(promData.DiskTop) > 0 {
 			sb.WriteString("#### 4.5 磁盘使用率 TOP 10\n")
 			sb.WriteString("| 排名 | 节点名称 | 磁盘% | 调度状态 | 物理核 |\n")
 			sb.WriteString("|------|----------|-------|----------|--------|\n")
@@ -1147,8 +1262,13 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 		sb.WriteString(riskRowMD("Failed Pod", fmt.Sprintf("%d 个", failedCnt), ">30", failedCnt, 30))
 		sb.WriteString(riskRowMD("Pending Pod", fmt.Sprintf("%d 个", pendingCnt), ">50", pendingCnt, 50))
 		sb.WriteString(riskRowMD("集群健康率", fmt.Sprintf("%.1f%%", promData.HealthyRate), "<95%", promData.HealthyRate < 95, 0))
-		sb.WriteString(riskRowMD("内存使用率", fmt.Sprintf("%.1f%%", promData.MemRate), ">80%", promData.MemRate, 80))
-		sb.WriteString(riskRowMD("CPU 平均使用率", fmt.Sprintf("%.1f%%", promData.AvgCPURate), ">70%", promData.AvgCPURate, 70))
+		if promData.HasProm {
+			sb.WriteString(riskRowMD("内存使用率", fmt.Sprintf("%.1f%%", promData.MemRate), ">80%", promData.MemRate, 80))
+			sb.WriteString(riskRowMD("CPU 平均使用率", fmt.Sprintf("%.1f%%", promData.AvgCPURate), ">70%", promData.AvgCPURate, 70))
+		} else {
+			sb.WriteString("| 内存使用率 | - | >80% | 未配置 Prometheus |\n")
+			sb.WriteString("| CPU 平均使用率 | - | >70% | 未配置 Prometheus |\n")
+		}
 		sb.WriteString(riskRowMD("禁止调度节点占比", fmt.Sprintf("%.1f%%", unschedRate), ">20%", unschedRate, 20))
 		sb.WriteString("\n")
 
@@ -1168,21 +1288,23 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 			problems = append(problems, fmt.Sprintf("- %d 个节点被禁止调度 (%.1f%%): %s", unschedCount, float64(unschedCount)*100/float64(promData.NodeCount), strings.Join(unschedNames, ", ")))
 			suggestions = append(suggestions, fmt.Sprintf("- 检查禁止调度节点原因: `kubectl get nodes %s -o jsonpath='{{range .items[*]}} {{.metadata.name}}\\t{{.spec.taints}}\\n{{end}}'`", strings.Join(takeFirst(unschedNames, 5), " ")))
 		}
-		if promData.MemRate > 80 {
+		if promData.HasProm && promData.MemRate > 80 {
 			problems = append(problems, "- 集群内存使用率超过 80%")
 			suggestions = append(suggestions, "- 关注内存压力节点，考虑扩容或驱逐低优先级 Pod")
 		}
-		if promData.AvgCPURate > 70 {
+		if promData.HasProm && promData.AvgCPURate > 70 {
 			problems = append(problems, "- 集群 CPU 平均使用率超过 70%")
 			suggestions = append(suggestions, "- 排查高 CPU 节点应用负载")
 		}
 		var diskWarn []string
-		for i, nd := range promData.DiskTop {
-			if i >= 3 {
-				break
-			}
-			if nd.DiskUsage > 70 {
-				diskWarn = append(diskWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.DiskUsage))
+		if promData.HasProm {
+			for i, nd := range promData.DiskTop {
+				if i >= 3 {
+					break
+				}
+				if nd.DiskUsage > 70 {
+					diskWarn = append(diskWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.DiskUsage))
+				}
 			}
 		}
 		if len(diskWarn) > 0 {
@@ -1190,12 +1312,14 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 			suggestions = append(suggestions, "- 清理磁盘空间: `docker image prune -a` / `docker container prune`")
 		}
 		var memWarn []string
-		for i, nd := range promData.MemTop {
-			if i >= 3 {
-				break
-			}
-			if nd.MemoryUsage > 80 {
-				memWarn = append(memWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.MemoryUsage))
+		if promData.HasProm {
+			for i, nd := range promData.MemTop {
+				if i >= 3 {
+					break
+				}
+				if nd.MemoryUsage > 80 {
+					memWarn = append(memWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.MemoryUsage))
+				}
 			}
 		}
 		if len(memWarn) > 0 {
@@ -1203,12 +1327,14 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 			suggestions = append(suggestions, "- 监控高内存节点，排查内存泄漏")
 		}
 		var cpuWarn []string
-		for i, nd := range promData.CpuTop {
-			if i >= 3 {
-				break
-			}
-			if nd.CPUUsage > 50 {
-				cpuWarn = append(cpuWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.CPUUsage))
+		if promData.HasProm {
+			for i, nd := range promData.CpuTop {
+				if i >= 3 {
+					break
+				}
+				if nd.CPUUsage > 50 {
+					cpuWarn = append(cpuWarn, fmt.Sprintf("%s (%.1f%%)", nd.Name, nd.CPUUsage))
+				}
 			}
 		}
 		if len(cpuWarn) > 0 {
@@ -1225,10 +1351,10 @@ func generateMarkdownReport(cluster model.Cluster, findings []Finding, score int
 		sb.WriteString("### 七、总结\n")
 		sb.WriteString(fmt.Sprintf("集群整体状态: **%s**\n\n", riskText))
 		sb.WriteString("**优势:**\n")
-		if promData.AvgCPURate < 70 {
+		if promData.HasProm && promData.AvgCPURate < 70 {
 			sb.WriteString("- 集群整体 CPU 使用率健康\n")
 		}
-		if promData.MemRate < 80 {
+		if promData.HasProm && promData.MemRate < 80 {
 			sb.WriteString("- 集群整体内存使用率健康\n")
 		}
 		if notReadyCount == 0 {
@@ -1377,14 +1503,19 @@ func (s *InspectionService) TriggerJob(taskID uint) error {
 	return nil
 }
 
-// QuickInspect 一键快速巡检所有活跃集群（无需预先创建任务）
-func (s *InspectionService) QuickInspect(ctx context.Context) (*model.InspectionJob, error) {
-	var clusters []model.Cluster
-	if err := s.db.Where("is_active = ?", true).Find(&clusters).Error; err != nil {
-		return nil, err
-	}
-	if len(clusters) == 0 {
-		return nil, fmt.Errorf("没有可用的活跃集群")
+// QuickInspect 一键快速巡检（无需预先创建任务）
+func (s *InspectionService) QuickInspect(ctx context.Context, clusterIDs []uint) (*model.InspectionJob, error) {
+	if len(clusterIDs) == 0 {
+		var clusters []model.Cluster
+		if err := s.db.Where("is_active = ?", true).Find(&clusters).Error; err != nil {
+			return nil, err
+		}
+		if len(clusters) == 0 {
+			return nil, fmt.Errorf("没有可用的活跃集群")
+		}
+		for _, c := range clusters {
+			clusterIDs = append(clusterIDs, c.ID)
+		}
 	}
 
 	// 创建临时 Job 记录
@@ -1393,7 +1524,7 @@ func (s *InspectionService) QuickInspect(ctx context.Context) (*model.Inspection
 		Status:        "running",
 		TriggerType:   "manual",
 		StartedAt:     ptrTime(time.Now()),
-		TotalClusters: len(clusters),
+		TotalClusters: len(clusterIDs),
 	}
 	if err := s.db.Create(&job).Error; err != nil {
 		return nil, err
@@ -1401,10 +1532,6 @@ func (s *InspectionService) QuickInspect(ctx context.Context) (*model.Inspection
 
 	// 在后台执行巡检
 	go func() {
-		var clusterIDs []uint
-		for _, c := range clusters {
-			clusterIDs = append(clusterIDs, c.ID)
-		}
 		task := model.InspectionTask{
 			ClusterIDs: marshalUintArray(clusterIDs),
 		}

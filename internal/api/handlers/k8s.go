@@ -31,6 +31,7 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 
 	kind := c.Param("kind")
 	namespace := c.DefaultQuery("namespace", "")
+	keyword := c.DefaultQuery("keyword", "")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if page < 1 {
@@ -43,7 +44,7 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 		limit = 500
 	}
 
-	items, total, err := h.k8sService.ListResources(c.Request.Context(), uint(clusterID), kind, namespace, page, limit)
+	items, total, err := h.k8sService.ListResources(c.Request.Context(), uint(clusterID), kind, namespace, keyword, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return

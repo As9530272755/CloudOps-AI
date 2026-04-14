@@ -81,11 +81,15 @@ export const k8sAPI = {
     kind: string,
     namespace: string = '',
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
+    keyword: string = ''
   ) => {
     const params = new URLSearchParams()
     if (namespace && namespace !== 'all') {
       params.set('namespace', namespace)
+    }
+    if (keyword && keyword.trim()) {
+      params.set('keyword', keyword.trim())
     }
     params.set('page', String(page))
     params.set('limit', String(limit))
@@ -180,6 +184,12 @@ export const resourceCategories = [
     icon: 'EventNote',
     resources: ['events'],
   },
+  {
+    key: 'custom',
+    label: '自定义资源',
+    icon: 'Extension',
+    resources: ['customresourcedefinitions'],
+  },
 ]
 
 export const resourceLabels: Record<string, string> = {
@@ -206,4 +216,5 @@ export const resourceLabels: Record<string, string> = {
   clusterroles: 'ClusterRole',
   clusterrolebindings: 'ClusterRoleBinding',
   events: 'Event',
+  customresourcedefinitions: 'CustomResourceDefinition',
 }

@@ -37,6 +37,7 @@ export default function FlowTopologyGraph({
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [chartKey, setChartKey] = useState(0)
 
   useEffect(() => {
     setMounted(true)
@@ -51,6 +52,7 @@ export default function FlowTopologyGraph({
         renderer: 'canvas',
       })
       chartInstance.current = instance
+      setChartKey((k) => k + 1)
     } catch (err) {
       console.error('ECharts init failed:', err)
       return
@@ -131,7 +133,7 @@ export default function FlowTopologyGraph({
           position: 'bottom' as const,
           fontSize: 14,
           fontWeight: 700 as const,
-          color: '#ffffff',
+          color: isDark ? '#ffffff' : textColor,
           distance: 14,
         },
       },
@@ -197,11 +199,11 @@ export default function FlowTopologyGraph({
           position: 'middle' as const,
           fontSize: 10,
           fontWeight: 600 as const,
-          color: '#ffffff',
+          color: isDark ? '#ffffff' : textColor,
           formatter: `${e.protocol}\n${formatBytes(e.bytes)}`,
           backgroundColor: 'transparent',
           borderWidth: 0,
-          textBorderColor: isDark ? '#0a0f1e' : '#ffffff',
+          textBorderColor: isDark ? '#0a0f1e' : '#e0e0e0',
           textBorderWidth: 2,
           distance: 5,
         },
@@ -263,7 +265,7 @@ export default function FlowTopologyGraph({
     return option
   }, [nodes, edges, target, theme.palette.mode, highlightNodeId])
 
-  // Update chart when data changes
+  // Sync option to chart whenever buildOption changes or instance is (re)created
   useEffect(() => {
     const instance = chartInstance.current
     if (!instance) return
@@ -272,7 +274,7 @@ export default function FlowTopologyGraph({
     } catch (err) {
       console.error('ECharts setOption failed:', err)
     }
-  }, [buildOption])
+  }, [buildOption, chartKey])
 
   return (
     <Box

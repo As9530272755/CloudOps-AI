@@ -65,6 +65,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				clusters.POST("", r.clusterHandler.CreateCluster)
 				clusters.GET("", r.clusterHandler.ListClusters)
 				clusters.GET("/:id", r.clusterHandler.GetCluster)
+				clusters.PUT("/:id", r.clusterHandler.UpdateCluster)
 				clusters.DELETE("/:id", r.clusterHandler.DeleteCluster)
 			}
 

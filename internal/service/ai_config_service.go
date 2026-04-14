@@ -99,17 +99,22 @@ func (s *AIConfigService) UpdateConfig(cfg ai.PlatformConfig) error {
 // TestConnection 测试当前配置的 AI 平台连通性
 func (s *AIConfigService) TestConnection() error {
 	cfg := s.GetRawConfig()
-	timeout := 120 * time.Second
-	ctxTimeout := 60 * time.Second
+	timeoutSec := cfg.OpenClaw.Timeout
 	if cfg.Provider == "ollama" {
-		timeout = 600 * time.Second
-		ctxTimeout = 300 * time.Second
+		timeoutSec = cfg.Ollama.Timeout
 	}
+	if timeoutSec <= 0 {
+		timeoutSec = 300
+		if cfg.Provider == "ollama" {
+			timeoutSec = 600
+		}
+	}
+	timeout := time.Duration(timeoutSec) * time.Second
 	provider, err := ai.NewProvider(cfg, timeout)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := aiContext(ctxTimeout)
+	ctx, cancel := aiContext(timeout)
 	defer cancel()
 	return provider.HealthCheck(ctx)
 }
@@ -120,11 +125,17 @@ func (s *AIConfigService) NewProvider() (ai.Provider, error) {
 	if cfg.Provider == "" {
 		return nil, fmt.Errorf("AI 平台尚未配置")
 	}
-	timeout := 60 * time.Second
+	timeoutSec := cfg.OpenClaw.Timeout
 	if cfg.Provider == "ollama" {
-		timeout = 600 * time.Second // Ollama 大模型加载可能很慢
+		timeoutSec = cfg.Ollama.Timeout
 	}
-	return ai.NewProvider(cfg, timeout)
+	if timeoutSec <= 0 {
+		timeoutSec = 300
+		if cfg.Provider == "ollama" {
+			timeoutSec = 600
+		}
+	}
+	return ai.NewProvider(cfg, time.Duration(timeoutSec)*time.Second)
 }
 
 // ListModels 获取当前配置平台的可用模型列表

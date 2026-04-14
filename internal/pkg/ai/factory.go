@@ -14,15 +14,17 @@ type PlatformConfig struct {
 
 // OpenClawDetail OpenClaw 配置细节
 type OpenClawDetail struct {
-	URL   string `json:"url"`
-	Token string `json:"token"`
-	Model string `json:"model"`
+	URL     string `json:"url"`
+	Token   string `json:"token"`
+	Model   string `json:"model"`
+	Timeout int    `json:"timeout"` // 秒，默认 300
 }
 
 // OllamaDetail Ollama 配置细节
 type OllamaDetail struct {
-	URL   string `json:"url"`
-	Model string `json:"model"`
+	URL     string `json:"url"`
+	Model   string `json:"model"`
+	Timeout int    `json:"timeout"` // 秒，默认 600
 }
 
 // NewProvider 根据配置创建对应 Provider

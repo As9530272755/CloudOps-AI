@@ -91,7 +91,8 @@ func (s *AITaskService) GetTask(taskID string) (*TaskStatus, error) {
 
 // runTask 在 goroutine 中调用 AI 流式接口
 func (s *AITaskService) runTask(taskID, sessionID string, messages []ai.Message) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
 	var fullResult string
 	err := s.aiService.GeneralChatStreamWithSession(ctx, sessionID, messages, func(chunk ai.StreamResponse) {

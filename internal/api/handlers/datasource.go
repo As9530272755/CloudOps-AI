@@ -117,7 +117,8 @@ func (h *DatasourceHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	ok, msg := h.dsService.TestConnection(c.Request.Context(), uint(id))
+	tenantID, _ := c.Get("tenant_id")
+	ok, msg := h.dsService.TestConnection(c.Request.Context(), tenantID.(uint), uint(id))
 	if ok {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": msg})
 		return

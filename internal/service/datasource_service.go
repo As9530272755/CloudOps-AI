@@ -31,6 +31,7 @@ type CreateDataSourceRequest struct {
 	Type      string `json:"type" binding:"required"`
 	URL       string `json:"url" binding:"required,url"`
 	Config    string `json:"config"`
+	ClusterID *uint  `json:"cluster_id,omitempty"`
 	IsDefault bool   `json:"is_default"`
 }
 
@@ -43,6 +44,7 @@ func (s *DatasourceService) CreateDataSource(ctx context.Context, tenantID uint,
 
 	ds := &model.DataSource{
 		TenantID:  tenantID,
+		ClusterID: req.ClusterID,
 		Name:      req.Name,
 		Type:      req.Type,
 		URL:       req.URL,
@@ -93,6 +95,7 @@ func (s *DatasourceService) UpdateDataSource(ctx context.Context, tenantID, id u
 	ds.Type = req.Type
 	ds.URL = req.URL
 	ds.Config = req.Config
+	ds.ClusterID = req.ClusterID
 	ds.IsDefault = req.IsDefault
 
 	if err := s.db.WithContext(ctx).Save(&ds).Error; err != nil {
@@ -107,8 +110,8 @@ func (s *DatasourceService) DeleteDataSource(ctx context.Context, tenantID, id u
 }
 
 // TestConnection 测试数据源连通性
-func (s *DatasourceService) TestConnection(ctx context.Context, id uint) (bool, string) {
-	ds, err := s.GetDataSource(ctx, 0, id)
+func (s *DatasourceService) TestConnection(ctx context.Context, tenantID, id uint) (bool, string) {
+	ds, err := s.GetDataSource(ctx, tenantID, id)
 	if err != nil {
 		return false, "datasource not found"
 	}
@@ -138,10 +141,11 @@ func (s *DatasourceService) TestConnection(ctx context.Context, id uint) (bool, 
 
 // ProxyQuery 代理查询 Prometheus
 type ProxyQueryRequest struct {
-	Query string `json:"query" binding:"required"`
-	Start string `json:"start"`
-	End   string `json:"end"`
-	Step  string `json:"step"`
+	Query       string            `json:"query" binding:"required"`
+	Start       string            `json:"start"`
+	End         string            `json:"end"`
+	Step        string            `json:"step"`
+	ExtraLabels map[string]string `json:"extra_labels,omitempty"`
 }
 
 // ProxyQueryResponse 代理查询响应
@@ -235,6 +239,11 @@ func (s *DatasourceService) ProxyPrometheusQuery(ctx context.Context, ds *model.
 		}
 	} else {
 		params.Set("time", fmt.Sprintf("%d", time.Now().Unix()))
+	}
+
+	// 注入 extra_label（用于 VictoriaMetrics / promxy 的集群隔离）
+	for k, v := range req.ExtraLabels {
+		params.Add("extra_label", fmt.Sprintf("%s=%s", k, v))
 	}
 
 	targetURL := ds.URL + endpoint + "?" + params.Encode()

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"strings"
+
 	"sigs.k8s.io/yaml"
 
 	"k8s.io/client-go/kubernetes/scheme"
@@ -15,7 +17,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // K8sResourceService K8s资源服务
@@ -36,7 +40,7 @@ func (s *K8sResourceService) SearchResources(ctx context.Context, keyword string
 }
 
 // ListResources 列出资源
-func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace string, page, limit int) ([]map[string]interface{}, int, error) {
+func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace, keyword string, page, limit int) ([]map[string]interface{}, int, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil {
 		// 异步启动，不阻塞 HTTP 请求
@@ -58,12 +62,13 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	clusterKinds := map[string]bool{
 		"nodes": true, "namespaces": true, "persistentvolumes": true,
 		"storageclasses": true, "clusterroles": true, "clusterrolebindings": true,
+		"customresourcedefinitions": true,
 	}
 
 	if clusterKinds[kind] {
-		items, total, err = cc.GetClusterResourceList(kind, page, limit)
+		items, total, err = cc.GetClusterResourceList(kind, keyword, page, limit)
 	} else {
-		items, total, err = cc.GetNamespacedResourceList(kind, namespace, page, limit)
+		items, total, err = cc.GetNamespacedResourceList(kind, namespace, keyword, page, limit)
 	}
 	if err != nil {
 		return nil, 0, err
@@ -74,6 +79,44 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 		result = append(result, convertToSummary(obj))
 	}
 	return result, total, nil
+}
+
+// kindToGVK 为 scheme 无法识别的类型提供手动 GVK 映射
+func kindToGVK(kind string) schema.GroupVersionKind {
+	switch kind {
+	case "pods", "services", "endpoints", "persistentvolumeclaims", "configmaps", "secrets", "serviceaccounts", "nodes", "namespaces", "persistentvolumes", "events":
+		return schema.GroupVersionKind{Version: "v1", Kind: kindToTitle(kind)}
+	case "deployments", "daemonsets", "replicasets", "statefulsets":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: kindToTitle(kind)}
+	case "jobs", "cronjobs":
+		return schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: kindToTitle(kind)}
+	case "ingresses":
+		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}
+	case "storageclasses":
+		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"}
+	case "roles", "rolebindings", "clusterroles", "clusterrolebindings":
+		return schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: kindToTitle(kind)}
+	case "customresourcedefinitions":
+		return schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"}
+	default:
+		return schema.GroupVersionKind{}
+	}
+}
+
+func kindToTitle(kind string) string {
+	if kind == "" {
+		return ""
+	}
+	// 简单规则：去掉末尾的 s，首字母大写
+	s := kind
+	if strings.HasSuffix(s, "ies") {
+		s = strings.TrimSuffix(s, "ies") + "y"
+	} else if strings.HasSuffix(s, "ses") {
+		s = strings.TrimSuffix(s, "es")
+	} else if strings.HasSuffix(s, "s") {
+		s = strings.TrimSuffix(s, "s")
+	}
+	return strings.Title(s)
 }
 
 // GetResourceYAML 获取资源YAML
@@ -96,20 +139,38 @@ func (s *K8sResourceService) GetResourceYAML(ctx context.Context, clusterID uint
 		return "", fmt.Errorf("资源未找到")
 	}
 
+	var gvk schema.GroupVersionKind
 	if runtimeObj, ok := obj.(runtime.Object); ok {
-		// 补全 TypeMeta (apiVersion / kind)，确保 YAML 格式与 kubectl 一致
+		// 优先从 scheme 获取 GVK
 		gvks, _, err := scheme.Scheme.ObjectKinds(runtimeObj)
 		if err == nil && len(gvks) > 0 {
-			runtimeObj.GetObjectKind().SetGroupVersionKind(gvks[0])
+			gvk = gvks[0]
 		}
-		out, err := yaml.Marshal(runtimeObj)
-		if err != nil {
-			return "", err
-		}
-		return string(out), nil
+	}
+	if gvk.Empty() {
+		gvk = kindToGVK(kind)
 	}
 
-	out, err := yaml.Marshal(obj)
+	// 转换为 unstructured map，确保 YAML 与 kubectl 输出一致（map 顺序、字段完整）
+	unstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return "", fmt.Errorf("convert to unstructured failed: %w", err)
+	}
+	if unstructuredMap == nil {
+		unstructuredMap = map[string]interface{}{}
+	}
+	if !gvk.Empty() {
+		unstructuredMap["apiVersion"] = gvk.GroupVersion().String()
+		unstructuredMap["kind"] = gvk.Kind
+	}
+
+	// 清理对人类阅读无用的内部字段
+	delete(unstructuredMap, "status")
+	if metadata, ok := unstructuredMap["metadata"].(map[string]interface{}); ok {
+		delete(metadata, "managedFields")
+	}
+
+	out, err := yaml.Marshal(unstructuredMap)
 	if err != nil {
 		return "", err
 	}
@@ -191,6 +252,7 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 		"configmaps":       len(cc.ConfigMapStore.List()),
 		"secrets":          len(cc.SecretStore.List()),
 		"events":           len(cc.EventStore.List()),
+		"customresourcedefinitions": len(cc.CRDStore.List()),
 	}, nil
 }
 
@@ -405,6 +467,26 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"object":            v.InvolvedObject.Name,
 			"message":           v.Message,
 			"count":             v.Count,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *v1.CustomResourceDefinition:
+		versions := make([]string, 0, len(v.Spec.Versions))
+		established := false
+		for _, ver := range v.Spec.Versions {
+			versions = append(versions, ver.Name)
+		}
+		for _, cond := range v.Status.Conditions {
+			if cond.Type == v1.Established && cond.Status == v1.ConditionTrue {
+				established = true
+				break
+			}
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"group":             v.Spec.Group,
+			"scope":             string(v.Spec.Scope),
+			"versions":          strings.Join(versions, ", "),
+			"established":       established,
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	default:

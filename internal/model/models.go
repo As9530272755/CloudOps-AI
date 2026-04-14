@@ -85,19 +85,20 @@ func (Tenant) TableName() string {
 
 // Cluster 集群配置模型
 type Cluster struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	TenantID    uint           `gorm:"index" json:"tenant_id"`
-	Name        string         `gorm:"size:100;unique;not null" json:"name"`
-	DisplayName string         `gorm:"size:100" json:"display_name"`
-	Description string         `gorm:"type:text" json:"description"`
-	AuthType    string         `gorm:"size:50;not null" json:"auth_type"` // kubeconfig/token/oidc
-	Server      string         `gorm:"size:255" json:"server"`
-	IsActive    bool           `gorm:"default:true" json:"is_active"`
-	Priority    int            `gorm:"default:0" json:"priority"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-	
+	ID                uint           `gorm:"primaryKey" json:"id"`
+	TenantID          uint           `gorm:"index" json:"tenant_id"`
+	Name              string         `gorm:"size:100;unique;not null" json:"name"`
+	DisplayName       string         `gorm:"size:100" json:"display_name"`
+	Description       string         `gorm:"type:text" json:"description"`
+	AuthType          string         `gorm:"size:50;not null" json:"auth_type"` // kubeconfig/token/oidc
+	Server            string         `gorm:"size:255" json:"server"`
+	ClusterLabelValue string         `gorm:"size:128" json:"cluster_label_value"`
+	IsActive          bool           `gorm:"default:true" json:"is_active"`
+	Priority          int            `gorm:"default:0" json:"priority"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
+
 	// 关联
 	Tenant    *Tenant          `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
 	Secrets   []ClusterSecret  `gorm:"foreignKey:ClusterID" json:"secrets,omitempty"`
@@ -162,10 +163,11 @@ func (LoginLog) TableName() string {
 type DataSource struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
 	TenantID    uint           `gorm:"index" json:"tenant_id"`
+	ClusterID   *uint          `gorm:"index" json:"cluster_id,omitempty"`
 	Name        string         `gorm:"size:100;not null" json:"name"`
 	Type        string         `gorm:"size:50;not null" json:"type"`          // prometheus
 	URL         string         `gorm:"size:255;not null" json:"url"`
-	Config      string         `gorm:"type:text" json:"config"`              // JSON: headers, auth, tls_skip_verify
+	Config      string         `gorm:"type:text" json:"config"`              // JSON: headers, auth, tls_skip_verify, cluster_label_name
 	IsDefault   bool           `gorm:"default:false" json:"is_default"`
 	IsActive    bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt   time.Time      `json:"created_at"`

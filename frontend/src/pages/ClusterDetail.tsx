@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box,
@@ -30,6 +30,8 @@ import {
   Grid,
   Breadcrumbs,
   Link,
+  TextField,
+  Snackbar,
 } from '@mui/material'
 import {
   ArrowBack as BackIcon,
@@ -43,7 +45,11 @@ import {
   Security as SecurityIcon,
   Folder as FolderIcon,
   EventNote as EventIcon,
+  Extension as ExtensionIcon,
+  Search as SearchIcon,
+  ContentCopy as CopyIcon,
 } from '@mui/icons-material'
+import Editor from '@monaco-editor/react'
 
 import { k8sAPI, resourceCategories, resourceLabels, ClusterStats } from '../lib/k8s-api'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
@@ -58,6 +64,7 @@ const iconMap: Record<string, any> = {
   Security: SecurityIcon,
   Folder: FolderIcon,
   EventNote: EventIcon,
+  Extension: ExtensionIcon,
 }
 
 // 需要命名空间过滤的资源
@@ -95,6 +102,7 @@ export default function ClusterDetail() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
+  const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
@@ -103,6 +111,8 @@ export default function ClusterDetail() {
   const [yamlContent, setYamlContent] = useState('')
   const [yamlLoading, setYamlLoading] = useState(false)
   const [nsError, setNsError] = useState('')
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+  const preRef = useRef<HTMLPreElement>(null)
 
   // 加载集群基本信息
   const loadCluster = async () => {
@@ -148,13 +158,13 @@ export default function ClusterDetail() {
   }
 
   // 加载资源列表
-  const loadResources = async (kind: string, currentPage = page) => {
+  const loadResources = async (kind: string, currentPage = page, search = keyword) => {
     if (!kind) return
     setLoading(true)
     setError('')
     try {
       const ns = namespacedResources.has(kind) ? selectedNamespace : ''
-      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit)
+      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search)
       if (result.success && result.data) {
         setItems(result.data.items)
         setTotal(result.data.total)
@@ -251,7 +261,8 @@ export default function ClusterDetail() {
       const targetResource = category.resources.includes(activeResource) ? activeResource : category.resources[0]
       setActiveResource(targetResource)
       setPage(1)
-      loadResources(targetResource, 1)
+      setKeyword('')
+      loadResources(targetResource, 1, '')
     }
   }, [activeCategory, selectedNamespace, limit])
 
@@ -272,6 +283,16 @@ export default function ClusterDetail() {
       loadResources(activeResource, page)
     }
   }, [page])
+
+  // keyword 搜索 debounce
+  useEffect(() => {
+    if (activeCategory === 'overview' || !activeResource) return
+    const timer = setTimeout(() => {
+      setPage(1)
+      loadResources(activeResource, 1, keyword)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [keyword])
 
   const category = resourceCategories.find(c => c.key === activeCategory)
 
@@ -309,6 +330,14 @@ export default function ClusterDetail() {
           { key: 'message', label: '消息' },
           { key: 'count', label: '次数' },
         ]
+      case 'customresourcedefinitions':
+        return [
+          ...common,
+          { key: 'group', label: 'Group' },
+          { key: 'scope', label: '作用域' },
+          { key: 'versions', label: '版本' },
+          { key: 'established', label: '状态' },
+        ]
       default:
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }]
     }
@@ -332,6 +361,9 @@ export default function ClusterDetail() {
     }
     if (key === 'roles' && Array.isArray(value)) {
       return value.join(', ')
+    }
+    if (key === 'established') {
+      return <Chip label={value ? 'Established' : 'Not Established'} color={value ? 'success' : 'default'} size="small" sx={{ borderRadius: '6px' }} />
     }
     return String(value ?? '-')
   }
@@ -407,7 +439,7 @@ export default function ClusterDetail() {
             <Box>
               {/* 子资源 Tabs */}
               {category.resources.length > 1 && (
-                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); loadResources(v, 1); }} sx={{ mb: 2 }}>
+                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
                   {category.resources.map(r => (
                     <Tab key={r} value={r} label={resourceLabels[r] || r} sx={{ textTransform: 'none' }} />
                   ))}
@@ -415,7 +447,7 @@ export default function ClusterDetail() {
               )}
 
               {/* 过滤栏 */}
-              <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                 {namespacedResources.has(activeResource) && (
                   <FormControl size="small" sx={{ minWidth: 200 }} error={!!nsError}>
                     <InputLabel>命名空间</InputLabel>
@@ -432,6 +464,16 @@ export default function ClusterDetail() {
                     )}
                   </FormControl>
                 )}
+                <TextField
+                  size="small"
+                  placeholder="搜索资源名称"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  InputProps={{
+                    startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 18 }} />,
+                  }}
+                  sx={{ minWidth: 240 }}
+                />
                 <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
                   共 {total} 条
                 </Typography>
@@ -494,36 +536,84 @@ export default function ClusterDetail() {
         <DialogTitle sx={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{detailItem?.name || '资源详情'}</span>
           {yamlMode && (
-            <Button size="small" variant="outlined" onClick={() => setYamlMode(false)}>返回详情</Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<CopyIcon />}
+                onClick={() => {
+                  if (!yamlContent) {
+                    setSnackbar({ open: true, message: 'YAML 内容为空', severity: 'error' })
+                    return
+                  }
+                  const pre = preRef.current
+                  if (!pre) {
+                    setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' })
+                    return
+                  }
+                  const selection = window.getSelection()
+                  const range = document.createRange()
+                  range.selectNodeContents(pre)
+                  selection?.removeAllRanges()
+                  selection?.addRange(range)
+                  let ok = false
+                  try { ok = document.execCommand('copy') } catch {}
+                  selection?.removeAllRanges()
+                  if (ok) {
+                    setSnackbar({ open: true, message: 'YAML 已复制到剪贴板', severity: 'success' })
+                  } else {
+                    setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' })
+                  }
+                }}
+                sx={{ textTransform: 'none' }}
+              >
+                复制 YAML
+              </Button>
+              <Button size="small" variant="outlined" onClick={() => setYamlMode(false)}>返回详情</Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  if (!yamlContent) return
+                  const blob = new Blob([yamlContent], { type: 'text/yaml' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `${detailItem?.name || 'resource'}.yaml`
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                }}
+                sx={{ textTransform: 'none' }}
+              >
+                下载 YAML
+              </Button>
+            </Box>
           )}
         </DialogTitle>
         <DialogContent dividers>
           {yamlMode ? (
-            <Box sx={{ position: 'relative' }}>
-              <Box sx={{ position: 'absolute', top: 0, right: 0 }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => navigator.clipboard.writeText(yamlContent)}
-                  sx={{ textTransform: 'none' }}
-                >
-                  复制
-                </Button>
-              </Box>
-              <Box
-                component="pre"
-                sx={{
-                  mt: 3,
-                  p: 2,
-                  bgcolor: 'rgba(0,0,0,0.03)',
-                  borderRadius: 2,
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                  maxHeight: '60vh',
-                  overflow: 'auto',
+            <Box sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <Editor
+                height="60vh"
+                language="yaml"
+                value={yamlContent}
+                theme="vs-dark"
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  fontSize: 13,
+                  wordWrap: 'on',
+                  automaticLayout: true,
                 }}
+              />
+              <Box
+                ref={preRef}
+                component="pre"
+                sx={{ position: 'absolute', left: '-9999px', top: 0, m: 0, p: 0, fontSize: 1, lineHeight: 1, opacity: 0 }}
               >
                 {yamlContent}
               </Box>
@@ -550,6 +640,17 @@ export default function ClusterDetail() {
           <Button onClick={() => setDetailOpen(false)} sx={{ textTransform: 'none' }}>关闭</Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={() => setSnackbar((s) => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snackbar.severity} onClose={() => setSnackbar((s) => ({ ...s, open: false }))}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

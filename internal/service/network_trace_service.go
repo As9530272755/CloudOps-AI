@@ -492,7 +492,7 @@ func (s *NetworkTraceService) CreateEphemeralDebug(ctx context.Context, clusterI
 	_, err = client.CoreV1().Pods(namespace).Patch(
 		ctx,
 		pod,
-		types.StrategicMergePatchType,
+		types.MergePatchType,
 		patchBytes,
 		metav1.PatchOptions{},
 		"ephemeralcontainers",

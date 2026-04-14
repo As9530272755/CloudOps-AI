@@ -6,10 +6,12 @@ export interface AIPlatformConfig {
     url: string
     token: string
     model: string
+    timeout?: number
   }
   ollama: {
     url: string
     model: string
+    timeout?: number
   }
 }
 

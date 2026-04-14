@@ -3,6 +3,7 @@ import { apiClient as api } from './api'
 export interface DataSource {
   id: number
   tenant_id: number
+  cluster_id?: number
   name: string
   type: string
   url: string
@@ -18,6 +19,7 @@ export interface CreateDataSourceRequest {
   type: string
   url: string
   config?: string
+  cluster_id?: number
   is_default?: boolean
 }
 
@@ -26,6 +28,7 @@ export interface ProxyQueryRequest {
   start?: string
   end?: string
   step?: string
+  extra_labels?: Record<string, string>
 }
 
 export interface ProxyQueryResponse {
