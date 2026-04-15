@@ -14,26 +14,29 @@ type PlatformConfig struct {
 
 // OpenClawDetail OpenClaw 配置细节
 type OpenClawDetail struct {
-	URL     string `json:"url"`
-	Token   string `json:"token"`
-	Model   string `json:"model"`
-	Timeout int    `json:"timeout"` // 秒，默认 300
+	URL                string `json:"url"`
+	Token              string `json:"token"`
+	Model              string `json:"model"`
+	Timeout            int    `json:"timeout"`             // 秒，默认 300
+	MaxHistoryMessages int    `json:"max_history_messages"` // 默认 10
 }
 
 // OllamaDetail Ollama 配置细节
 type OllamaDetail struct {
-	URL     string `json:"url"`
-	Model   string `json:"model"`
-	Timeout int    `json:"timeout"` // 秒，默认 600
+	URL                string `json:"url"`
+	Model              string `json:"model"`
+	Timeout            int    `json:"timeout"`             // 秒，默认 600
+	MaxContextLength   int    `json:"max_context_length"`   // 默认 4096
+	MaxHistoryMessages int    `json:"max_history_messages"` // 默认 10
 }
 
 // NewProvider 根据配置创建对应 Provider
 func NewProvider(cfg PlatformConfig, timeout time.Duration) (Provider, error) {
 	switch cfg.Provider {
 	case "ollama":
-		return NewOllamaProvider(cfg.Ollama.URL, cfg.Ollama.Model, timeout), nil
+		return NewOllamaProvider(cfg.Ollama.URL, cfg.Ollama.Model, timeout, cfg.Ollama.MaxContextLength, cfg.Ollama.MaxHistoryMessages), nil
 	case "openclaw", "openai":
-		return NewOpenClawProvider(cfg.OpenClaw.URL, cfg.OpenClaw.Token, cfg.OpenClaw.Model, timeout), nil
+		return NewOpenClawProvider(cfg.OpenClaw.URL, cfg.OpenClaw.Token, cfg.OpenClaw.Model, timeout, cfg.OpenClaw.MaxHistoryMessages), nil
 	default:
 		return nil, fmt.Errorf("不支持的 AI Provider: %s", cfg.Provider)
 	}

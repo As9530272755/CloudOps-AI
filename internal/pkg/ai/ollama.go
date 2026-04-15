@@ -14,13 +14,15 @@ import (
 
 // OllamaProvider Ollama 本地模型 Provider
 type OllamaProvider struct {
-	BaseURL string
-	Model   string
-	client  *http.Client
+	BaseURL            string
+	Model              string
+	maxContextLength   int
+	maxHistoryMessages int
+	client             *http.Client
 }
 
 // NewOllamaProvider 创建 Ollama Provider
-func NewOllamaProvider(baseURL, model string, timeout time.Duration) *OllamaProvider {
+func NewOllamaProvider(baseURL, model string, timeout time.Duration, maxContextLength, maxHistoryMessages int) *OllamaProvider {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
@@ -28,10 +30,18 @@ func NewOllamaProvider(baseURL, model string, timeout time.Duration) *OllamaProv
 	if model == "" {
 		model = "llama3"
 	}
+	if maxContextLength <= 0 {
+		maxContextLength = 4096
+	}
+	if maxHistoryMessages <= 0 {
+		maxHistoryMessages = 10
+	}
 	return &OllamaProvider{
-		BaseURL: baseURL,
-		Model:   model,
-		client:  &http.Client{Timeout: timeout},
+		BaseURL:            baseURL,
+		Model:              model,
+		maxContextLength:   maxContextLength,
+		maxHistoryMessages: maxHistoryMessages,
+		client:             &http.Client{Timeout: timeout},
 	}
 }
 
@@ -43,12 +53,19 @@ func (p *OllamaProvider) SetSessionID(id string) {
 	// Ollama 无会话概念，空实现
 }
 
+func (p *OllamaProvider) MaxHistoryMessages() int {
+	return p.maxHistoryMessages
+}
+
 func (p *OllamaProvider) ChatCompletion(ctx context.Context, messages []Message) (string, error) {
 	payload := map[string]interface{}{
 		"model":       p.Model,
 		"messages":    toOllamaMessages(messages),
 		"stream":      false,
-		"keep_alive":  "30m",
+		"keep_alive":  "5m",
+		"options": map[string]interface{}{
+			"num_ctx": p.maxContextLength,
+		},
 	}
 
 	b, err := json.Marshal(payload)
@@ -90,7 +107,10 @@ func (p *OllamaProvider) ChatCompletionStream(ctx context.Context, messages []Me
 		"model":       p.Model,
 		"messages":    toOllamaMessages(messages),
 		"stream":      true,
-		"keep_alive":  "30m",
+		"keep_alive":  "5m",
+		"options": map[string]interface{}{
+			"num_ctx": p.maxContextLength,
+		},
 	}
 
 	b, err := json.Marshal(payload)
@@ -208,8 +228,37 @@ func toOllamaMessages(messages []Message) []Message {
 }
 
 func (p *OllamaProvider) HealthCheck(ctx context.Context) error {
-	_, err := p.ChatCompletion(ctx, []Message{
-		{Role: "user", Content: "hello"},
-	})
-	return err
+	req, err := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/api/tags", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Ollama API 返回状态码 %d: %s", resp.StatusCode, string(body))
+	}
+	// 可选：检查模型是否存在
+	var result struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil // 只要能通就行，不强制要求模型一定存在
+	}
+	modelFound := false
+	for _, m := range result.Models {
+		if m.Name == p.Model || strings.HasPrefix(m.Name, p.Model+":") {
+			modelFound = true
+			break
+		}
+	}
+	if !modelFound && len(result.Models) > 0 {
+		return fmt.Errorf("Ollama 服务正常，但未找到模型 %s", p.Model)
+	}
+	return nil
 }

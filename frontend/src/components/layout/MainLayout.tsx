@@ -18,7 +18,7 @@ import {
   Toolbar,
   Tooltip,
 } from '@mui/material'
-import { alpha } from '@mui/material/styles'
+
 import {
   Dashboard as DashboardIcon,
   CloudQueue as ClusterIcon,
@@ -39,7 +39,7 @@ import {
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
 
-const DRAWER_WIDTH = 280
+const DRAWER_WIDTH = 260
 
 const menuItems = [
   { path: '/', label: '仪表盘', icon: <DashboardIcon />, group: '概览' },
@@ -80,10 +80,11 @@ export default function MainLayout() {
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Logo 区域 */}
+      {/* Logo */}
       <Box
         sx={{
-          p: 3,
+          px: 3,
+          py: 2.5,
           display: 'flex',
           alignItems: 'center',
           gap: 2,
@@ -91,137 +92,97 @@ export default function MainLayout() {
       >
         <Box
           sx={{
-            width: 44,
-            height: 44,
-            borderRadius: '14px',
-            background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
+            width: 40,
+            height: 40,
+            borderRadius: '10px',
+            bgcolor: 'primary.main',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(0, 122, 255, 0.3)',
           }}
         >
-          <ClusterIcon sx={{ color: '#FFFFFF', fontSize: 24 }} />
+          <ClusterIcon sx={{ color: 'primary.contrastText', fontSize: 22 }} />
         </Box>
         <Box sx={{ flex: 1 }}>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              fontSize: '1.125rem',
-              background: 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.0625rem', letterSpacing: '-0.02em' }}>
             CloudOps
           </Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
-            K8s 管理平台 v2.0
+            K8s 管理平台
           </Typography>
         </Box>
       </Box>
 
-      <Divider sx={{ mx: 2, opacity: 0.5 }} />
+      <Divider sx={{ mx: 3, borderColor: 'divider' }} />
 
-      {/* 菜单列表 */}
-      <Box sx={{ flex: 1, overflow: 'auto', py: 2 }}>
+      {/* Menu */}
+      <Box sx={{ flex: 1, overflow: 'auto', py: 2, px: 2 }}>
         {Object.entries(groupedItems).map(([group, items]) => (
           <Box key={group} sx={{ mb: 2 }}>
             <Typography
-              variant="caption"
+              variant="overline"
               sx={{
-                px: 3,
-                py: 1,
+                px: 2,
+                py: 0.75,
                 display: 'block',
                 color: 'text.secondary',
+                fontSize: '0.6875rem',
                 fontWeight: 600,
-                fontSize: '0.75rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
+                letterSpacing: '0.04em',
               }}
             >
               {group}
             </Typography>
-            <List sx={{ px: 1 }}>
-              {items.map((item) => (
-                <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-                  <ListItemButton
-                    selected={
-                      location.pathname === item.path ||
-                      (item.path !== '/' && location.pathname.startsWith(item.path))
-                    }
-                    onClick={() => handleNavigate(item.path)}
-                    sx={{
-                      position: 'relative',
-                      borderRadius: '10px',
-                      py: 1.25,
-                      px: 2,
-                      transition: 'background-color 0.2s',
-                      '&.Mui-selected': {
-                        bgcolor: alpha(theme.palette.primary.main, 0.08),
-                        color: theme.palette.primary.main,
-                        '&::before': {
-                          content: '""',
-                          position: 'absolute',
-                          left: 0,
-                          top: 8,
-                          bottom: 8,
-                          width: 3,
-                          borderRadius: '0 3px 3px 0',
-                          bgcolor: theme.palette.primary.main,
-                        },
-                        '& .MuiListItemIcon-root': {
-                          color: theme.palette.primary.main,
-                        },
-                        '&:hover': {
-                          bgcolor: alpha(theme.palette.primary.main, 0.1),
-                        },
-                      },
-                      '&:hover': {
-                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
-                      },
-                    }}
-                  >
-                    <ListItemIcon
+            <List sx={{ p: 0 }}>
+              {items.map((item) => {
+                const selected =
+                  location.pathname === item.path ||
+                  (item.path !== '/' && location.pathname.startsWith(item.path))
+                return (
+                  <ListItem key={item.path} disablePadding sx={{ mb: 0.25 }}>
+                    <ListItemButton
+                      selected={selected}
+                      onClick={() => handleNavigate(item.path)}
                       sx={{
-                        minWidth: 40,
-                        color:
-                          location.pathname === item.path ||
-                          (item.path !== '/' && location.pathname.startsWith(item.path))
-                            ? theme.palette.primary.main
-                            : 'text.secondary',
+                        py: 1,
+                        px: 2,
+                        borderRadius: '10px',
+                        color: selected ? 'text.primary' : 'text.secondary',
+                        bgcolor: selected ? 'action.selected' : 'transparent',
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                        },
                       }}
                     >
-                      {item.icon}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={item.label}
-                      primaryTypographyProps={{
-                        fontSize: '0.9375rem',
-                        fontWeight: 500,
-                      }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              ))}
+                      <ListItemIcon
+                        sx={{
+                          minWidth: 34,
+                          color: selected ? 'text.primary' : 'text.secondary',
+                        }}
+                      >
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={item.label}
+                        primaryTypographyProps={{
+                          fontSize: '0.875rem',
+                          fontWeight: selected ? 600 : 500,
+                        }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                )
+              })}
             </List>
           </Box>
         ))}
       </Box>
 
-      {/* 底部操作栏：折叠 + 主题切换 */}
-      <Box
-        sx={{
-          px: 2,
-          pb: 2,
-          pt: 1,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-        }}
-      >
-        <Tooltip title={open ? '隐藏侧边栏' : '展开侧边栏'}>
+      <Divider sx={{ mx: 3, borderColor: 'divider' }} />
+
+      {/* Bottom actions */}
+      <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Tooltip title={open ? '收起侧边栏' : '展开侧边栏'}>
           <IconButton
             onClick={handleDrawerToggle}
             sx={{
@@ -234,61 +195,55 @@ export default function MainLayout() {
               '&:hover': { bgcolor: 'action.hover' },
             }}
           >
-            {open ? <MenuOpenIcon /> : <MenuIcon />}
+            {open ? <MenuOpenIcon fontSize="small" /> : <MenuIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
         <Tooltip title={isDark ? '切换亮色模式' : '切换暗色模式'}>
           <IconButton
             onClick={toggleColorMode}
             sx={{
-              color: 'text.primary',
+              color: 'text.secondary',
               border: '1px solid',
               borderColor: 'divider',
               borderRadius: '10px',
               '&:hover': { bgcolor: 'action.hover' },
             }}
           >
-            {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+            {isDark ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
       </Box>
 
-      <Divider sx={{ mx: 2, opacity: 0.5 }} />
-
-      {/* 用户信息 */}
-      <Box
-        sx={{
-          p: 2,
-          m: 2,
-          borderRadius: '16px',
-          background: alpha(theme.palette.primary.main, 0.05),
-          border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+      {/* User */}
+      <Box sx={{ p: 2 }}>
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: '12px',
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+          }}
+        >
           <Avatar
             sx={{
-              width: 40,
-              height: 40,
-              background: 'linear-gradient(135deg, #5856D6 0%, #AF52DE 100%)',
-              fontSize: '1rem',
+              width: 36,
+              height: 36,
+              bgcolor: 'secondary.main',
+              fontSize: '0.875rem',
               fontWeight: 600,
             }}
           >
             {user?.username?.[0]?.toUpperCase() || 'A'}
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography
-              variant="body2"
-              noWrap
-              sx={{ fontWeight: 600, fontSize: '0.9375rem' }}
-            >
+            <Typography variant="body2" noWrap sx={{ fontWeight: 600, fontSize: '0.875rem' }}>
               {user?.username || 'Admin'}
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: 'text.secondary', fontSize: '0.75rem' }}
-            >
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
               {user?.is_superuser ? '系统管理员' : '用户'}
             </Typography>
           </Box>
@@ -299,7 +254,6 @@ export default function MainLayout() {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      {/* 侧边栏 */}
       <Drawer
         variant={isMobile ? 'temporary' : 'persistent'}
         open={open}
@@ -310,16 +264,12 @@ export default function MainLayout() {
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            borderRight: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
           },
         }}
       >
         {drawer}
       </Drawer>
 
-      {/* 主内容区 */}
       <Box
         sx={{
           flexGrow: 1,
@@ -332,14 +282,10 @@ export default function MainLayout() {
           }),
         }}
       >
-        {/* 移动端顶部栏 */}
         <AppBar
           position="static"
           elevation={0}
           sx={{
-            bgcolor: 'background.paper',
-            borderBottom: '1px solid',
-            borderColor: 'divider',
             display: { xs: 'flex', lg: 'none' },
           }}
         >
@@ -350,7 +296,6 @@ export default function MainLayout() {
           </Toolbar>
         </AppBar>
 
-        {/* 桌面端侧边栏收起时：左下角浮动工具条 */}
         {!open && !isMobile && (
           <Box
             sx={{
@@ -363,34 +308,33 @@ export default function MainLayout() {
               gap: 1,
               px: 1,
               py: 0.5,
-              borderRadius: '12px',
+              borderRadius: '10px',
               bgcolor: 'background.paper',
               border: '1px solid',
               borderColor: 'divider',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
             }}
           >
             <Tooltip title="展开侧边栏">
               <IconButton onClick={handleDrawerToggle} sx={{ color: 'text.primary' }}>
-                <MenuIcon />
+                <MenuIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title={isDark ? '切换亮色模式' : '切换暗色模式'}>
               <IconButton onClick={toggleColorMode} sx={{ color: 'text.primary' }}>
-                {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+                {isDark ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
               </IconButton>
             </Tooltip>
           </Box>
         )}
 
-        {/* 内容区 */}
         <Box
           component="main"
           sx={{
             flexGrow: 1,
             p: 0,
             minHeight: 'calc(100vh - 64px)',
-            bgcolor: 'transparent',
+            bgcolor: 'background.default',
           }}
         >
           <Outlet />

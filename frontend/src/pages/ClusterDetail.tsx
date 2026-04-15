@@ -371,8 +371,9 @@ export default function ClusterDetail() {
   return (
     <Box sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 顶部面包屑与操作 */}
-      <Card sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
-        <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 3 }}>
+        <Card>
+          <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Button startIcon={<BackIcon />} onClick={() => navigate('/clusters')} variant="outlined" size="small">
               返回
@@ -395,16 +396,17 @@ export default function ClusterDetail() {
             </Button>
           </Box>
         </CardContent>
-      </Card>
+        </Card>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
 
       {/* 主体：左侧 Tabs + 右侧内容 */}
-      <Card sx={{ flex: 1, display: 'flex', overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
+      <Card sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <Tabs
           orientation="vertical"
           value={activeCategory}
@@ -424,7 +426,7 @@ export default function ClusterDetail() {
               <Grid container spacing={3}>
                 {stats && Object.entries(stats).map(([key, value]) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={key}>
-                    <Card sx={{ border: '1px solid', borderColor: 'divider', textAlign: 'center', p: 2 }}>
+                    <Card sx={{ textAlign: 'center', p: 2 }}>
                       <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>{value}</Typography>
                       <Typography variant="body2" color="text.secondary">{resourceLabels[key] || key}</Typography>
                     </Card>
@@ -532,7 +534,7 @@ export default function ClusterDetail() {
       </Card>
 
       {/* 详情弹窗 */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
+      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{detailItem?.name || '资源详情'}</span>
           {yamlMode && (

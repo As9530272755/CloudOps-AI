@@ -23,4 +23,5 @@ type Provider interface {
 	ListModels(ctx context.Context) ([]string, error)
 	HealthCheck(ctx context.Context) error
 	SetSessionID(id string)
+	MaxHistoryMessages() int
 }

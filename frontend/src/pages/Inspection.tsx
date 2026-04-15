@@ -211,7 +211,7 @@ export default function Inspection() {
   return (
     <Box sx={{ p: 3 }}>
       {error && (
-        <Alert severity="error" sx={{ mb: 3, borderRadius: '12px' }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
@@ -227,7 +227,7 @@ export default function Inspection() {
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+          <Card>
             <CardContent>
               <Typography variant="body2" color="text.secondary">今日执行</Typography>
               <Typography variant="h4" sx={{ fontWeight: 700, mt: 1 }}>{jobs.filter(j => j.created_at && j.created_at.startsWith(new Date().toISOString().slice(0, 10))).length}</Typography>
@@ -235,7 +235,7 @@ export default function Inspection() {
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+          <Card>
             <CardContent>
               <Typography variant="body2" color="text.secondary">平均评分</Typography>
               <Typography variant="h4" sx={{ fontWeight: 700, mt: 1, color: scoreAvg >= 90 ? 'success.main' : scoreAvg >= 70 ? 'warning.main' : 'error.main' }}>
@@ -257,7 +257,7 @@ export default function Inspection() {
       </Grid>
 
       {/* Tabs */}
-      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Card>
         <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ px: 2, pt: 1 }}>
           <Tab label="巡检任务" />
           <Tab label="执行记录" />
@@ -269,13 +269,7 @@ export default function Inspection() {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
                 <Typography variant="h6" fontWeight={600}>巡检任务</Typography>
                 <Box sx={{ display: 'flex', gap: 1.5 }}>
-                  <Button
-                    variant="contained"
-                    startIcon={<QuickIcon />}
-                    onClick={handleQuickInspect}
-                    disabled={loading}
-                    sx={{ background: 'linear-gradient(135deg, #FF9500 0%, #FFCC00 100%)', color: 'white', borderRadius: '12px', textTransform: 'none', fontWeight: 600 }}
-                  >
+                  <Button variant="contained" startIcon={<QuickIcon />} onClick={handleQuickInspect} disabled={loading}>
                     一键巡检
                   </Button>
                   <Button
@@ -286,7 +280,6 @@ export default function Inspection() {
                       setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
                       setTaskDialog(true)
                     }}
-                    sx={{ background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)', color: 'white', borderRadius: '12px', textTransform: 'none' }}
                   >
                     新建任务
                   </Button>
@@ -425,7 +418,7 @@ export default function Inspection() {
       </Card>
 
       {/* 一键巡检集群选择弹窗 */}
-      <Dialog open={quickDialogOpen} onClose={() => setQuickDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
+      <Dialog open={quickDialogOpen} onClose={() => setQuickDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>选择要巡检的集群</DialogTitle>
         <DialogContent dividers>
           <FormControl fullWidth sx={{ mt: 1 }}>
@@ -448,14 +441,14 @@ export default function Inspection() {
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={() => setQuickDialogOpen(false)} sx={{ textTransform: 'none' }}>取消</Button>
-          <Button variant="contained" onClick={handleConfirmQuickInspect} sx={{ background: 'linear-gradient(135deg, #FF9500 0%, #FFCC00 100%)', color: 'white', borderRadius: '12px', textTransform: 'none' }}>
+          <Button variant="contained" onClick={handleConfirmQuickInspect}>
             开始巡检
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* 任务编辑弹窗 */}
-      <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
+      <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>{editingTask ? '编辑巡检任务' : '新建巡检任务'}</DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
@@ -507,14 +500,14 @@ export default function Inspection() {
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={() => setTaskDialog(false)} sx={{ textTransform: 'none' }}>取消</Button>
-          <Button variant="contained" onClick={handleSaveTask} sx={{ background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)', color: 'white', borderRadius: '12px', textTransform: 'none' }}>
+          <Button variant="contained" onClick={handleSaveTask}>
             保存
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* 报告详情弹窗 */}
-      <Dialog open={reportDialog} onClose={() => setReportDialog(false)} maxWidth={false} fullWidth PaperProps={{ sx: { borderRadius: '16px', width: '95vw', maxWidth: '1400px' } }}>
+      <Dialog open={reportDialog} onClose={() => setReportDialog(false)} maxWidth={false} fullWidth PaperProps={{ sx: { width: '95vw', maxWidth: '1400px' } }}>
         <DialogTitle sx={{ fontWeight: 600 }}>
           巡检报告 #{selectedJob?.job.id}
           {selectedJob && selectedJob.job.status === 'running' && (
@@ -544,7 +537,7 @@ export default function Inspection() {
                 selectedJob.results.map(r => {
                   const reportRef = React.createRef<HTMLDivElement>()
                   return (
-                    <Card key={r.id} sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
+                    <Card key={r.id} sx={{ mb: 2 }}>
                       <CardContent>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                           <Typography variant="subtitle1" fontWeight={600}>

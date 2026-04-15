@@ -28,7 +28,7 @@ export const aiChatAPI = {
   },
 
   // 流式对话 (SSE)
-  chatStream: (messages: Message[], onMessage: (chunk: { content?: string; done?: boolean; error?: string }) => void, sessionId?: string) => {
+  chatStream: (messages: Message[], onMessage: (chunk: { content?: string; done?: boolean; error?: string }) => void, sessionId?: string, platformId?: string) => {
     const token = localStorage.getItem('access_token')
     const controller = new AbortController()
 
@@ -43,7 +43,7 @@ export const aiChatAPI = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ messages, session_id: sessionId }),
+      body: JSON.stringify({ messages, session_id: sessionId, platform_id: platformId }),
       signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) {
@@ -62,8 +62,7 @@ export const aiChatAPI = {
       let buffer = ''
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
+        buffer += decoder.decode(value, { stream: !done })
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
 
@@ -83,8 +82,9 @@ export const aiChatAPI = {
             }
           }
         }
+        if (done) break
       }
-      // 处理可能残留的最后一行
+      buffer += decoder.decode(undefined, { stream: false })
       if (buffer.trim()) {
         const line = buffer.trim()
         if (line.startsWith('data: ')) {
@@ -103,6 +103,9 @@ export const aiChatAPI = {
       }
       onMessage({ done: true })
     }).catch((err) => {
+      if (err.name === 'AbortError' || (err.message && /aborted/i.test(err.message))) {
+        return
+      }
       onMessage({ error: err.message || '请求失败' })
     })
 

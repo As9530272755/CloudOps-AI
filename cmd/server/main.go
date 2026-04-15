@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -87,12 +88,20 @@ func main() {
 		log.Println("✅ 巡检调度器启动完成")
 	}
 
-	// 创建 AI 配置服务
+	// 创建 AI 配置服务（旧版兼容）
 	aiConfigService := service.NewAIConfigService(cfg.Security.JWT.Secret)
 	log.Println("✅ AI 配置服务初始化完成")
 
+	// 创建 AI 平台服务（多平台资源池）
+	aiPlatformService := service.NewAIPlatformService(db, cfg.Security.JWT.Secret)
+	log.Println("✅ AI 平台服务初始化完成")
+
+	// 创建 AI 会话服务
+	aiChatSessionService := service.NewAIChatSessionService(db)
+	log.Println("✅ AI 会话服务初始化完成")
+
 	// 创建通用 AI 服务
-	aiService := service.NewAIService(aiConfigService)
+	aiService := service.NewAIService(aiPlatformService, aiChatSessionService, aiConfigService)
 	log.Println("✅ AI 服务初始化完成")
 
 	// 初始化 Redis（可选，失败只打警告不退出）
@@ -108,9 +117,27 @@ func main() {
 	aiTaskService := service.NewAITaskService(db, redisClient, aiService)
 	log.Println("✅ AI 任务服务初始化完成")
 
+	// 启动定时任务：每天凌晨清理 7 天前已完成的 AI 任务
+	go func() {
+		for {
+			now := time.Now()
+			next := now.Add(24 * time.Hour)
+			next = time.Date(next.Year(), next.Month(), next.Day(), 2, 0, 0, 0, next.Location())
+			time.Sleep(next.Sub(now))
+			if err := db.Exec("DELETE FROM ai_tasks WHERE created_at < NOW() - INTERVAL '7 days' AND status IN ('completed','failed')").Error; err != nil {
+				log.Printf("⚠️ AI 任务清理失败: %v", err)
+			} else {
+				log.Println("✅ AI 任务清理完成")
+			}
+		}
+	}()
+
 	// 创建网络追踪服务
 	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db, aiService)
 	log.Println("✅ 网络追踪服务初始化完成")
+
+	// 注册 API 路由
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
@@ -151,8 +178,6 @@ func main() {
 		})
 	})
 
-	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiService, aiTaskService)
 	apiRouter.RegisterRoutes(router)
 	log.Println("✅ API 路由注册完成")
 

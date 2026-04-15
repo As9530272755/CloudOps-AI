@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
+
   Button,
   TextField,
   FormControl,
@@ -112,19 +111,17 @@ export default function Logs() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
-        <CardContent>
-          <Typography variant="h5" fontWeight={600} gutterBottom>
-            日志管理
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            选择集群和 Pod，粘贴日志内容，一键进行 AI 智能分析
-          </Typography>
-        </CardContent>
-      </Card>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" fontWeight={600} gutterBottom>
+          日志管理
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          选择集群和 Pod，粘贴日志内容，一键进行 AI 智能分析
+        </Typography>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
@@ -170,7 +167,6 @@ export default function Logs() {
           mb: 2,
           border: '1px solid',
           borderColor: 'divider',
-          borderRadius: '16px',
         }}
       >
         <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
@@ -194,15 +190,9 @@ export default function Logs() {
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
           <Button
             variant="contained"
-            startIcon={analyzing ? <CircularProgress size={18} sx={{ color: 'white' }} /> : <AIIcon />}
+            startIcon={analyzing ? <CircularProgress size={18} sx={{ color: 'inherit' }} /> : <AIIcon />}
             onClick={handleAnalyze}
             disabled={analyzing || !logs.trim()}
-            sx={{
-              borderRadius: '12px',
-              textTransform: 'none',
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
-            }}
           >
             {analyzing ? 'AI 分析中...' : 'AI 分析日志'}
           </Button>
@@ -216,8 +206,6 @@ export default function Logs() {
             p: 3,
             border: '1px solid',
             borderColor: 'divider',
-            borderRadius: '16px',
-            backgroundColor: (theme) => theme.palette.background.default,
           }}
         >
           <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>

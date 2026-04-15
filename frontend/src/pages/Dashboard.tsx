@@ -350,8 +350,9 @@ export default function Dashboard() {
       }}
     >
       {/* === Header toolbar === */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+      <Box sx={{ mb: 4 }}>
+        <Card>
+          <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 600 }}>仪表盘</Typography>
             <Typography variant="body2" color="text.secondary">
@@ -408,11 +409,12 @@ export default function Dashboard() {
             )}
           </Box>
         </CardContent>
-      </Card>
+        </Card>
+      </Box>
 
       {/* === Dashboard Grid (Grafana style) === */}
       {!dashboard && !editMode ? (
-        <Card sx={{ textAlign: 'center', py: 8 }}>
+        <Card sx={{ textAlign: 'center', py: 8, mt: 3 }}>
           <Typography variant="h6" sx={{ mb: 2 }}>
             暂无仪表盘
           </Typography>
@@ -423,7 +425,7 @@ export default function Dashboard() {
       ) : (
         <Box sx={{ position: 'relative' }}>
           {panels.length === 0 && !editMode && (
-            <Card sx={{ textAlign: 'center', py: 8 }}>
+            <Card sx={{ textAlign: 'center', py: 8, mt: 3 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>当前仪表盘为空</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 点击编辑按钮添加您的第一个监控面板

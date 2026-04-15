@@ -8,8 +8,8 @@ type AITask struct {
 	UserID    uint      `gorm:"index" json:"user_id"`
 	SessionID string    `gorm:"index;size:64" json:"session_id"`
 	Status    string    `gorm:"size:20" json:"status"` // pending / running / completed / failed
-	Result    string    `json:"result"`
-	Error     string    `json:"error,omitempty"`
+	Result    string    `gorm:"type:text" json:"result"`
+	Error     string    `gorm:"type:text" json:"error,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

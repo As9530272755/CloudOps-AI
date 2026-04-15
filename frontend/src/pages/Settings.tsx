@@ -29,7 +29,7 @@ import {
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as TestIcon } from '@mui/icons-material'
 
 import { DataSource, datasourceAPI, CreateDataSourceRequest } from '../lib/datasource-api'
-import { aiAPI, AIPlatformConfig } from '../lib/ai-api'
+import { aiPlatformAPI, AIPlatform, PlatformFormConfig } from '../lib/ai-platform-api'
 
 function DataSourceSettings() {
   const [dataSources, setDataSources] = useState<DataSource[]>([])
@@ -149,22 +149,12 @@ function DataSourceSettings() {
       )}
 
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        <Button
-          variant="contained"
-          onClick={() => handleOpen()}
-          sx={{
-            background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
-            color: 'white',
-            borderRadius: '12px',
-            textTransform: 'none',
-            fontWeight: 600,
-          }}
-        >
+        <Button variant="contained" onClick={() => handleOpen()}>
           添加数据源
         </Button>
       </Box>
 
-      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Card>
         <Table>
           <TableHead>
             <TableRow>
@@ -231,13 +221,7 @@ function DataSourceSettings() {
         </Table>
       </Card>
 
-      <Dialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: '16px' } }}
-      >
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>
           {editingId ? '编辑数据源' : '添加数据源'}
         </DialogTitle>
@@ -307,205 +291,363 @@ function DataSourceSettings() {
 }
 
 function AISettings() {
-  const [config, setConfig] = useState<AIPlatformConfig>({
-    provider: 'openclaw',
-    openclaw: { url: '', token: '', model: 'openclaw', timeout: 300 },
-    ollama: { url: '', model: 'llama3', timeout: 600 },
-  })
+  const [platforms, setPlatforms] = useState<AIPlatform[]>([])
   const [loading, setLoading] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<{
+    name: string
+    provider_type: 'openclaw' | 'ollama' | ''
+    config: PlatformFormConfig
+  }>({
+    name: '',
+    provider_type: '',
+    config: { url: '', token: '', model: '', timeout: 300, max_context_length: 4096, max_history_messages: 10 },
+  })
+  const [error, setError] = useState('')
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [testingDialog, setTestingDialog] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
   const [message, setMessage] = useState<{ text: string; severity: 'success' | 'error' } | null>(null)
-  useEffect(() => {
-    setLoading(true)
-    aiAPI.getConfig().then((res) => {
-      if (res.success && res.data) {
-        const data = res.data
-        if (data.provider === 'openclaw' && !data.openclaw.model) {
-          data.openclaw.model = 'openclaw'
-        }
-        if (data.provider === 'ollama' && !data.ollama.model) {
-          data.ollama.model = 'llama3'
-        }
-        if (data.provider === 'openclaw' && !data.openclaw.timeout) {
-          data.openclaw.timeout = 300
-        }
-        if (data.provider === 'ollama' && !data.ollama.timeout) {
-          data.ollama.timeout = 600
-        }
-        setConfig(data)
-      }
-    }).catch(() => {}).finally(() => setLoading(false))
-  }, [])
 
-  const handleSave = async () => {
-    setSaving(true)
-    setMessage(null)
+  const load = async () => {
+    setLoading(true)
     try {
-      const res = await aiAPI.updateConfig(config)
-      if (res.success) {
-        setMessage({ text: 'AI 平台配置已保存', severity: 'success' })
-        if (res.data) {
-          setConfig(res.data)
-        }
-      } else {
-        setMessage({ text: res.error || '保存失败', severity: 'error' })
+      const res = await aiPlatformAPI.list()
+      if (res.success && Array.isArray(res.data)) {
+        setPlatforms(res.data)
       }
     } catch (err: any) {
-      setMessage({ text: err.message || '保存失败', severity: 'error' })
+      setMessage({ text: err.message || '加载失败', severity: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const handleOpen = async (p?: AIPlatform) => {
+    if (p) {
+      setEditingId(p.id)
+      try {
+        const res = await aiPlatformAPI.get(p.id)
+        if (res.success && res.data && 'config' in (res.data as any)) {
+          const data = res.data as any
+          setForm({
+            name: data.name || p.name,
+            provider_type: data.provider_type || p.provider_type,
+            config: {
+              url: data.config?.url || '',
+              token: data.config?.token || '',
+              model: data.config?.model || (data.provider_type === 'ollama' ? 'llama3' : 'openclaw'),
+              timeout: data.config?.timeout || (data.provider_type === 'ollama' ? 600 : 300),
+              max_context_length: data.config?.max_context_length || (data.provider_type === 'ollama' ? 4096 : undefined),
+              max_history_messages: data.config?.max_history_messages || 10,
+            },
+          })
+        } else {
+          setForm({
+            name: p.name,
+            provider_type: p.provider_type as any,
+            config: { url: '', token: '', model: '', timeout: p.provider_type === 'ollama' ? 600 : 300, max_history_messages: 10 },
+          })
+        }
+      } catch {
+        setForm({
+          name: p.name,
+          provider_type: p.provider_type as any,
+          config: { url: '', token: '', model: '', timeout: p.provider_type === 'ollama' ? 600 : 300 },
+        })
+      }
+    } else {
+      setEditingId(null)
+      setForm({ name: '', provider_type: '', config: { url: '', token: '', model: '', timeout: 300, max_history_messages: 10 } })
+    }
+    setDialogOpen(true)
+    setTestingDialog(false)
+    setError('')
+  }
+
+  const handleSave = async () => {
+    if (!form.name || !form.provider_type || !form.config.url) {
+      setError('请填写名称、平台类型和服务地址')
+      return
+    }
+    if (!form.config.model) {
+      form.config.model = form.provider_type === 'ollama' ? 'llama3' : 'openclaw'
+    }
+    setSaving(true)
+    try {
+      if (editingId) {
+        await aiPlatformAPI.update(editingId, { name: form.name, config: form.config })
+      } else {
+        await aiPlatformAPI.create({
+          name: form.name,
+          provider_type: form.provider_type,
+          config: form.config,
+        })
+      }
+      setDialogOpen(false)
+      load()
+    } catch (err: any) {
+      setError(err.message || '保存失败')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleTest = async () => {
-    setTesting(true)
-    setMessage(null)
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定要删除此 AI 平台吗？')) return
     try {
-      const res = await aiAPI.testConnection()
-      if (res.success) {
-        setMessage({ text: res.message || '连接成功', severity: 'success' })
-      } else {
-        setMessage({ text: res.error || '连接失败', severity: 'error' })
-      }
+      await aiPlatformAPI.delete(id)
+      load()
     } catch (err: any) {
-      setMessage({ text: err.message || '连接测试失败', severity: 'error' })
-    } finally {
-      setTesting(false)
+      alert(err.message || '删除失败')
     }
   }
 
+  const handleTest = async (id: string) => {
+    setTestingId(id)
+    try {
+      const res = await aiPlatformAPI.test(id)
+      alert(res.success ? `连通成功: ${res.message}` : `连通失败: ${res.error}`)
+      load()
+    } catch (err: any) {
+      alert(err.message || '测试失败')
+    } finally {
+      setTestingId(null)
+    }
+  }
 
+  const handleSetDefault = async (id: string) => {
+    try {
+      await aiPlatformAPI.setDefault(id)
+      load()
+    } catch (err: any) {
+      alert(err.message || '设置失败')
+    }
+  }
 
-  if (loading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
+  const formatTime = (t?: string) => {
+    if (!t) return '-'
+    const d = new Date(t)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
 
   return (
-    <Box sx={{ maxWidth: 600 }}>
-      {message && (
-        <Alert severity={message.severity} sx={{ mb: 2, borderRadius: '12px' }}>
+    <Box>
+      {message && !dialogOpen && (
+        <Alert severity={message.severity} sx={{ mb: 2 }}>
           {message.text}
         </Alert>
       )}
 
-      <Card sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '16px' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-          <Typography variant="h6" fontWeight={600}>🤖 AI 平台配置</Typography>
-          {(config.provider === 'openclaw' && config.openclaw.url) || (config.provider === 'ollama' && config.ollama.url) ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, borderRadius: '8px', bgcolor: 'success.light', color: 'success.contrastText' }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.dark' }} />
-              <Typography variant="caption" fontWeight={600}>
-                已对接 {config.provider === 'openclaw' ? 'OpenClaw' : 'Ollama'}
-                {config.provider === 'ollama' && config.ollama.model ? ` · ${config.ollama.model}` : ''}
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, borderRadius: '8px', bgcolor: 'action.selected', color: 'text.secondary' }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'text.disabled' }} />
-              <Typography variant="caption" fontWeight={600}>未配置</Typography>
-            </Box>
-          )}
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          配置 OpenClaw 或 Ollama 后，CloudOps 的 AI 助手、巡检报告、网络追踪分析等功能将自动具备智能总结能力。
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <Button variant="contained" onClick={() => handleOpen()}>
+          新增对接
+        </Button>
+      </Box>
 
-        <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel>AI 平台类型</InputLabel>
-          <Select
-            value={config.provider}
-            label="AI 平台类型"
-            onChange={(e) => setConfig({ ...config, provider: e.target.value as any })}
-          >
-            <MenuItem value="openclaw">OpenClaw</MenuItem>
-            <MenuItem value="ollama">Ollama</MenuItem>
-          </Select>
-        </FormControl>
-
-        {config.provider === 'openclaw' && (
-          <>
-            <TextField
-              label="OpenClaw 服务地址"
-              value={config.openclaw.url}
-              onChange={(e) => setConfig({ ...config, openclaw: { ...config.openclaw, url: e.target.value } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="http://openclaw.internal:8080"
-              helperText="提示：127.0.0.1 / localhost 指向 CloudOps 服务端本身，如 OpenClaw 在您的个人电脑上，请填写本机局域网真实 IP"
-            />
-            <TextField
-              label="API Token"
-              type="password"
-              value={config.openclaw.token}
-              onChange={(e) => setConfig({ ...config, openclaw: { ...config.openclaw, token: e.target.value } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="sk-xxxxxxxx"
-            />
-            <TextField
-              label="请求超时时长（秒）"
-              type="number"
-              value={config.openclaw.timeout ?? 300}
-              onChange={(e) => setConfig({ ...config, openclaw: { ...config.openclaw, timeout: parseInt(e.target.value) || 300 } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="300"
-              helperText="建议 60 ~ 600 秒，根据 OpenClaw 下游模型响应速度调整"
-            />
-          </>
-        )}
-
-        {config.provider === 'ollama' && (
-          <>
-            <TextField
-              label="Ollama 服务地址"
-              value={config.ollama.url}
-              onChange={(e) => setConfig({ ...config, ollama: { ...config.ollama, url: e.target.value } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="http://localhost:11434"
-            />
-            <TextField
-              label="模型名称"
-              value={config.ollama.model}
-              onChange={(e) => setConfig({ ...config, ollama: { ...config.ollama, model: e.target.value } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="llama3"
-            />
-            <TextField
-              label="请求超时时长（秒）"
-              type="number"
-              value={config.ollama.timeout ?? 600}
-              onChange={(e) => setConfig({ ...config, ollama: { ...config.ollama, timeout: parseInt(e.target.value) || 600 } })}
-              fullWidth
-              sx={{ mb: 2 }}
-              placeholder="600"
-              helperText="Ollama 首次加载模型较慢，建议 300 ~ 1200 秒"
-            />
-          </>
-        )}
-
-        <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-          <Button
-            variant="outlined"
-            onClick={handleTest}
-            disabled={testing}
-            sx={{ borderRadius: '12px', textTransform: 'none' }}
-          >
-            {testing ? <CircularProgress size={20} /> : '测试连接'}
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving}
-            sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600 }}
-          >
-            {saving ? <CircularProgress size={20} sx={{ color: 'white' }} /> : '保存配置'}
-          </Button>
-        </Box>
+      <Card>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>名称</TableCell>
+              <TableCell>Provider</TableCell>
+              <TableCell>状态</TableCell>
+              <TableCell>对接时间</TableCell>
+              <TableCell>默认</TableCell>
+              <TableCell align="right">操作</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} align="center">
+                  <CircularProgress size={24} />
+                </TableCell>
+              </TableRow>
+            ) : platforms.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} align="center" sx={{ color: 'text.secondary' }}>
+                  暂无 AI 平台，点击右上角添加
+                </TableCell>
+              </TableRow>
+            ) : (
+              platforms.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>{p.name}</TableCell>
+                  <TableCell>
+                    <Chip label={p.provider_type.toUpperCase()} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={p.status === 'online' ? '在线' : p.status === 'offline' ? '离线' : '未知'}
+                      color={p.status === 'online' ? 'success' : p.status === 'offline' ? 'error' : 'default'}
+                      size="small"
+                    />
+                  </TableCell>
+                  <TableCell>{formatTime(p.created_at)}</TableCell>
+                  <TableCell>{p.is_default ? '是' : '-'}</TableCell>
+                  <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleTest(p.id)}
+                      disabled={testingId === p.id}
+                      title="测试连接"
+                    >
+                      {testingId === p.id ? <CircularProgress size={18} /> : <TestIcon fontSize="small" />}
+                    </IconButton>
+                    {!p.is_default && (
+                      <Button
+                        size="small"
+                        onClick={() => handleSetDefault(p.id)}
+                        sx={{ minWidth: 0, mr: 0.5, fontSize: 12 }}
+                      >
+                        设为默认
+                      </Button>
+                    )}
+                    <IconButton size="small" onClick={() => handleOpen(p)} title="编辑">
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={() => handleDelete(p.id)} title="删除">
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </Card>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>
+          {editingId ? '编辑 AI 平台' : '新增 AI 平台'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            {error && <Alert severity="error">{error}</Alert>}
+            <TextField
+              label="平台名称"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              fullWidth
+              placeholder="如：公司 OpenClaw"
+            />
+            <FormControl fullWidth>
+              <InputLabel>平台类型</InputLabel>
+              <Select
+                value={form.provider_type}
+                label="平台类型"
+                onChange={(e) => {
+                  const pt = e.target.value as any
+                  setForm({
+                    ...form,
+                    provider_type: pt,
+                    config: {
+                      ...form.config,
+                      model: pt === 'ollama' ? 'llama3' : 'openclaw',
+                      timeout: pt === 'ollama' ? 600 : 300,
+                      max_context_length: pt === 'ollama' ? 4096 : undefined,
+                      max_history_messages: form.config.max_history_messages || 10,
+                    },
+                  })
+                }}
+              >
+                <MenuItem value="openclaw">OpenClaw</MenuItem>
+                <MenuItem value="ollama">Ollama</MenuItem>
+              </Select>
+            </FormControl>
+
+            {form.provider_type && (
+              <>
+                <TextField
+                  label="服务地址"
+                  value={form.config.url}
+                  onChange={(e) => setForm({ ...form, config: { ...form.config, url: e.target.value } })}
+                  fullWidth
+                  placeholder={form.provider_type === 'ollama' ? 'http://localhost:11434' : 'http://127.0.0.1:18789'}
+                />
+                {form.provider_type === 'openclaw' && (
+                  <TextField
+                    label="API Token"
+                    type="password"
+                    value={form.config.token}
+                    onChange={(e) => setForm({ ...form, config: { ...form.config, token: e.target.value } })}
+                    fullWidth
+                    placeholder="sk-xxxxxxxx"
+                  />
+                )}
+                <TextField
+                  label="模型名称"
+                  value={form.config.model}
+                  onChange={(e) => setForm({ ...form, config: { ...form.config, model: e.target.value } })}
+                  fullWidth
+                  placeholder={form.provider_type === 'ollama' ? 'llama3' : 'openclaw'}
+                />
+                <TextField
+                  label="请求超时时长（秒）"
+                  type="number"
+                  value={form.config.timeout}
+                  onChange={(e) => setForm({ ...form, config: { ...form.config, timeout: parseInt(e.target.value) || 300 } })}
+                  fullWidth
+                  placeholder="300"
+                  helperText={form.provider_type === 'ollama' ? 'Ollama 首次加载模型较慢，建议 300 ~ 1200 秒' : '建议 60 ~ 1800 秒'}
+                />
+                {form.provider_type === 'ollama' && (
+                  <TextField
+                    label="最大上下文长度（num_ctx）"
+                    type="number"
+                    value={form.config.max_context_length}
+                    onChange={(e) => setForm({ ...form, config: { ...form.config, max_context_length: parseInt(e.target.value) || 4096 } })}
+                    fullWidth
+                    placeholder="4096"
+                    helperText="Ollama 加载模型时分配的上下文 token 数，建议 2048 ~ 32768"
+                  />
+                )}
+                <TextField
+                  label="最大历史消息条数"
+                  type="number"
+                  value={form.config.max_history_messages}
+                  onChange={(e) => setForm({ ...form, config: { ...form.config, max_history_messages: parseInt(e.target.value) || 10 } })}
+                  fullWidth
+                  placeholder="10"
+                  helperText="发送给 AI 时保留的最近消息条数（不含 system），建议 5 ~ 30"
+                />
+              </>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => { setDialogOpen(false); setTestingDialog(false) }}>取消</Button>
+          {editingId && (
+            <Button
+              variant="outlined"
+              onClick={async () => {
+                setTestingDialog(true)
+                try {
+                  const res = await aiPlatformAPI.test(editingId)
+                  alert(res.success ? `连通成功: ${res.message}` : `连通失败: ${res.error}`)
+                } catch (err: any) {
+                  alert(err.message || '测试失败')
+                } finally {
+                  setTestingDialog(false)
+                }
+              }}
+              disabled={testingDialog}
+              sx={{ mr: 'auto' }}
+            >
+              {testingDialog ? <CircularProgress size={18} /> : '测试连接'}
+            </Button>
+          )}
+          <Button variant="contained" onClick={handleSave} disabled={saving}>
+            {saving ? <CircularProgress size={20} sx={{ color: 'inherit' }} /> : '保存'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
@@ -515,18 +657,16 @@ export default function Settings() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
-        <CardContent>
-          <Typography variant="h5" fontWeight={600} gutterBottom>
-            系统设置
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            管理数据源、AI 平台和系统配置
-          </Typography>
-        </CardContent>
-      </Card>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" fontWeight={600} gutterBottom>
+          系统设置
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          管理数据源、AI 平台和系统配置
+        </Typography>
+      </Box>
 
-      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Card>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, pt: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Tab label="数据源" />
           <Tab label="AI 平台" />

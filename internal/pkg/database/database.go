@@ -3,10 +3,10 @@ package database
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/config"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -87,6 +87,9 @@ func autoMigrate(db *gorm.DB) error {
 		&model.InspectionResult{},
 		&model.InspectionRule{},
 		&model.AITask{},
+		&model.AIPlatform{},
+		&model.AIChatSession{},
+		&model.AIChatMessage{},
 	)
 }
 
@@ -185,12 +188,12 @@ func initDefaultData(db *gorm.DB) error {
 
 // HashPassword 密码哈希 (简化版，实际应使用 bcrypt)
 func HashPassword(password string) string {
-	// TODO: 使用 bcrypt 加密
-	return fmt.Sprintf("hashed_%s_%d", password, time.Now().Unix())
+	bytes, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes)
 }
 
-// CheckPassword 验证密码 (简化版)
+// CheckPassword 验证密码
 func CheckPassword(password, hash string) bool {
-	// TODO: 使用 bcrypt 验证
-	return true
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 }

@@ -264,6 +264,46 @@ git push origin main
 - **影响**：若 `data/ai_platform_config.json` 中 `provider` 为 `openclaw`，则 AI 助手可能无法获得回复
 - **Workaround**：临时将 `provider` 切换为 `ollama`，绕过 OpenClaw 故障
 
+### 8.15 前端 UI：iOS 风格扁平化重设计
+- **改造内容**：全站按钮移除渐变、统一 12px 圆角、采用 Inter 字体、去除玻璃拟态效果
+- **影响范围**：所有 MUI 组件主题 (`theme.ts`) 及各个页面按钮/卡片样式
+
+### 8.16 系统：Admin 登录修复
+- **根因**：`users.password_hash` 中存的是假 hash `hashed_admin_1775702881`，而 `CheckPassword` 已改为真实 `bcrypt.CompareHashAndPassword`
+- **修复**：数据库中 `admin` 用户的密码 hash 更新为真实 bcrypt hash，账号 `admin / admin` 可正常登录
+
+### 8.17 AI 助手：页面布局溢出修复
+- **根因**：消息气泡无宽度限制、长文本撑开容器，导致顶部栏被推出视口
+- **修复**：根容器添加 `overflow: 'hidden'`、`flexWrap`，消息气泡限制 `maxWidth: '80%'`
+
+### 8.18 AI 助手：跨导航 Sidebar Spinner 修复
+- **根因**：切到其他页面再回来，SSE 已结束但前端 pending 状态丢失，spinner 一直转
+- **修复**：`pendingRepliesRef` 持久化到 `sessionStorage`；`switchSession` 加载消息时自动校验：若最后一条 DB 消息已是 assistant 且内容完整，强制把 pending 置为 `loading: false`
+
+### 8.19 巡检中心：删除集群的巡检结果过滤
+- **根因**：集群被删除后，其历史 `inspection_results` 仍留在数据库，`GetJob` 返回了已不存在集群的数据
+- **修复**：`internal/api/handlers/inspection.go` 的 `GetJob` 增加 `WHERE cluster_id IN (SELECT id FROM clusters)` 过滤
+
+### 8.20 AI 助手：in-session streaming spinner 卡住修复
+- **根因**：SSE `done` 到达后调用 `StreamingMessage.finalize()`，若 `divRef` 已卸载会抛异常，中断后续 `setStreaming(false)`
+- **修复**：所有 `finalize()` 调用点（done / error / watchdog 超时）统一加 `try/catch` 保护，确保状态必定被重置
+
+### 8.21 AI 助手：长对话性能优化
+- **根因**：
+  1. `input` 状态在顶层 `AI()`，每次按键触发整棵树重渲染
+  2. 历史消息无 `memo`，`ReactMarkdown` 重复解析
+  3. 所有消息真实 DOM 节点只增不减
+  4. `StreamingMessage` 流式阶段每 chunk 都 `marked.parse` 全部内容
+- **修复**：
+  1. 提取独立 `ChatInput` 组件，`input` 状态下沉
+  2. `ContentBlock`、`MessageItem` 全部 `React.memo`
+  3. 引入 `react-virtuoso` 虚拟滚动，仅渲染可视区域消息
+  4. `StreamingMessage.append` 改为纯文本节点追加，零 markdown 解析开销，结束时再统一 `marked.parse`
+
+### 8.22 AI 助手：新增「回到底部」快捷按钮
+- **需求**：历史消息较长时，用户上翻查看后需要一键快速回到最新消息
+- **实现**：聊天区域底部居中浮动按钮，仅在用户向上滚动离开底部时显示，点击后平滑滚动至最后一条消息
+
 ---
 
 *最后更新：2026-04-15*

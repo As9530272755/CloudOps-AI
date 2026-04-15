@@ -14,15 +14,16 @@ import (
 
 // OpenClawProvider OpenClaw / OpenAI 兼容 Provider
 type OpenClawProvider struct {
-	BaseURL   string
-	APIKey    string
-	Model     string
-	SessionID string
-	client    *http.Client
+	BaseURL            string
+	APIKey             string
+	Model              string
+	SessionID          string
+	maxHistoryMessages int
+	client             *http.Client
 }
 
 // NewOpenClawProvider 创建 OpenClaw Provider
-func NewOpenClawProvider(baseURL, apiKey, model string, timeout time.Duration) *OpenClawProvider {
+func NewOpenClawProvider(baseURL, apiKey, model string, timeout time.Duration, maxHistoryMessages int) *OpenClawProvider {
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
@@ -30,11 +31,15 @@ func NewOpenClawProvider(baseURL, apiKey, model string, timeout time.Duration) *
 	if model == "" {
 		model = "default"
 	}
+	if maxHistoryMessages <= 0 {
+		maxHistoryMessages = 10
+	}
 	return &OpenClawProvider{
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Model:   model,
-		client:  &http.Client{Timeout: timeout},
+		BaseURL:            baseURL,
+		APIKey:             apiKey,
+		Model:              model,
+		maxHistoryMessages: maxHistoryMessages,
+		client:             &http.Client{Timeout: timeout},
 	}
 }
 
@@ -44,6 +49,10 @@ func (p *OpenClawProvider) Name() string {
 
 func (p *OpenClawProvider) SetSessionID(id string) {
 	p.SessionID = id
+}
+
+func (p *OpenClawProvider) MaxHistoryMessages() int {
+	return p.maxHistoryMessages
 }
 
 func (p *OpenClawProvider) setAuth(req *http.Request) {
@@ -293,8 +302,6 @@ func (p *OpenClawProvider) ListModels(ctx context.Context) ([]string, error) {
 }
 
 func (p *OpenClawProvider) HealthCheck(ctx context.Context) error {
-	_, err := p.ChatCompletion(ctx, []Message{
-		{Role: "user", Content: "hello"},
-	})
+	_, err := p.ListModels(ctx)
 	return err
 }

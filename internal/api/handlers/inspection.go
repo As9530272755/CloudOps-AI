@@ -239,7 +239,7 @@ func (h *InspectionHandler) GetJob(c *gin.Context) {
 		return
 	}
 	var results []model.InspectionResult
-	h.inspectionService.DB().Where("job_id = ?", id).Find(&results)
+	h.inspectionService.DB().Where("job_id = ?", id).Where("cluster_id IN (?)", h.inspectionService.DB().Model(&model.Cluster{}).Select("id")).Find(&results)
 
 	var resp []inspectionResultResp
 	for _, r := range results {

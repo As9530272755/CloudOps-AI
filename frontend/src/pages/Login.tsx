@@ -10,11 +10,9 @@ import {
   Alert,
   CircularProgress,
   Avatar,
-  alpha,
 } from '@mui/material'
 import { CloudQueue as CloudIcon } from '@mui/icons-material'
 import { useLogin } from '../lib/api'
-
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -51,96 +49,45 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        position: 'relative',
-        overflow: 'hidden',
-        // iOS 风格渐变背景
-        background: `
-          linear-gradient(135deg, #667eea 0%, #764ba2 100%)
-        `,
-        // 装饰圆形
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          width: '600px',
-          height: '600px',
-          borderRadius: '50%',
-          background: 'rgba(255, 255, 255, 0.1)',
-          top: '-200px',
-          right: '-200px',
-        },
-        '&::after': {
-          content: '""',
-          position: 'absolute',
-          width: '400px',
-          height: '400px',
-          borderRadius: '50%',
-          background: 'rgba(255, 255, 255, 0.05)',
-          bottom: '-100px',
-          left: '-100px',
-        },
+        bgcolor: 'background.default',
+        px: 2,
       }}
     >
       <Card
         sx={{
           width: '100%',
-          maxWidth: 420,
-          mx: 2,
-          borderRadius: '24px',
-          bgcolor: 'background.paper',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
-          position: 'relative',
-          zIndex: 1,
+          maxWidth: 400,
+          borderRadius: '16px',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.06)',
         }}
       >
         <CardContent sx={{ p: 4 }}>
-          {/* Logo */}
           <Box sx={{ textAlign: 'center', mb: 4 }}>
             <Avatar
               sx={{
-                width: 72,
-                height: 72,
+                width: 64,
+                height: 64,
                 mx: 'auto',
                 mb: 2,
-                background: 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
-                boxShadow: '0 8px 24px rgba(0, 122, 255, 0.3)',
+                bgcolor: 'primary.main',
               }}
             >
-              <CloudIcon sx={{ fontSize: 40 }} />
+              <CloudIcon sx={{ fontSize: 32, color: 'primary.contrastText' }} />
             </Avatar>
-            <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-            >
+            <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
               CloudOps
             </Typography>
-            <Typography
-              variant="body2"
-              sx={{ mt: 1, color: 'text.secondary' }}
-            >
+            <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
               云原生运维管理平台
             </Typography>
           </Box>
 
-          {/* 错误提示 */}
           {error && (
-            <Alert
-              severity="error"
-              sx={{
-                mb: 3,
-                borderRadius: '12px',
-                bgcolor: 'background.paper',
-              }}
-            >
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
             </Alert>
           )}
 
-          {/* 登录表单 */}
           <Box component="form" onSubmit={handleSubmit}>
             <TextField
               fullWidth
@@ -151,20 +98,6 @@ export default function Login() {
               onChange={(e) => setUsername(e.target.value)}
               autoFocus
               disabled={loginMutation.isPending}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: '14px',
-                  bgcolor: 'rgba(255, 255, 255, 0.5)',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: 'rgba(255, 255, 255, 0.7)',
-                  },
-                  '&.Mui-focused': {
-                    bgcolor: '#FFFFFF',
-                    boxShadow: '0 0 0 4px rgba(0, 122, 255, 0.15)',
-                  },
-                },
-              }}
             />
             <TextField
               fullWidth
@@ -175,20 +108,6 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loginMutation.isPending}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: '14px',
-                  bgcolor: 'rgba(255, 255, 255, 0.5)',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: 'rgba(255, 255, 255, 0.7)',
-                  },
-                  '&.Mui-focused': {
-                    bgcolor: '#FFFFFF',
-                    boxShadow: '0 0 0 4px rgba(0, 122, 255, 0.15)',
-                  },
-                },
-              }}
             />
             <Button
               type="submit"
@@ -196,28 +115,7 @@ export default function Login() {
               variant="contained"
               size="large"
               disabled={loginMutation.isPending}
-              sx={{
-                mt: 3,
-                mb: 2,
-                py: 1.5,
-                borderRadius: '14px',
-                fontSize: '1rem',
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
-                boxShadow: '0 4px 14px rgba(0, 122, 255, 0.35)',
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #0051D5 0%, #3634A3 100%)',
-                  boxShadow: '0 6px 20px rgba(0, 122, 255, 0.45)',
-                  transform: 'translateY(-1px)',
-                },
-                '&:active': {
-                  transform: 'translateY(0)',
-                },
-                '&:disabled': {
-                  background: 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
-                },
-              }}
+              sx={{ mt: 3, mb: 2, py: 1.5, fontSize: '1rem' }}
             >
               {loginMutation.isPending ? (
                 <CircularProgress size={24} color="inherit" />
@@ -227,14 +125,12 @@ export default function Login() {
             </Button>
           </Box>
 
-          {/* 提示 */}
           <Box
             sx={{
               mt: 3,
               p: 2,
-              borderRadius: '12px',
-              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05),
-              border: (theme) => `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+              borderRadius: '10px',
+              bgcolor: 'action.hover',
             }}
           >
             <Typography

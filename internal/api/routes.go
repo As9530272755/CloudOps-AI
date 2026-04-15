@@ -11,32 +11,36 @@ import (
 
 // Router API 路由
 type Router struct {
-	authHandler         *handlers.AuthHandler
-	clusterHandler      *handlers.ClusterHandler
-	k8sHandler          *handlers.K8sHandler
-	dsHandler           *handlers.DatasourceHandler
-	dashboardHandler    *handlers.DashboardHandler
-	inspectionHandler   *handlers.InspectionHandler
-	networkTraceHandler *handlers.NetworkTraceHandler
-	aiConfigHandler     *handlers.AIConfigHandler
-	aiChatHandler       *handlers.AIChatHandler
-	aiTaskService       *service.AITaskService
-	jwtManager          *auth.JWTManager
+	authHandler          *handlers.AuthHandler
+	clusterHandler       *handlers.ClusterHandler
+	k8sHandler           *handlers.K8sHandler
+	dsHandler            *handlers.DatasourceHandler
+	dashboardHandler     *handlers.DashboardHandler
+	inspectionHandler    *handlers.InspectionHandler
+	networkTraceHandler  *handlers.NetworkTraceHandler
+	aiConfigHandler      *handlers.AIConfigHandler
+	aiPlatformHandler    *handlers.AIPlatformHandler
+	aiChatSessionHandler *handlers.AIChatSessionHandler
+	aiChatHandler        *handlers.AIChatHandler
+	aiTaskService        *service.AITaskService
+	jwtManager           *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiService *service.AIService, aiTaskSvc *service.AITaskService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService) *Router {
 	return &Router{
-		authHandler:         handlers.NewAuthHandler(jwtManager),
-		clusterHandler:      handlers.NewClusterHandler(clusterService),
-		k8sHandler:          handlers.NewK8sHandler(k8sService),
-		dsHandler:           handlers.NewDatasourceHandler(dsService),
-		dashboardHandler:    handlers.NewDashboardHandler(dashboardService),
-		inspectionHandler:   handlers.NewInspectionHandler(inspectionService),
-		networkTraceHandler: handlers.NewNetworkTraceHandler(networkTraceService),
-		aiConfigHandler:     handlers.NewAIConfigHandler(aiConfigService),
-		aiChatHandler:       handlers.NewAIChatHandler(aiService, aiTaskSvc),
-		jwtManager:          jwtManager,
+		authHandler:          handlers.NewAuthHandler(jwtManager),
+		clusterHandler:       handlers.NewClusterHandler(clusterService),
+		k8sHandler:           handlers.NewK8sHandler(k8sService),
+		dsHandler:            handlers.NewDatasourceHandler(dsService),
+		dashboardHandler:     handlers.NewDashboardHandler(dashboardService),
+		inspectionHandler:    handlers.NewInspectionHandler(inspectionService),
+		networkTraceHandler:  handlers.NewNetworkTraceHandler(networkTraceService),
+		aiConfigHandler:      handlers.NewAIConfigHandler(aiConfigService, aiPlatformService),
+		aiPlatformHandler:    handlers.NewAIPlatformHandler(aiPlatformService),
+		aiChatSessionHandler: handlers.NewAIChatSessionHandler(aiChatSessionService),
+		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService),
+		jwtManager:           jwtManager,
 	}
 }
 
@@ -124,11 +128,29 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				inspection.GET("/results/:id", r.inspectionHandler.GetResult)
 			}
 
-			// AI 平台配置
+			// AI 平台配置（旧版兼容）
 			protected.GET("/settings/ai", r.aiConfigHandler.GetConfig)
 			protected.PUT("/settings/ai", r.aiConfigHandler.UpdateConfig)
 			protected.POST("/settings/ai/test", r.aiConfigHandler.TestConnection)
 			protected.GET("/settings/ai/models", r.aiConfigHandler.GetModels)
+
+			// AI 平台管理（新版）
+			protected.GET("/ai/platforms", r.aiPlatformHandler.ListPlatforms)
+			protected.POST("/ai/platforms", r.aiPlatformHandler.CreatePlatform)
+			protected.GET("/ai/platforms/:id", r.aiPlatformHandler.GetPlatform)
+			protected.PUT("/ai/platforms/:id", r.aiPlatformHandler.UpdatePlatform)
+			protected.DELETE("/ai/platforms/:id", r.aiPlatformHandler.DeletePlatform)
+			protected.POST("/ai/platforms/:id/test", r.aiPlatformHandler.TestPlatformConnection)
+			protected.POST("/ai/platforms/:id/default", r.aiPlatformHandler.SetDefaultPlatform)
+
+			// AI 会话管理
+			protected.GET("/ai/sessions", r.aiChatSessionHandler.ListSessions)
+			protected.POST("/ai/sessions", r.aiChatSessionHandler.CreateSession)
+			protected.GET("/ai/sessions/:id/messages", r.aiChatSessionHandler.GetSessionMessages)
+			protected.PUT("/ai/sessions/:id/platform", r.aiChatSessionHandler.UpdateSessionPlatform)
+			protected.PUT("/ai/sessions/:id/title", r.aiChatSessionHandler.UpdateSessionTitle)
+			protected.DELETE("/ai/sessions/:id/messages", r.aiChatSessionHandler.ClearSessionMessages)
+			protected.DELETE("/ai/sessions/:id", r.aiChatSessionHandler.DeleteSession)
 
 			// AI 对话
 			protected.POST("/ai/chat", r.aiChatHandler.Chat)

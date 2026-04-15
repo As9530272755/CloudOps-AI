@@ -68,4 +68,7 @@ cloudops-backend
 server
 data/
 backend.log
-frontend.logCONTEXT.md
+frontend.log
+# Debug/test artifacts
+debug_*.png
+test_ai_spinner.*

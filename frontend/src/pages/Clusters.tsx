@@ -218,8 +218,9 @@ export default function Clusters() {
   return (
     <Box sx={{ p: 3 }}>
       {/* 页面标题 */}
-      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
-        <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 4 }}>
+        <Card>
+          <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
               集群管理
@@ -237,32 +238,22 @@ export default function Clusters() {
             >
               刷新
             </Button>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={handleOpenCreate}
-              sx={{
-                background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
-                color: 'white',
-                borderRadius: '12px',
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
-            >
+            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
               添加集群
             </Button>
           </Box>
         </CardContent>
-      </Card>
+        </Card>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3, borderRadius: '12px' }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
 
       {/* 筛选栏 */}
-      <Card sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
+      <Card sx={{ mb: 3 }}>
         <CardContent>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
             <Autocomplete
@@ -352,13 +343,6 @@ export default function Clusters() {
               variant="contained"
               onClick={loadClusters}
               disabled={loading}
-              sx={{
-                background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
-                color: 'white',
-                borderRadius: '12px',
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
             >
               查询
             </Button>
@@ -367,7 +351,7 @@ export default function Clusters() {
       </Card>
 
       {/* 集群列表 */}
-      <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Card>
         <CardContent>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -496,11 +480,6 @@ export default function Clusters() {
         onClose={() => setOpenDialog(false)}
         maxWidth="md"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: '16px',
-          },
-        }}
       >
         <DialogTitle sx={{ fontWeight: 600 }}>
           {editingId ? '编辑 Kubernetes 集群' : '添加 Kubernetes 集群'}
@@ -606,17 +585,7 @@ export default function Clusters() {
           >
             取消
           </Button>
-          <Button
-            onClick={handleSave}
-            variant="contained"
-            sx={{
-              background: 'linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%)',
-              color: 'white',
-              borderRadius: '12px',
-              textTransform: 'none',
-              fontWeight: 600,
-            }}
-          >
+          <Button onClick={handleSave} variant="contained">
             {editingId ? '保存' : '确定添加'}
           </Button>
         </DialogActions>
