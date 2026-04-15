@@ -136,8 +136,12 @@ func main() {
 	networkTraceService := service.NewNetworkTraceService(cfg, k8sManager, dsService, db, aiService)
 	log.Println("✅ 网络追踪服务初始化完成")
 
+	// 创建日志查询服务
+	logService := service.NewLogService(db, k8sManager)
+	log.Println("✅ 日志查询服务初始化完成")
+
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, logService)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {

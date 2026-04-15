@@ -126,6 +126,15 @@ func (ClusterSecret) TableName() string {
 	return "cluster_secrets"
 }
 
+// LogBackendConfig 集群日志后端配置
+type LogBackendConfig struct {
+	Type          string            `json:"type"` // elasticsearch | loki | sls | unknown
+	URL           string            `json:"url"`
+	IndexPatterns map[string]string `json:"index_patterns"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	DetectedAt    *time.Time        `json:"detected_at,omitempty"`
+}
+
 // ClusterMetadata 集群元数据模型
 type ClusterMetadata struct {
 	ID             uint       `gorm:"primaryKey" json:"id"`
@@ -136,6 +145,7 @@ type ClusterMetadata struct {
 	NamespaceCount int        `gorm:"default:0" json:"namespace_count"`
 	LastSyncedAt   *time.Time `json:"last_synced_at"`
 	HealthStatus   string     `gorm:"size:20;default:unknown" json:"health_status"` // healthy/warning/error
+	LogBackend     string     `gorm:"type:text" json:"log_backend,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 }
 

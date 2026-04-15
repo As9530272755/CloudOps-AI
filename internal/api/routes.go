@@ -23,11 +23,12 @@ type Router struct {
 	aiChatSessionHandler *handlers.AIChatSessionHandler
 	aiChatHandler        *handlers.AIChatHandler
 	aiTaskService        *service.AITaskService
+	logHandler           *handlers.LogHandler
 	jwtManager           *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, logService *service.LogService) *Router {
 	return &Router{
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
@@ -40,6 +41,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		aiPlatformHandler:    handlers.NewAIPlatformHandler(aiPlatformService),
 		aiChatSessionHandler: handlers.NewAIChatSessionHandler(aiChatSessionService),
 		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService),
+		logHandler:           handlers.NewLogHandler(logService),
 		jwtManager:           jwtManager,
 	}
 }
@@ -169,11 +171,16 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			protected.POST("/clusters/:id/network/debug", r.networkTraceHandler.CreateDebug)
 			protected.GET("/clusters/:id/network/debug/logs", r.networkTraceHandler.GetDebugLogs)
 
-			// TODO: 添加更多路由
-			// 日志管理
-			// AI问答
-			// 终端
-			// 租户管理
+				// 日志管理
+				protected.POST("/logs/query", r.logHandler.QueryLogs)
+				protected.POST("/logs/histogram", r.logHandler.QueryHistogram)
+				protected.POST("/logs/analyze", r.logHandler.AnalyzeLogs)
+				protected.GET("/clusters/:id/logs/test", r.logHandler.TestLogBackend)
+
+				// TODO: 添加更多路由
+				// AI问答
+				// 终端
+				// 租户管理
 		}
 	}
 }
