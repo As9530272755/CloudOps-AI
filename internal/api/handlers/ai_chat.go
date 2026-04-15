@@ -149,6 +149,8 @@ func (h *AIChatHandler) ChatStream(c *gin.Context) {
 	b, _ := json.Marshal(ai.StreamResponse{Done: true})
 	fmt.Fprintf(c.Writer, "data: %s\n\n", b)
 	flush()
+	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	flush()
 	mu.Unlock()
 }
 

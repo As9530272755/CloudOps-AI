@@ -17,6 +17,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:9000',
         changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
       '/ws': {
         target: 'ws://localhost:9000',
@@ -31,6 +33,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:9000',
         changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
       '/ws': {
         target: 'ws://localhost:9000',

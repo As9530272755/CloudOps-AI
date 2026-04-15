@@ -37,6 +37,8 @@ export const aiChatAPI = {
       return () => controller.abort()
     }
 
+    let receivedContent = false
+
     fetch(`${api.defaults.baseURL}/ai/chat/stream`, {
       method: 'POST',
       headers: {
@@ -76,6 +78,7 @@ export const aiChatAPI = {
             }
             try {
               const parsed = JSON.parse(data)
+              if (parsed.content) receivedContent = true
               onMessage(parsed)
             } catch {
               // ignore invalid json
@@ -94,6 +97,7 @@ export const aiChatAPI = {
           } else {
             try {
               const parsed = JSON.parse(data)
+              if (parsed.content) receivedContent = true
               onMessage(parsed)
             } catch {
               // ignore invalid json
@@ -104,6 +108,11 @@ export const aiChatAPI = {
       onMessage({ done: true })
     }).catch((err) => {
       if (err.name === 'AbortError' || (err.message && /aborted/i.test(err.message))) {
+        return
+      }
+      // 如果已经收到内容，则把网络错误降级为正常结束，避免用户看到完整回复的同时顶部还飘错误
+      if (receivedContent) {
+        onMessage({ done: true })
         return
       }
       onMessage({ error: err.message || '请求失败' })

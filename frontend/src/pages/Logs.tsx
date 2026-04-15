@@ -143,8 +143,8 @@ export default function Logs() {
       ])
 
       if (queryRes.success && queryRes.data) {
-        setEntries(queryRes.data.entries)
-        setTotal(queryRes.data.total)
+        setEntries(queryRes.data.entries || [])
+        setTotal(queryRes.data.total || 0)
       } else {
         setError(queryRes.error || '查询失败')
       }
@@ -199,40 +199,48 @@ export default function Logs() {
 
   useEffect(() => {
     if (histogram.length === 0) {
-      chartInstance.current?.dispose()
+      try { chartInstance.current?.dispose() } catch {}
       chartInstance.current = null
       return
     }
     if (!chartRef.current) return
-    if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current)
-    }
-    const option: echarts.EChartsOption = {
-      grid: { top: 30, right: 20, bottom: 30, left: 50 },
-      xAxis: {
-        type: 'category',
-        data: histogram.map((h) => new Date(h.time).toLocaleTimeString('zh-CN')),
-        axisLabel: { fontSize: 11 },
-      },
-      yAxis: { type: 'value', minInterval: 1 },
-      tooltip: { trigger: 'axis' },
-      series: [
-        {
-          data: histogram.map((h) => h.count),
-          type: 'bar',
-          itemStyle: { color: '#3f51b5', borderRadius: [4, 4, 0, 0] },
+    const el = chartRef.current
+    if (el.clientWidth === 0 || el.clientHeight === 0) return
+    try {
+      if (!chartInstance.current) {
+        chartInstance.current = echarts.init(el)
+      }
+      const option: echarts.EChartsOption = {
+        grid: { top: 30, right: 20, bottom: 30, left: 50 },
+        xAxis: {
+          type: 'category',
+          data: histogram.map((h) => new Date(h.time).toLocaleTimeString('zh-CN')),
+          axisLabel: { fontSize: 11 },
         },
-      ],
+        yAxis: { type: 'value', minInterval: 1 },
+        tooltip: { trigger: 'axis' },
+        series: [
+          {
+            data: histogram.map((h) => h.count),
+            type: 'bar',
+            itemStyle: { color: '#3f51b5', borderRadius: [4, 4, 0, 0] },
+          },
+        ],
+      }
+      chartInstance.current.setOption(option, true)
+    } catch (e) {
+      console.error('ECharts error:', e)
     }
-    chartInstance.current.setOption(option, true)
   }, [histogram])
 
   useEffect(() => {
-    const handleResize = () => chartInstance.current?.resize()
+    const handleResize = () => {
+      try { chartInstance.current?.resize() } catch {}
+    }
     window.addEventListener('resize', handleResize)
     return () => {
       window.removeEventListener('resize', handleResize)
-      chartInstance.current?.dispose()
+      try { chartInstance.current?.dispose() } catch {}
       chartInstance.current = null
     }
   }, [])
@@ -369,13 +377,18 @@ export default function Logs() {
         </Box>
 
         <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+          {loading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', pt: 8 }}>
+              <CircularProgress size={32} />
+            </Box>
+          )}
           {entries.length === 0 && !loading && (
             <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', pt: 8 }}>
               暂无数据，请选择集群和过滤条件后点击查询
             </Typography>
           )}
 
-          {entries.map((entry, idx) => (
+          {!loading && entries.map((entry, idx) => (
             <Box key={idx} sx={{ mb: 2, p: 2, borderRadius: 2, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                 <Typography variant="caption" color="text.secondary">

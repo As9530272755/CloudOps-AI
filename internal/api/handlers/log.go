@@ -65,7 +65,7 @@ func (h *LogHandler) QueryLogs(c *gin.Context) {
 
 	// 合并统计
 	var total int64
-	var allEntries []log.LogEntry
+	allEntries := make([]log.LogEntry, 0)
 	for _, r := range results {
 		total += r.Total
 		allEntries = append(allEntries, r.Entries...)
