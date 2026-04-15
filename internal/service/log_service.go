@@ -66,6 +66,20 @@ func validateQuery(req log.QueryRequest, clusterCount int) error {
 	return nil
 }
 
+// GetLogBackend 获取集群日志后端配置（公开方法）
+func (s *LogService) GetLogBackend(clusterID uint) (model.LogBackendConfig, error) {
+	return s.getLogBackend(clusterID)
+}
+
+// UpdateLogBackend 更新集群日志后端配置
+func (s *LogService) UpdateLogBackend(clusterID uint, cfg model.LogBackendConfig) error {
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Update("log_backend", string(b)).Error
+}
+
 // getLogBackend 获取集群日志后端配置
 func (s *LogService) getLogBackend(clusterID uint) (model.LogBackendConfig, error) {
 	var meta model.ClusterMetadata

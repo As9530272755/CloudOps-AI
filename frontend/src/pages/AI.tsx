@@ -1363,7 +1363,15 @@ export default function AI() {
                 variant="contained"
                 size="small"
                 startIcon={<ArrowDownwardIcon />}
-                onClick={() => virtuosoRef.current?.scrollToIndex({ index: 'LAST' })}
+                onClick={() => {
+                  const list = messages.filter((m) => m.role !== 'system')
+                  if (list.length === 0) return
+                  virtuosoRef.current?.scrollToIndex({
+                    index: list.length - 1,
+                    align: 'end',
+                    behavior: 'smooth',
+                  })
+                }}
                 sx={{
                   borderRadius: 999,
                   px: 2,

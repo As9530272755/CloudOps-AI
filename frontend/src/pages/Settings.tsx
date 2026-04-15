@@ -30,6 +30,8 @@ import { Delete as DeleteIcon, Edit as EditIcon, Refresh as TestIcon } from '@mu
 
 import { DataSource, datasourceAPI, CreateDataSourceRequest } from '../lib/datasource-api'
 import { aiPlatformAPI, AIPlatform, PlatformFormConfig } from '../lib/ai-platform-api'
+import { logBackendAPI, LogBackendConfig } from '../lib/log-backend-api'
+import { clusterAPI, Cluster } from '../lib/cluster-api'
 
 function DataSourceSettings() {
   const [dataSources, setDataSources] = useState<DataSource[]>([])
@@ -652,6 +654,268 @@ function AISettings() {
   )
 }
 
+function LogBackendSettings() {
+  const [clusters, setClusters] = useState<Cluster[]>([])
+  const [loading, setLoading] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
+  const [form, setForm] = useState<LogBackendConfig>({
+    type: 'elasticsearch',
+    url: '',
+    index_patterns: { ingress: 'nginx-ingress-*', coredns: 'logstash-*', lb: 'logstash-*', app: 'logstash-*' },
+    headers: {},
+    username: '',
+    password: '',
+  })
+  const [configs, setConfigs] = useState<Record<number, LogBackendConfig>>({})
+  const [testingId, setTestingId] = useState<number | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    loadClusters()
+  }, [])
+
+  const loadClusters = async () => {
+    setLoading(true)
+    try {
+      const res = await clusterAPI.getClusters()
+      const list: Cluster[] = (res.success && (Array.isArray(res.data) ? res.data : res.data.clusters || [])) || []
+      setClusters(list)
+      const map: Record<number, LogBackendConfig> = {}
+      await Promise.all(
+        list.map(async (c) => {
+          try {
+            const cfgRes = await logBackendAPI.get(c.id)
+            if (cfgRes.success && cfgRes.data) {
+              map[c.id] = cfgRes.data
+            }
+          } catch {}
+        })
+      )
+      setConfigs(map)
+    } catch (err: any) {
+      setError(err.message || '加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOpen = (cluster: Cluster) => {
+    setEditingCluster(cluster)
+    const existing = configs[cluster.id]
+    if (existing) {
+      setForm({
+        type: existing.type || 'elasticsearch',
+        url: existing.url || '',
+        index_patterns: existing.index_patterns || { ingress: 'nginx-ingress-*', coredns: 'logstash-*', lb: 'logstash-*', app: 'logstash-*' },
+        headers: existing.headers || {},
+        username: existing.username || '',
+        password: existing.password || '',
+      })
+    } else {
+      setForm({
+        type: 'elasticsearch',
+        url: '',
+        index_patterns: { ingress: 'nginx-ingress-*', coredns: 'logstash-*', lb: 'logstash-*', app: 'logstash-*' },
+        headers: {},
+        username: '',
+        password: '',
+      })
+    }
+    setDialogOpen(true)
+    setError('')
+  }
+
+  const handleSave = async () => {
+    if (!editingCluster) return
+    if (!form.url) {
+      setError('请填写日志后端地址')
+      return
+    }
+    try {
+      const payload: LogBackendConfig = { ...form }
+      if (payload.username || payload.password) {
+        payload.headers = { ...(payload.headers || {}) }
+        // basic auth 在 ES adapter 中通过 headers 传递
+        if (payload.username && payload.password) {
+          const basic = btoa(`${payload.username}:${payload.password}`)
+          payload.headers['Authorization'] = `Basic ${basic}`
+        }
+      }
+      const res = await logBackendAPI.update(editingCluster.id, payload)
+      if (res.success) {
+        setDialogOpen(false)
+        setConfigs((prev) => ({ ...prev, [editingCluster.id]: payload }))
+      } else {
+        setError(res.error || '保存失败')
+      }
+    } catch (err: any) {
+      setError(err.message || '保存失败')
+    }
+  }
+
+  const handleTest = async (cluster: Cluster, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setTestingId(cluster.id)
+    try {
+      const res = await logBackendAPI.test(cluster.id)
+      alert(res.success ? `连通成功: ${res.message}` : `连通失败: ${res.error}`)
+    } catch (err: any) {
+      alert(err.message || '测试失败')
+    } finally {
+      setTestingId(null)
+    }
+  }
+
+  return (
+    <Box>
+      {error && !dialogOpen && (
+        <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
+          {error}
+        </Alert>
+      )}
+
+      <Card>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>集群</TableCell>
+              <TableCell>类型</TableCell>
+              <TableCell>地址</TableCell>
+              <TableCell>状态</TableCell>
+              <TableCell align="right">操作</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  <CircularProgress size={24} sx={{ my: 2 }} />
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && clusters.map((c) => {
+              const cfg = configs[c.id]
+              return (
+                <TableRow key={c.id} hover>
+                  <TableCell>{c.name}</TableCell>
+                  <TableCell>{cfg?.type ? cfg.type.toUpperCase() : '未配置'}</TableCell>
+                  <TableCell>{cfg?.url || '-'}</TableCell>
+                  <TableCell>
+                    {cfg ? (
+                      <Chip label="已配置" color="success" size="small" />
+                    ) : (
+                      <Chip label="未配置" color="default" size="small" />
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton size="small" onClick={() => handleOpen(c)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={(e) => handleTest(c, e)} disabled={testingId === c.id}>
+                      {testingId === c.id ? <CircularProgress size={18} /> : <TestIcon fontSize="small" />}
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>{editingCluster ? `配置 ${editingCluster.name} 日志后端` : '配置日志后端'}</DialogTitle>
+        <DialogContent>
+          {error && dialogOpen && (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
+              {error}
+            </Alert>
+          )}
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel>后端类型</InputLabel>
+            <Select
+              value={form.type}
+              label="后端类型"
+              onChange={(e) => setForm({ ...form, type: e.target.value as any })}
+            >
+              <MenuItem value="elasticsearch">Elasticsearch</MenuItem>
+              <MenuItem value="opensearch">OpenSearch</MenuItem>
+              <MenuItem value="loki">Loki</MenuItem>
+              <MenuItem value="sls">阿里云 SLS</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            fullWidth
+            size="small"
+            label="URL"
+            placeholder="http://elasticsearch.monitoring.svc:9200"
+            value={form.url}
+            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            label="用户名（可选）"
+            value={form.username || ''}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            label="密码（可选）"
+            type="password"
+            value={form.password || ''}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            索引/标签模式
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            label="Ingress"
+            value={form.index_patterns?.ingress || ''}
+            onChange={(e) => setForm({ ...form, index_patterns: { ...form.index_patterns, ingress: e.target.value } })}
+            sx={{ mb: 1 }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            label="CoreDNS"
+            value={form.index_patterns?.coredns || ''}
+            onChange={(e) => setForm({ ...form, index_patterns: { ...form.index_patterns, coredns: e.target.value } })}
+            sx={{ mb: 1 }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            label="LB"
+            value={form.index_patterns?.lb || ''}
+            onChange={(e) => setForm({ ...form, index_patterns: { ...form.index_patterns, lb: e.target.value } })}
+            sx={{ mb: 1 }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            label="App"
+            value={form.index_patterns?.app || ''}
+            onChange={(e) => setForm({ ...form, index_patterns: { ...form.index_patterns, app: e.target.value } })}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={handleSave}>
+            保存
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  )
+}
+
 export default function Settings() {
   const [tab, setTab] = useState(0)
 
@@ -670,12 +934,14 @@ export default function Settings() {
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, pt: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Tab label="数据源" />
           <Tab label="AI 平台" />
+          <Tab label="日志后端" />
           <Tab label="通用" />
         </Tabs>
         <CardContent sx={{ pt: 3 }}>
           {tab === 0 && <DataSourceSettings />}
           {tab === 1 && <AISettings />}
-          {tab === 2 && (
+          {tab === 2 && <LogBackendSettings />}
+          {tab === 3 && (
             <Typography variant="body2" color="text.secondary">
               更多设置项开发中...
             </Typography>

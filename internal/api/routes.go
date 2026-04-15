@@ -176,6 +176,8 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				protected.POST("/logs/histogram", r.logHandler.QueryHistogram)
 				protected.POST("/logs/analyze", r.logHandler.AnalyzeLogs)
 				protected.GET("/clusters/:id/logs/test", r.logHandler.TestLogBackend)
+				protected.GET("/clusters/:id/log-backend", r.logHandler.GetLogBackend)
+				protected.PUT("/clusters/:id/log-backend", r.logHandler.UpdateLogBackend)
 
 				// TODO: 添加更多路由
 				// AI问答
