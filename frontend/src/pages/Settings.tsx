@@ -841,7 +841,6 @@ function LogBackendSettings() {
               <MenuItem value="elasticsearch">Elasticsearch</MenuItem>
               <MenuItem value="opensearch">OpenSearch</MenuItem>
               <MenuItem value="loki">Loki</MenuItem>
-              <MenuItem value="sls">阿里云 SLS</MenuItem>
             </Select>
           </FormControl>
           <TextField
