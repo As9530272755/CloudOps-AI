@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SSE Test</title>
+  <style>
+    body { font-family: monospace; white-space: pre-wrap; padding: 20px; }
+    .line { border-bottom: 1px solid #eee; padding: 2px 0; }
+    .time { color: #888; }
+  </style>
+</head>
+<body>
+  <h2>SSE Stream Test</h2>
+  <div id="log"></div>
+  <script>
+    const log = document.getElementById('log')
+    function add(text) {
+      const div = document.createElement('div')
+      div.className = 'line'
+      div.innerHTML = '<span class="time">[' + new Date().toLocaleTimeString('zh-CN', {hour12:false}) + '.' + String(Date.now()%1000).padStart(3,'0') + ']</span> ' + text
+      log.appendChild(div)
+    }
+
+    const token = localStorage.getItem('access_token') || ''
+    if (!token) {
+      add('ERROR: no access_token in localStorage. Please login first.')
+    } else {
+      const backendBase = window.location.protocol + '//' + window.location.hostname + ':9000/api/v1'
+      add('Starting fetch to ' + backendBase + '/ai/agent/chat/stream ...')
+      fetch(backendBase + '/ai/agent/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify({
+          session_id: 'test-sse-session',
+          platform_id: 'plat_1776219810771206719',
+          messages: [{ role: 'user', content: '集群现状' }],
+        }),
+      }).then(async (response) => {
+        add('Response status: ' + response.status)
+        if (!response.ok) {
+          add('Response not ok')
+          return
+        }
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let readCount = 0
+        while (true) {
+          const { done, value } = await reader.read()
+          readCount++
+          const chunk = decoder.decode(value, { stream: !done })
+          add('read #' + readCount + ' done=' + done + ' chunkLen=' + chunk.length)
+          buffer += chunk
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            const t = line.trim()
+            if (t) add('  | ' + t)
+          }
+          if (done) break
+        }
+        add('Stream finished.')
+      }).catch(err => {
+        add('ERROR: ' + err.message)
+      })
+    }
+  </script>
+</body>
+</html>

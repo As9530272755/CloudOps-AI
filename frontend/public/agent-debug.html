@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Agent SSE Debug</title>
+<style>
+body { font-family: monospace; padding: 20px; }
+.line { border-bottom: 1px solid #eee; padding: 2px 0; }
+.time { color: #888; }
+button { padding: 10px 20px; font-size: 16px; }
+#log { margin-top: 20px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h2>Agent SSE 直连诊断</h2>
+<p>这会绕过 React / Vite，用原生 fetch 直接请求后端 9000 端口。</p>
+<button id="btn">发送 "集群现状"</button>
+<div id="log"></div>
+<script>
+const log = document.getElementById('log')
+function add(text) {
+  const div = document.createElement('div')
+  div.className = 'line'
+  div.innerHTML = '<span class="time">[' + new Date().toLocaleTimeString('zh-CN',{hour12:false}) + '.' + String(Date.now()%1000).padStart(3,'0') + ']</span> ' + text'
+  log.appendChild(div)
+}
+
+document.getElementById('btn').onclick = async () => {
+  log.innerHTML = ''
+  const token = localStorage.getItem('access_token') || ''
+  if (!token) { add('ERROR: 请先登录主应用'); return }
+
+  const url = window.location.protocol + '//' + window.location.hostname + ':9000/api/v1/ai/agent/chat/stream'
+  add('fetch -> ' + url)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        session_id: 'debug-sess-' + Date.now(),
+        platform_id: 'plat_1776219810771206719',
+        messages: [{ role: 'user', content: '集群现状' }]
+      })
+    })
+    add('status: ' + res.status)
+    if (!res.ok || !res.body) { add('no stream body'); return }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let readCount = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      readCount++
+      const chunk = decoder.decode(value, { stream: !done })
+      add('read#' + readCount + ' done=' + done + ' len=' + chunk.length)
+      buffer += chunk
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const t = line.trim()
+        if (t) add('  | ' + t)
+      }
+      if (done) break
+    }
+    add('finished')
+  } catch (e) {
+    add('ERROR: ' + e.message)
+  }
+}
+</script>
+</body>
+</html>
