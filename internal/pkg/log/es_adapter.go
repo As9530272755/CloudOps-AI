@@ -89,6 +89,7 @@ func (e *ESAdapter) Query(ctx context.Context, req QueryRequest) (*QueryResult, 
 	start := time.Now()
 	index := e.resolveIndex(req.LogType)
 	query := e.buildQuery(req)
+	query["aggs"] = e.buildLevelAggs()
 
 	body, err := json.Marshal(query)
 	if err != nil {
@@ -110,13 +111,42 @@ func (e *ESAdapter) Query(ctx context.Context, req QueryRequest) (*QueryResult, 
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
+		// aggregation 失败时降级为不带 aggs 的查询
+		if resp.StatusCode == 400 {
+			return e.queryWithoutAggs(ctx, req, index)
+		}
 		return nil, fmt.Errorf("ES search error: %d %s", resp.StatusCode, string(respBody))
 	}
 
+	return e.parseQueryResult(respBody, req, start), nil
+}
+
+func (e *ESAdapter) queryWithoutAggs(ctx context.Context, req QueryRequest, index string) (*QueryResult, error) {
+	start := time.Now()
+	query := e.buildQuery(req)
+	delete(query, "aggs")
+	body, _ := json.Marshal(query)
+	esReq, _ := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/%s/_search", e.URL, index), bytes.NewReader(body))
+	esReq.Header.Set("Content-Type", "application/json")
+	e.setHeaders(esReq)
+	resp, err := e.client.Do(esReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("ES search error: %d %s", resp.StatusCode, string(respBody))
+	}
+	return e.parseQueryResult(respBody, req, start), nil
+}
+
+func (e *ESAdapter) parseQueryResult(respBody []byte, req QueryRequest, start time.Time) *QueryResult {
 	result := &QueryResult{
-		ClusterID: uint64(req.ClusterID),
-		Entries:   make([]LogEntry, 0),
-		TookMs:    time.Since(start).Milliseconds(),
+		ClusterID:   uint64(req.ClusterID),
+		Entries:     make([]LogEntry, 0),
+		LevelCounts: make(map[string]int64),
+		TookMs:      time.Since(start).Milliseconds(),
 	}
 
 	var esResp struct {
@@ -128,9 +158,16 @@ func (e *ESAdapter) Query(ctx context.Context, req QueryRequest) (*QueryResult, 
 				Source map[string]interface{} `json:"_source"`
 			} `json:"hits"`
 		} `json:"hits"`
+		Aggregations struct {
+			ByLevel struct {
+				Buckets map[string]struct {
+					DocCount int64 `json:"doc_count"`
+				} `json:"buckets"`
+			} `json:"by_level"`
+		} `json:"aggregations"`
 	}
 	if err := json.Unmarshal(respBody, &esResp); err != nil {
-		return nil, err
+		return result
 	}
 
 	result.Total = esResp.Hits.Total.Value
@@ -138,8 +175,11 @@ func (e *ESAdapter) Query(ctx context.Context, req QueryRequest) (*QueryResult, 
 		entry := e.sourceToEntry(h.Source, req)
 		result.Entries = append(result.Entries, entry)
 	}
+	for k, b := range esResp.Aggregations.ByLevel.Buckets {
+		result.LevelCounts[k] = b.DocCount
+	}
 
-	return result, nil
+	return result
 }
 
 func (e *ESAdapter) QueryHistogram(ctx context.Context, req QueryRequest) (*QueryResult, error) {
@@ -189,6 +229,7 @@ func (e *ESAdapter) QueryHistogram(ctx context.Context, req QueryRequest) (*Quer
 
 	result := &QueryResult{
 		ClusterID: uint64(req.ClusterID),
+		Entries:   make([]LogEntry, 0),
 		TookMs:    time.Since(start).Milliseconds(),
 	}
 
@@ -224,19 +265,97 @@ func (e *ESAdapter) setHeaders(req *http.Request) {
 
 func (e *ESAdapter) resolveIndex(logType string) string {
 	if e.IndexPatterns != nil {
+		// 现代采集方案通常使用统一索引，优先使用 all / app 的通用配置
+		if logType == "all" || logType == "app" || logType == "ingress" || logType == "coredns" || logType == "lb" {
+			if idx, ok := e.IndexPatterns["all"]; ok && idx != "" {
+				return idx
+			}
+			if idx, ok := e.IndexPatterns["app"]; ok && idx != "" {
+				return idx
+			}
+		}
+		// 精确匹配
 		if idx, ok := e.IndexPatterns[logType]; ok && idx != "" {
 			return idx
 		}
 	}
+	// 旧版硬编码回退
 	switch logType {
 	case "ingress":
 		return "nginx-ingress-*"
-	case "coredns":
-		return "logstash-*"
-	case "lb":
+	case "coredns", "lb", "app":
 		return "logstash-*"
 	default:
 		return "logstash-*"
+	}
+}
+
+func (e *ESAdapter) buildLevelFilter(level string) map[string]interface{} {
+	switch level {
+	case "error":
+		return map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"terms": map[string]interface{}{"level.keyword": []string{"error", "err", "fatal"}}},
+					{"wildcard": map[string]interface{}{"log.keyword": "*error*"}},
+					{"wildcard": map[string]interface{}{"message.keyword": "*error*"}},
+				},
+				"minimum_should_match": 1,
+			},
+		}
+	case "warn":
+		return map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"terms": map[string]interface{}{"level.keyword": []string{"warn", "warning"}}},
+					{"wildcard": map[string]interface{}{"log.keyword": "*warn*"}},
+					{"wildcard": map[string]interface{}{"message.keyword": "*warn*"}},
+				},
+				"minimum_should_match": 1,
+			},
+		}
+	case "info":
+		return map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"terms": map[string]interface{}{"level.keyword": []string{"info", "noerror"}}},
+					{"wildcard": map[string]interface{}{"log.keyword": "*info*"}},
+					{"wildcard": map[string]interface{}{"message.keyword": "*info*"}},
+				},
+				"minimum_should_match": 1,
+			},
+		}
+	case "other":
+		return map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must_not": []map[string]interface{}{
+					{"terms": map[string]interface{}{"level.keyword": []string{"error", "err", "fatal", "warn", "warning", "info", "noerror"}}},
+					{"wildcard": map[string]interface{}{"log.keyword": "*error*"}},
+					{"wildcard": map[string]interface{}{"log.keyword": "*warn*"}},
+					{"wildcard": map[string]interface{}{"log.keyword": "*info*"}},
+					{"wildcard": map[string]interface{}{"message.keyword": "*error*"}},
+					{"wildcard": map[string]interface{}{"message.keyword": "*warn*"}},
+					{"wildcard": map[string]interface{}{"message.keyword": "*info*"}},
+				},
+			},
+		}
+	default:
+		return map[string]interface{}{"match_all": map[string]interface{}{}}
+	}
+}
+
+func (e *ESAdapter) buildLevelAggs() map[string]interface{} {
+	return map[string]interface{}{
+		"by_level": map[string]interface{}{
+			"filters": map[string]interface{}{
+				"filters": map[string]interface{}{
+					"error": e.buildLevelFilter("error"),
+					"warn":  e.buildLevelFilter("warn"),
+					"info":  e.buildLevelFilter("info"),
+					"other": e.buildLevelFilter("other"),
+				},
+			},
+		},
 	}
 }
 
@@ -252,18 +371,128 @@ func (e *ESAdapter) buildQuery(req QueryRequest) map[string]interface{} {
 		},
 	}
 
-	// 根据 log_type 追加基础过滤
+	// 根据 log_type 追加场景化基础过滤（使用 .keyword 子字段以确保 wildcard / term 正确匹配）
 	switch req.LogType {
 	case "ingress":
-		must = append(must,
-			map[string]interface{}{"term": map[string]interface{}{"kubernetes.container_name": "controller"}},
-			map[string]interface{}{"term": map[string]interface{}{"kubernetes.namespace_name": "ingress-nginx"}},
-		)
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{
+								{"wildcard": map[string]interface{}{"kubernetes.namespace_name.keyword": "*ingress*"}},
+								{"wildcard": map[string]interface{}{"namespace.keyword": "*ingress*"}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{
+								{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*ingress*"}},
+								{"wildcard": map[string]interface{}{"pod_name.keyword": "*ingress*"}},
+								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*nginx*"}},
+								{"wildcard": map[string]interface{}{"container_name.keyword": "*nginx*"}},
+								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*controller*"}},
+								{"wildcard": map[string]interface{}{"container_name.keyword": "*controller*"}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
+				},
+			},
+		})
 	case "coredns":
-		must = append(must,
-			map[string]interface{}{"term": map[string]interface{}{"kubernetes.container_name": "coredns"}},
-			map[string]interface{}{"term": map[string]interface{}{"kubernetes.namespace_name": "kube-system"}},
-		)
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{
+								{"wildcard": map[string]interface{}{"kubernetes.namespace_name.keyword": "*kube-system*"}},
+								{"wildcard": map[string]interface{}{"namespace.keyword": "*kube-system*"}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{
+								{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*coredns*"}},
+								{"wildcard": map[string]interface{}{"pod_name.keyword": "*coredns*"}},
+								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*coredns*"}},
+								{"wildcard": map[string]interface{}{"container_name.keyword": "*coredns*"}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
+				},
+			},
+		})
+	case "lb":
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{
+								{"wildcard": map[string]interface{}{"kubernetes.namespace_name.keyword": "*ingress*"}},
+								{"wildcard": map[string]interface{}{"namespace.keyword": "*ingress*"}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{
+								{"exists": map[string]interface{}{"field": "upstream_addr"}},
+								{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*ingress*"}},
+								{"wildcard": map[string]interface{}{"pod_name.keyword": "*ingress*"}},
+								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*nginx*"}},
+								{"wildcard": map[string]interface{}{"container_name.keyword": "*nginx*"}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// 全局关键字搜索：multi_match + wildcard 子串匹配，确保短关键词也能命中
+	if kw, ok := req.Filters["keyword"]; ok && kw != "" {
+		should := []map[string]interface{}{
+			{"multi_match": map[string]interface{}{
+				"query":     kw,
+				"fields":    []string{"log^3", "message^3", "host", "path", "kubernetes.pod_name", "kubernetes.namespace_name", "kubernetes.container_name"},
+				"type":      "best_fields",
+				"fuzziness": "AUTO",
+				"operator":  "or",
+			}},
+			{"wildcard": map[string]interface{}{"log.keyword": "*" + kw + "*"}},
+			{"wildcard": map[string]interface{}{"message.keyword": "*" + kw + "*"}},
+			{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*" + kw + "*"}},
+			{"wildcard": map[string]interface{}{"pod_name.keyword": "*" + kw + "*"}},
+		}
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should":               should,
+				"minimum_should_match": 1,
+			},
+		})
+	}
+
+	// 命名空间过滤
+	if ns, ok := req.Filters["namespace"]; ok && ns != "" {
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"kubernetes.namespace_name": ns}},
+					{"term": map[string]interface{}{"namespace": ns}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
 	}
 
 	// 用户自定义过滤
@@ -287,6 +516,11 @@ func (e *ESAdapter) buildQuery(req QueryRequest) map[string]interface{} {
 	}
 	if rcode, ok := req.Filters["rcode"]; ok && rcode != "" {
 		must = append(must, map[string]interface{}{"match_phrase": map[string]interface{}{"log": rcode}})
+	}
+
+	// 日志级别过滤
+	if lvl, ok := req.Filters["level"]; ok && lvl != "" {
+		must = append(must, e.buildLevelFilter(lvl))
 	}
 
 	limit := req.Limit
@@ -348,9 +582,31 @@ func (e *ESAdapter) sourceToEntry(source map[string]interface{}, req QueryReques
 		entry.Message = string(b)
 	}
 
+	// 提取日志级别（供前端颜色标识）
+	for _, lk := range []string{"level", "severity", "log_level", "lvl"} {
+		if v, ok := source[lk]; ok {
+			entry.Fields["level"] = fmt.Sprintf("%v", v)
+			break
+		}
+	}
+
 	// 保留有用字段到 Fields
 	for _, k := range []string{"status", "method", "host", "path", "request_time", "upstream_response_time", "upstream_addr"} {
 		if v, ok := source[k]; ok {
+			entry.Fields[k] = v
+		}
+	}
+
+	// 额外保留其他原始字段（排除已提取到顶层属性的常见键）
+	extractedKeys := map[string]bool{
+		"@timestamp": true, "timestamp": true, "log": true, "message": true,
+		"kubernetes": true, "level": true, "severity": true, "log_level": true, "lvl": true,
+	}
+	for k, v := range source {
+		if extractedKeys[k] {
+			continue
+		}
+		if _, exists := entry.Fields[k]; !exists {
 			entry.Fields[k] = v
 		}
 	}
