@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/cloudops/platform/internal/api/handlers"
@@ -23,12 +25,16 @@ type Router struct {
 	aiChatSessionHandler *handlers.AIChatSessionHandler
 	aiChatHandler        *handlers.AIChatHandler
 	aiTaskService        *service.AITaskService
+	agentService         *service.AgentService
+	agentRuntimeProxy    *service.AgentRuntimeProxy
+	agentToolsHandler    *handlers.AgentToolsHandler
 	logHandler           *handlers.LogHandler
+	settingHandler       *handlers.SettingHandler
 	jwtManager           *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, logService *service.LogService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService) *Router {
 	return &Router{
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
@@ -40,14 +46,19 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		aiConfigHandler:      handlers.NewAIConfigHandler(aiConfigService, aiPlatformService),
 		aiPlatformHandler:    handlers.NewAIPlatformHandler(aiPlatformService),
 		aiChatSessionHandler: handlers.NewAIChatSessionHandler(aiChatSessionService),
-		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService),
+		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService, agentService, agentRuntimeProxy),
+		agentToolsHandler:    handlers.NewAgentToolsHandler(agentService),
 		logHandler:           handlers.NewLogHandler(logService),
+		settingHandler:       handlers.NewSettingHandler(settingService),
 		jwtManager:           jwtManager,
 	}
 }
 
 // RegisterRoutes 注册路由
 func (r *Router) RegisterRoutes(engine *gin.Engine) {
+	// 静态文件：上传的 logo 等（无需认证，登录页也需要显示）
+	engine.Static("/uploads", "./uploads")
+
 	// API v1 路由组
 	v1 := engine.Group("/api/v1")
 	{
@@ -73,6 +84,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				clusters.GET("/:id", r.clusterHandler.GetCluster)
 				clusters.PUT("/:id", r.clusterHandler.UpdateCluster)
 				clusters.DELETE("/:id", r.clusterHandler.DeleteCluster)
+				clusters.POST("/test-and-probe", r.clusterHandler.TestAndProbeCluster)
 			}
 
 			// K8s 资源管理
@@ -157,6 +169,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			// AI 对话
 			protected.POST("/ai/chat", r.aiChatHandler.Chat)
 			protected.POST("/ai/chat/stream", r.aiChatHandler.ChatStream)
+			protected.POST("/ai/agent/chat/stream", r.aiChatHandler.AgentChatStream)
 
 			protected.POST("/ai/chat/task", r.aiChatHandler.CreateTask)
 			protected.GET("/ai/chat/task/:id", r.aiChatHandler.GetTask)
@@ -175,9 +188,17 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				protected.POST("/logs/query", r.logHandler.QueryLogs)
 				protected.POST("/logs/histogram", r.logHandler.QueryHistogram)
 				protected.POST("/logs/analyze", r.logHandler.AnalyzeLogs)
-				protected.GET("/clusters/:id/logs/test", r.logHandler.TestLogBackend)
-				protected.GET("/clusters/:id/log-backend", r.logHandler.GetLogBackend)
-				protected.PUT("/clusters/:id/log-backend", r.logHandler.UpdateLogBackend)
+				protected.GET("/log-backends", r.logHandler.ListLogBackends)
+				protected.POST("/log-backends", r.logHandler.CreateLogBackend)
+				protected.GET("/log-backends/:id", r.logHandler.GetLogBackend)
+				protected.PUT("/log-backends/:id", r.logHandler.UpdateLogBackend)
+				protected.DELETE("/log-backends/:id", r.logHandler.DeleteLogBackend)
+				protected.GET("/log-backends/:id/test", r.logHandler.TestLogBackend)
+
+				// 系统设置
+				protected.GET("/settings/site", r.settingHandler.GetSiteConfig)
+				protected.PUT("/settings/site", r.settingHandler.UpdateSiteConfig)
+				protected.POST("/settings/site/logo", r.settingHandler.UploadLogo)
 
 				// TODO: 添加更多路由
 				// AI问答
@@ -185,4 +206,15 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				// 租户管理
 		}
 	}
+
+	// 内部 Agent 工具执行 API（仅允许本机访问）
+	internal := engine.Group("/internal")
+	internal.Use(func(c *gin.Context) {
+		if c.ClientIP() != "127.0.0.1" && c.ClientIP() != "::1" && c.ClientIP() != "10.0.0.200" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		c.Next()
+	})
+	internal.POST("/agent/tool-execute", r.agentToolsHandler.ExecuteTool)
 }

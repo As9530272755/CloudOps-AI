@@ -1,6 +1,7 @@
 package database
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -58,6 +59,11 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
 	}
 
+	// 迁移旧版日志后端配置到独立表
+	if err = migrateLogBackends(db); err != nil {
+		return nil, fmt.Errorf("日志后端数据迁移失败: %w", err)
+	}
+
 	// 初始化默认数据
 	if err = initDefaultData(db); err != nil {
 		return nil, fmt.Errorf("初始化默认数据失败: %w", err)
@@ -78,6 +84,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.Cluster{},
 		&model.ClusterSecret{},
 		&model.ClusterMetadata{},
+		&model.ClusterLogBackend{},
 		&model.LoginLog{},
 		&model.DataSource{},
 		&model.Dashboard{},
@@ -90,6 +97,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.AIPlatform{},
 		&model.AIChatSession{},
 		&model.AIChatMessage{},
+		&model.SystemSetting{},
 	)
 }
 
@@ -196,4 +204,40 @@ func HashPassword(password string) string {
 func CheckPassword(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
+}
+
+// migrateLogBackends 把旧版 cluster_metadata.log_backend 迁移到 cluster_log_backends 表
+func migrateLogBackends(db *gorm.DB) error {
+	var metas []model.ClusterMetadata
+	if err := db.Where("log_backend != ? AND log_backend IS NOT NULL", "").Find(&metas).Error; err != nil {
+		return err
+	}
+
+	for _, meta := range metas {
+		var cfg model.LogBackendConfig
+		if err := json.Unmarshal([]byte(meta.LogBackend), &cfg); err != nil {
+			continue
+		}
+		if cfg.URL == "" {
+			continue
+		}
+
+		var count int64
+		db.Model(&model.ClusterLogBackend{}).Where("cluster_id = ? AND url = ?", meta.ClusterID, cfg.URL).Count(&count)
+		if count > 0 {
+			continue // 已迁移
+		}
+
+		backend := model.ClusterLogBackend{
+			ClusterID: meta.ClusterID,
+			Name:      fmt.Sprintf("%s-日志", cfg.Type),
+			Type:      cfg.Type,
+			URL:       cfg.URL,
+		}
+		backend.FromConfig(cfg)
+		if err := db.Create(&backend).Error; err != nil {
+			log.Printf("迁移日志后端失败 cluster_id=%d: %v", meta.ClusterID, err)
+		}
+	}
+	return nil
 }

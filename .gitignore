@@ -65,7 +65,7 @@ coverage/
 # Local
 .env.local
 cloudops-backend
-server
+/server
 data/
 backend.log
 frontend.log

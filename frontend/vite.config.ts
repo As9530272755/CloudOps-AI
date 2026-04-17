@@ -20,6 +20,12 @@ export default defineConfig({
         timeout: 0,
         proxyTimeout: 0,
       },
+      '/uploads': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
+      },
       '/ws': {
         target: 'ws://localhost:9000',
         ws: true,
@@ -31,6 +37,12 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
+      },
+      '/uploads': {
         target: 'http://localhost:9000',
         changeOrigin: true,
         timeout: 0,

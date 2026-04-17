@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSiteConfig } from '../../context/SiteConfigContext'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Box,
@@ -67,6 +68,8 @@ export default function MainLayout() {
 
   const handleDrawerToggle = () => setOpen(!open)
 
+  const { config } = useSiteConfig()
+
   const handleNavigate = (path: string) => {
     navigate(path)
     if (isMobile) setOpen(false)
@@ -90,25 +93,34 @@ export default function MainLayout() {
           gap: 2,
         }}
       >
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: '10px',
-            bgcolor: 'primary.main',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <ClusterIcon sx={{ color: 'primary.contrastText', fontSize: 22 }} />
-        </Box>
+        {config.logo_url ? (
+          <Box
+            component="img"
+            src={config.logo_url}
+            alt={config.platform_name}
+            sx={{ width: 40, height: 40, borderRadius: '10px', objectFit: 'contain' }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '10px',
+              bgcolor: 'primary.main',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <ClusterIcon sx={{ color: 'primary.contrastText', fontSize: 22 }} />
+          </Box>
+        )}
         <Box sx={{ flex: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.0625rem', letterSpacing: '-0.02em' }}>
-            CloudOps
+            {config.platform_name || 'CloudOps'}
           </Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
-            K8s 管理平台
+            {config.platform_description || 'K8s 管理平台'}
           </Typography>
         </Box>
       </Box>

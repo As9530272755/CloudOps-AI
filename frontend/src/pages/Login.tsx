@@ -13,6 +13,7 @@ import {
 } from '@mui/material'
 import { CloudQueue as CloudIcon } from '@mui/icons-material'
 import { useLogin } from '../lib/api'
+import { useSiteConfig } from '../context/SiteConfigContext'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -20,6 +21,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
   const loginMutation = useLogin()
+  const { config } = useSiteConfig()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,22 +65,31 @@ export default function Login() {
       >
         <CardContent sx={{ p: 4 }}>
           <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Avatar
-              sx={{
-                width: 64,
-                height: 64,
-                mx: 'auto',
-                mb: 2,
-                bgcolor: 'primary.main',
-              }}
-            >
-              <CloudIcon sx={{ fontSize: 32, color: 'primary.contrastText' }} />
-            </Avatar>
+            {config.logo_url ? (
+              <Box
+                component="img"
+                src={config.logo_url}
+                alt={config.platform_name}
+                sx={{ width: 64, height: 64, mx: 'auto', mb: 2, borderRadius: '12px', objectFit: 'contain' }}
+              />
+            ) : (
+              <Avatar
+                sx={{
+                  width: 64,
+                  height: 64,
+                  mx: 'auto',
+                  mb: 2,
+                  bgcolor: 'primary.main',
+                }}
+              >
+                <CloudIcon sx={{ fontSize: 32, color: 'primary.contrastText' }} />
+              </Avatar>
+            )}
             <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
-              CloudOps
+              {config.platform_name || 'CloudOps'}
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-              云原生运维管理平台
+              {config.platform_description || '云原生运维管理平台'}
             </Typography>
           </Box>
 

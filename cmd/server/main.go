@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -140,8 +142,33 @@ func main() {
 	logService := service.NewLogService(db, k8sManager)
 	log.Println("✅ 日志查询服务初始化完成")
 
+	// 创建系统设置服务
+	settingService := service.NewSettingService(db)
+	log.Println("✅ 系统设置服务初始化完成")
+
+	// 创建 Agent 服务
+	agentService := service.NewAgentService(aiPlatformService, aiChatSessionService, logService, k8sService, db)
+	log.Println("✅ Agent 服务初始化完成")
+
+	// 启动 Node.js Agent Runtime
+	agentRuntime := exec.CommandContext(context.Background(), "node", "agent-runtime/dist/server.js", "--port", "19000")
+	agentRuntime.Stdout = os.Stdout
+	agentRuntime.Stderr = os.Stderr
+	agentRuntime.Dir = "/data/projects/cloudops-v2"
+	if err := agentRuntime.Start(); err != nil {
+		log.Printf("⚠️ Agent Runtime 启动失败: %v", err)
+	} else {
+		log.Println("✅ Agent Runtime (Node.js) 启动在 http://127.0.0.1:19000")
+		// 简单等待服务就绪
+		time.Sleep(1 * time.Second)
+	}
+
+	// 创建 Agent Runtime 代理
+	agentRuntimeProxy := service.NewAgentRuntimeProxy(aiPlatformService)
+	log.Println("✅ Agent Runtime 代理初始化完成")
+
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, logService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, agentRuntimeProxy, logService, settingService)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {

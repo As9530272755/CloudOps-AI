@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Typography,
@@ -25,13 +25,17 @@ import {
   MenuItem,
   Alert,
   CircularProgress,
+  Snackbar,
 } from '@mui/material'
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as TestIcon } from '@mui/icons-material'
 
 import { DataSource, datasourceAPI, CreateDataSourceRequest } from '../lib/datasource-api'
 import { aiPlatformAPI, AIPlatform, PlatformFormConfig } from '../lib/ai-platform-api'
-import { logBackendAPI, LogBackendConfig } from '../lib/log-backend-api'
+import { logBackendAPI, LogBackend, LogBackendForm } from '../lib/log-backend-api'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
+import { settingAPI } from '../lib/setting-api'
+import { useSiteConfig } from '../context/SiteConfigContext'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 function DataSourceSettings() {
   const [dataSources, setDataSources] = useState<DataSource[]>([])
@@ -46,9 +50,14 @@ function DataSourceSettings() {
     cluster_id: undefined,
     is_default: false,
   })
-  const [labelName, setLabelName] = useState('')
   const [error, setError] = useState('')
   const [testingId, setTestingId] = useState<number | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
+  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+
+  const showSnack = (message: string, severity: 'success' | 'error' = 'success') => setSnack({ open: true, message, severity })
+  const closeSnack = () => setSnack((s) => ({ ...s, open: false }))
 
   const load = async () => {
     setLoading(true)
@@ -77,16 +86,9 @@ function DataSourceSettings() {
         cluster_id: ds.cluster_id,
         is_default: ds.is_default,
       })
-      let parsedLabel = ''
-      try {
-        const cfg = JSON.parse(ds.config || '{}')
-        parsedLabel = cfg.cluster_label_name || ''
-      } catch {}
-      setLabelName(parsedLabel)
     } else {
       setEditingId(null)
       setForm({ name: '', type: 'prometheus', url: '', config: '', cluster_id: undefined, is_default: false })
-      setLabelName('')
     }
     setDialogOpen(true)
     setError('')
@@ -98,16 +100,7 @@ function DataSourceSettings() {
       return
     }
     try {
-      let cfg: any = {}
-      try {
-        cfg = JSON.parse(form.config || '{}')
-      } catch {}
-      if (labelName.trim()) {
-        cfg.cluster_label_name = labelName.trim()
-      } else {
-        delete cfg.cluster_label_name
-      }
-      const payload = { ...form, config: JSON.stringify(cfg) }
+      const payload = { ...form }
       if (editingId) {
         await datasourceAPI.update(editingId, payload)
       } else {
@@ -121,12 +114,21 @@ function DataSourceSettings() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('确定要删除此数据源吗？使用该数据源的面板将无法正常显示。')) return
+    setConfirmId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!confirmId) return
     try {
-      await datasourceAPI.delete(id)
+      await datasourceAPI.delete(confirmId)
       load()
+      showSnack('删除成功')
     } catch (err: any) {
-      alert(err.message || '删除失败')
+      showSnack(err.message || '删除失败', 'error')
+    } finally {
+      setConfirmOpen(false)
+      setConfirmId(null)
     }
   }
 
@@ -254,21 +256,13 @@ function DataSourceSettings() {
               placeholder="http://prometheus:9090"
             />
             <TextField
-              label="集群区分标签名"
-              value={labelName}
-              onChange={(e) => setLabelName(e.target.value)}
-              fullWidth
-              placeholder="cluster"
-              helperText="用于 VictoriaMetrics / promxy 的 extra_label 过滤，如 cluster、env、team"
-            />
-            <TextField
-              label="关联集群 ID"
+              label="关联集群 ID（高级）"
               value={form.cluster_id ?? ''}
               onChange={(e) => setForm({ ...form, cluster_id: e.target.value ? Number(e.target.value) : undefined })}
               fullWidth
               type="number"
               placeholder="留空表示全局数据源（可被多个集群共用）"
-              helperText="专属数据源直接绑定单个集群，不经过标签过滤"
+              helperText="通常无需填写。全局数据源会自动根据各集群的监控标签配置进行过滤"
             />
             <TextField
               label="配置 (JSON)"
@@ -288,6 +282,20 @@ function DataSourceSettings() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除数据源"
+        message="确定要删除此数据源吗？使用该数据源的面板将无法正常显示。"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doDelete}
+      />
+
+      <Snackbar open={snack.open} autoHideDuration={3000} onClose={closeSnack} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <Alert onClose={closeSnack} severity={snack.severity} sx={{ width: '100%', borderRadius: '12px' }}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
@@ -311,6 +319,8 @@ function AISettings() {
   const [testingDialog, setTestingDialog] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ text: string; severity: 'success' | 'error' } | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -401,12 +411,21 @@ function AISettings() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除此 AI 平台吗？')) return
+    setConfirmId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!confirmId) return
     try {
-      await aiPlatformAPI.delete(id)
+      await aiPlatformAPI.delete(confirmId)
       load()
+      setMessage({ text: '删除成功', severity: 'success' })
     } catch (err: any) {
-      alert(err.message || '删除失败')
+      setMessage({ text: err.message || '删除失败', severity: 'error' })
+    } finally {
+      setConfirmOpen(false)
+      setConfirmId(null)
     }
   }
 
@@ -414,10 +433,14 @@ function AISettings() {
     setTestingId(id)
     try {
       const res = await aiPlatformAPI.test(id)
-      alert(res.success ? `连通成功: ${res.message}` : `连通失败: ${res.error}`)
+      if (res.success) {
+        setMessage({ text: `连通成功: ${res.message}`, severity: 'success' })
+      } else {
+        setMessage({ text: `连通失败: ${res.error}`, severity: 'error' })
+      }
       load()
     } catch (err: any) {
-      alert(err.message || '测试失败')
+      setMessage({ text: err.message || '测试失败', severity: 'error' })
     } finally {
       setTestingId(null)
     }
@@ -428,7 +451,7 @@ function AISettings() {
       await aiPlatformAPI.setDefault(id)
       load()
     } catch (err: any) {
-      alert(err.message || '设置失败')
+      setMessage({ text: err.message || '设置失败', severity: 'error' })
     }
   }
 
@@ -632,9 +655,13 @@ function AISettings() {
                 setTestingDialog(true)
                 try {
                   const res = await aiPlatformAPI.test(editingId)
-                  alert(res.success ? `连通成功: ${res.message}` : `连通失败: ${res.error}`)
+                  if (res.success) {
+                    setMessage({ text: `连通成功: ${res.message}`, severity: 'success' })
+                  } else {
+                    setMessage({ text: `连通失败: ${res.error}`, severity: 'error' })
+                  }
                 } catch (err: any) {
-                  alert(err.message || '测试失败')
+                  setMessage({ text: err.message || '测试失败', severity: 'error' })
                 } finally {
                   setTestingDialog(false)
                 }
@@ -650,49 +677,63 @@ function AISettings() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除 AI 平台"
+        message="确定要删除此 AI 平台吗？"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doDelete}
+      />
     </Box>
   )
 }
 
+
 function LogBackendSettings() {
   const [clusters, setClusters] = useState<Cluster[]>([])
+  const [backends, setBackends] = useState<LogBackend[]>([])
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
-  const [form, setForm] = useState<LogBackendConfig>({
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState<LogBackendForm>({
+    cluster_id: 0,
+    name: '',
     type: 'elasticsearch',
     url: '',
-    index_patterns: { ingress: 'nginx-ingress-*', coredns: 'logstash-*', lb: 'logstash-*', app: 'logstash-*' },
-    headers: {},
+    index_patterns: { all: 'k8s-es-logs-*', ingress: 'nginx-ingress-*', coredns: 'k8s-es-logs-*', lb: 'k8s-es-logs-*', app: 'k8s-es-logs-*' },
     username: '',
     password: '',
   })
-  const [configs, setConfigs] = useState<Record<number, LogBackendConfig>>({})
   const [testingId, setTestingId] = useState<number | null>(null)
+  const [dialogTesting, setDialogTesting] = useState(false)
   const [error, setError] = useState('')
+  const [dialogError, setDialogError] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
+  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'info' })
+
+  const showSnack = (message: string, severity: 'success' | 'error' | 'info' = 'info') => setSnack({ open: true, message, severity })
+  const closeSnack = () => setSnack((s) => ({ ...s, open: false }))
 
   useEffect(() => {
-    loadClusters()
+    loadData()
   }, [])
 
-  const loadClusters = async () => {
+  const loadData = async () => {
     setLoading(true)
     try {
-      const res = await clusterAPI.getClusters()
-      const list: Cluster[] = (res.success && (Array.isArray(res.data) ? res.data : res.data.clusters || [])) || []
-      setClusters(list)
-      const map: Record<number, LogBackendConfig> = {}
-      await Promise.all(
-        list.map(async (c) => {
-          try {
-            const cfgRes = await logBackendAPI.get(c.id)
-            if (cfgRes.success && cfgRes.data) {
-              map[c.id] = cfgRes.data
-            }
-          } catch {}
-        })
-      )
-      setConfigs(map)
+      const [cRes, bRes] = await Promise.all([
+        clusterAPI.getClusters(),
+        logBackendAPI.list(),
+      ])
+      if (cRes.success && cRes.data) {
+        const list: Cluster[] = Array.isArray(cRes.data) ? cRes.data : cRes.data.clusters || []
+        setClusters(list)
+      }
+      if (bRes.success && bRes.data) {
+        setBackends(bRes.data)
+      }
     } catch (err: any) {
       setError(err.message || '加载失败')
     } finally {
@@ -700,89 +741,210 @@ function LogBackendSettings() {
     }
   }
 
-  const handleOpen = (cluster: Cluster) => {
-    setEditingCluster(cluster)
-    const existing = configs[cluster.id]
-    if (existing) {
-      setForm({
-        type: existing.type || 'elasticsearch',
-        url: existing.url || '',
-        index_patterns: existing.index_patterns || { ingress: 'nginx-ingress-*', coredns: 'logstash-*', lb: 'logstash-*', app: 'logstash-*' },
-        headers: existing.headers || {},
-        username: existing.username || '',
-        password: existing.password || '',
-      })
-    } else {
-      setForm({
-        type: 'elasticsearch',
-        url: '',
-        index_patterns: { ingress: 'nginx-ingress-*', coredns: 'logstash-*', lb: 'logstash-*', app: 'logstash-*' },
-        headers: {},
-        username: '',
-        password: '',
-      })
-    }
+  const clusterMap = useMemo(() => {
+    const map: Record<number, string> = {}
+    clusters.forEach((c) => (map[c.id] = c.name))
+    return map
+  }, [clusters])
+
+  const resetForm = () => {
+    setForm({
+      cluster_id: 0,
+      name: '',
+      type: 'elasticsearch',
+      url: '',
+      index_patterns: { all: 'k8s-es-logs-*', ingress: 'nginx-ingress-*', coredns: 'k8s-es-logs-*', lb: 'k8s-es-logs-*', app: 'k8s-es-logs-*' },
+      username: '',
+      password: '',
+    })
+  }
+
+  const handleOpenAdd = () => {
+    setEditingId(null)
+    resetForm()
     setDialogOpen(true)
-    setError('')
+    setDialogError('')
+  }
+
+  const handleOpenEdit = (b: LogBackend) => {
+    setEditingId(b.id)
+    setForm({
+      cluster_id: b.cluster_id,
+      name: b.name,
+      type: b.type,
+      url: b.url,
+      index_patterns: {
+        all: b.index_patterns?.all || 'k8s-es-logs-*',
+        ingress: b.index_patterns?.ingress || 'nginx-ingress-*',
+        coredns: b.index_patterns?.coredns || 'k8s-es-logs-*',
+        lb: b.index_patterns?.lb || 'k8s-es-logs-*',
+        app: b.index_patterns?.app || 'k8s-es-logs-*',
+      },
+      username: b.username || '',
+      password: b.password || '',
+    })
+    setDialogOpen(true)
+    setDialogError('')
+  }
+
+  const buildPayload = (): LogBackendForm => {
+    const payload: LogBackendForm = { ...form }
+    if (payload.username || payload.password) {
+      const headers: Record<string, string> = {}
+      if (payload.username && payload.password) {
+        const basic = btoa(`${payload.username}:${payload.password}`)
+        headers['Authorization'] = `Basic ${basic}`
+      }
+      payload.headers = headers
+    }
+    return payload
   }
 
   const handleSave = async () => {
-    if (!editingCluster) return
-    if (!form.url) {
-      setError('请填写日志后端地址')
+    if (!form.cluster_id) {
+      setDialogError('请选择集群')
+      return
+    }
+    if (!form.name || !form.url) {
+      setDialogError('请填写名称和地址')
       return
     }
     try {
-      const payload: LogBackendConfig = { ...form }
-      if (payload.username || payload.password) {
-        payload.headers = { ...(payload.headers || {}) }
-        // basic auth 在 ES adapter 中通过 headers 传递
-        if (payload.username && payload.password) {
-          const basic = btoa(`${payload.username}:${payload.password}`)
-          payload.headers['Authorization'] = `Basic ${basic}`
+      const payload = buildPayload()
+      if (editingId) {
+        const res = await logBackendAPI.update(editingId, payload)
+        if (!res.success) {
+          setDialogError(res.error || '保存失败')
+          return
+        }
+      } else {
+        const res = await logBackendAPI.create(payload)
+        if (!res.success) {
+          setDialogError(res.error || '保存失败')
+          return
         }
       }
-      const res = await logBackendAPI.update(editingCluster.id, payload)
-      if (res.success) {
-        setDialogOpen(false)
-        setConfigs((prev) => ({ ...prev, [editingCluster.id]: payload }))
-      } else {
-        setError(res.error || '保存失败')
-      }
+      setDialogOpen(false)
+      loadData()
+      showSnack('保存成功', 'success')
     } catch (err: any) {
-      setError(err.message || '保存失败')
+      setDialogError(err.message || '保存失败')
     }
   }
 
-  const handleTest = async (cluster: Cluster, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setTestingId(cluster.id)
+  const handleDelete = async (id: number) => {
+    setConfirmId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!confirmId) return
     try {
-      const res = await logBackendAPI.test(cluster.id)
-      alert(res.success ? `连通成功: ${res.message}` : `连通失败: ${res.error}`)
+      const res = await logBackendAPI.delete(confirmId)
+      if (res.success) {
+        loadData()
+        showSnack('删除成功', 'success')
+      } else {
+        showSnack(res.error || '删除失败', 'error')
+      }
     } catch (err: any) {
-      alert(err.message || '测试失败')
+      showSnack(err.message || '删除失败', 'error')
+    } finally {
+      setConfirmOpen(false)
+      setConfirmId(null)
+    }
+  }
+
+  const handleTest = async (id: number) => {
+    setTestingId(id)
+    try {
+      const res = await logBackendAPI.test(id)
+      if (res.success) {
+        showSnack(`连通成功: ${res.message}`, 'success')
+      } else {
+        let msg = res.error || '连通失败'
+        if (msg.includes('no such host') || msg.includes('lookup')) {
+          msg = '地址无法解析（可能是集群内部域名），建议改为 NodePort 或外部可访问地址'
+        }
+        showSnack(msg, 'error')
+      }
+    } catch (err: any) {
+      showSnack(err.message || '测试失败', 'error')
     } finally {
       setTestingId(null)
     }
   }
 
+  const handleDialogTest = async () => {
+    if (!form.cluster_id) {
+      setDialogError('请先选择集群')
+      return
+    }
+    if (!form.name || !form.url) {
+      setDialogError('请填写名称和地址')
+      return
+    }
+    setDialogTesting(true)
+    try {
+      const payload = buildPayload()
+      let id = editingId
+      if (!id) {
+        const createRes = await logBackendAPI.create(payload)
+        if (!createRes.success || !createRes.data) {
+          setDialogError(createRes.error || '保存失败，无法测试')
+          setDialogTesting(false)
+          return
+        }
+        id = createRes.data.id
+        setEditingId(id)
+        setBackends((prev) => [...prev, createRes.data!])
+      } else {
+        const updateRes = await logBackendAPI.update(id, payload)
+        if (!updateRes.success) {
+          setDialogError(updateRes.error || '保存失败，无法测试')
+          setDialogTesting(false)
+          return
+        }
+      }
+      const testRes = await logBackendAPI.test(id)
+      if (testRes.success) {
+        showSnack(`连通成功: ${testRes.message}`, 'success')
+      } else {
+        let msg = testRes.error || '连通失败'
+        if (msg.includes('no such host') || msg.includes('lookup')) {
+          msg = '地址无法解析（可能是集群内部域名），建议改为 NodePort 或外部可访问地址'
+        }
+        showSnack(msg, 'error')
+      }
+    } catch (err: any) {
+      showSnack(err.message || '测试失败', 'error')
+    } finally {
+      setDialogTesting(false)
+    }
+  }
+
   return (
     <Box>
-      {error && !dialogOpen && (
+      {error && (
         <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
           {error}
         </Alert>
       )}
 
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <Button variant="contained" onClick={handleOpenAdd}>
+          添加日志后端
+        </Button>
+      </Box>
+
       <Card>
         <Table>
           <TableHead>
             <TableRow>
+              <TableCell>名称</TableCell>
               <TableCell>集群</TableCell>
               <TableCell>类型</TableCell>
               <TableCell>地址</TableCell>
-              <TableCell>状态</TableCell>
               <TableCell align="right">操作</TableCell>
             </TableRow>
           </TableHead>
@@ -794,43 +956,68 @@ function LogBackendSettings() {
                 </TableCell>
               </TableRow>
             )}
-            {!loading && clusters.map((c) => {
-              const cfg = configs[c.id]
-              return (
-                <TableRow key={c.id} hover>
-                  <TableCell>{c.name}</TableCell>
-                  <TableCell>{cfg?.type ? cfg.type.toUpperCase() : '未配置'}</TableCell>
-                  <TableCell>{cfg?.url || '-'}</TableCell>
-                  <TableCell>
-                    {cfg ? (
-                      <Chip label="已配置" color="success" size="small" />
-                    ) : (
-                      <Chip label="未配置" color="default" size="small" />
-                    )}
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpen(c)}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={(e) => handleTest(c, e)} disabled={testingId === c.id}>
-                      {testingId === c.id ? <CircularProgress size={18} /> : <TestIcon fontSize="small" />}
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
+            {!loading && backends.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} align="center" sx={{ color: 'text.secondary', py: 4 }}>
+                  暂无日志后端配置，点击右上角添加
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && backends.map((b) => (
+              <TableRow key={b.id} hover>
+                <TableCell>{b.name}</TableCell>
+                <TableCell>{clusterMap[b.cluster_id] || `集群${b.cluster_id}`}</TableCell>
+                <TableCell><Chip label={b.type.toUpperCase()} size="small" /></TableCell>
+                <TableCell>{b.url}</TableCell>
+                <TableCell align="right">
+                  <IconButton size="small" onClick={() => handleOpenEdit(b)} title="编辑">
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" onClick={() => handleTest(b.id)} disabled={testingId === b.id} title="测试连接">
+                    {testingId === b.id ? <CircularProgress size={18} /> : <TestIcon fontSize="small" />}
+                  </IconButton>
+                  <IconButton size="small" color="error" onClick={() => handleDelete(b.id)} title="删除">
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </Card>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingCluster ? `配置 ${editingCluster.name} 日志后端` : '配置日志后端'}</DialogTitle>
+        <DialogTitle>{editingId ? '编辑日志后端' : '添加日志后端'}</DialogTitle>
         <DialogContent>
-          {error && dialogOpen && (
+          {dialogError && (
             <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
-              {error}
+              {dialogError}
             </Alert>
           )}
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel>集群</InputLabel>
+            <Select
+              value={form.cluster_id || ''}
+              label="集群"
+              onChange={(e) => setForm({ ...form, cluster_id: Number(e.target.value) })}
+              disabled={!!editingId}
+            >
+              {clusters.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            fullWidth
+            size="small"
+            label="名称"
+            placeholder="如：KS-OS-日志"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            sx={{ mb: 2 }}
+          />
           <FormControl fullWidth size="small" sx={{ mb: 2 }}>
             <InputLabel>后端类型</InputLabel>
             <Select
@@ -875,6 +1062,14 @@ function LogBackendSettings() {
           <TextField
             fullWidth
             size="small"
+            label="All / 全局"
+            value={form.index_patterns?.all || ''}
+            onChange={(e) => setForm({ ...form, index_patterns: { ...form.index_patterns, all: e.target.value } })}
+            sx={{ mb: 1 }}
+          />
+          <TextField
+            fullWidth
+            size="small"
             label="Ingress"
             value={form.index_patterns?.ingress || ''}
             onChange={(e) => setForm({ ...form, index_patterns: { ...form.index_patterns, ingress: e.target.value } })}
@@ -906,11 +1101,179 @@ function LogBackendSettings() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>取消</Button>
+          <Button variant="outlined" onClick={handleDialogTest} disabled={dialogTesting}>
+            {dialogTesting ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+            测试连接
+          </Button>
           <Button variant="contained" onClick={handleSave}>
             保存
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除日志后端配置"
+        message="确定要删除此日志后端配置吗？"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doDelete}
+      />
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={closeSnack}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={closeSnack} severity={snack.severity} sx={{ width: '100%', borderRadius: '12px' }}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  )
+}
+
+function GeneralSettings() {
+  const { config, refresh } = useSiteConfig()
+  const [name, setName] = useState(config.platform_name || '')
+  const [desc, setDesc] = useState(config.platform_description || '')
+  const [logoUrl, setLogoUrl] = useState(config.logo_url || '')
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    severity: 'success',
+  })
+
+  useEffect(() => {
+    setName(config.platform_name || '')
+    setDesc(config.platform_description || '')
+    setLogoUrl(config.logo_url || '')
+  }, [config])
+
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      const res = await settingAPI.updateSiteConfig({
+        platform_name: name,
+        platform_description: desc,
+        logo_url: logoUrl,
+      })
+      if (res.success) {
+        setSnack({ open: true, message: '保存成功', severity: 'success' })
+        await refresh()
+      } else {
+        setSnack({ open: true, message: res.error || '保存失败', severity: 'error' })
+      }
+    } catch (e: any) {
+      setSnack({ open: true, message: e?.message || '保存失败', severity: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const res = await settingAPI.uploadLogo(file)
+      if (res.success && res.data?.logo_url) {
+        setLogoUrl(res.data.logo_url)
+        setSnack({ open: true, message: 'Logo 上传成功', severity: 'success' })
+      } else {
+        setSnack({ open: true, message: res.error || '上传失败', severity: 'error' })
+      }
+    } catch (e: any) {
+      setSnack({ open: true, message: e?.message || '上传失败', severity: 'error' })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <Box>
+      <Typography variant="h6" fontWeight={600} gutterBottom>
+        平台基本信息
+      </Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 600, mt: 2 }}>
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+            平台 Logo
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {logoUrl ? (
+              <Box
+                component="img"
+                src={logoUrl}
+                alt="logo"
+                sx={{ width: 64, height: 64, borderRadius: '12px', objectFit: 'contain', border: '1px solid', borderColor: 'divider' }}
+              />
+            ) : (
+              <Box
+                sx={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: '12px',
+                  bgcolor: 'primary.main',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Typography variant="h5" sx={{ color: 'primary.contrastText', fontWeight: 700 }}>
+                  {name ? name[0] : 'C'}
+                </Typography>
+              </Box>
+            )}
+            <Button variant="outlined" component="label" size="small" disabled={uploading}>
+              {uploading ? '上传中...' : '上传 Logo'}
+              <input type="file" hidden accept="image/*" onChange={handleLogoChange} />
+            </Button>
+            {logoUrl && (
+              <Button variant="text" color="error" size="small" onClick={() => setLogoUrl('')}>
+                移除
+              </Button>
+            )}
+          </Box>
+        </Box>
+
+        <TextField
+          label="平台名称"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          fullWidth
+          size="small"
+          placeholder="CloudOps"
+        />
+
+        <TextField
+          label="平台介绍"
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          fullWidth
+          size="small"
+          placeholder="云原生运维管理平台"
+        />
+
+        <Box>
+          <Button variant="contained" onClick={handleSave} disabled={loading}>
+            {loading ? '保存中...' : '保存设置'}
+          </Button>
+        </Box>
+      </Box>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3000}
+        onClose={() => setSnack((s) => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert severity={snack.severity} sx={{ width: '100%', borderRadius: '12px' }}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
@@ -940,11 +1303,7 @@ export default function Settings() {
           {tab === 0 && <DataSourceSettings />}
           {tab === 1 && <AISettings />}
           {tab === 2 && <LogBackendSettings />}
-          {tab === 3 && (
-            <Typography variant="body2" color="text.secondary">
-              更多设置项开发中...
-            </Typography>
-          )}
+          {tab === 3 && <GeneralSettings />}
         </CardContent>
       </Card>
     </Box>

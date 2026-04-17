@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -92,6 +93,7 @@ type Cluster struct {
 	Description       string         `gorm:"type:text" json:"description"`
 	AuthType          string         `gorm:"size:50;not null" json:"auth_type"` // kubeconfig/token/oidc
 	Server            string         `gorm:"size:255" json:"server"`
+	ClusterLabelName  string         `gorm:"size:128;default:'cluster'" json:"cluster_label_name"`
 	ClusterLabelValue string         `gorm:"size:128" json:"cluster_label_value"`
 	IsActive          bool           `gorm:"default:true" json:"is_active"`
 	Priority          int            `gorm:"default:0" json:"priority"`
@@ -133,6 +135,64 @@ type LogBackendConfig struct {
 	IndexPatterns map[string]string `json:"index_patterns"`
 	Headers       map[string]string `json:"headers,omitempty"`
 	DetectedAt    *time.Time        `json:"detected_at,omitempty"`
+}
+
+// ClusterLogBackend 集群日志后端（支持一个集群多套后端）
+type ClusterLogBackend struct {
+	ID              uint              `gorm:"primaryKey" json:"id"`
+	ClusterID       uint              `gorm:"index;not null" json:"cluster_id"`
+	Name            string            `gorm:"size:100;not null" json:"name"` // 用户自定义名称，如 "KS-OS-日志"
+	Type            string            `gorm:"size:50;not null" json:"type"`  // elasticsearch | opensearch | loki
+	URL             string            `gorm:"size:512;not null" json:"url"`
+	IndexPatterns   string            `gorm:"type:text" json:"-"`            // JSON 序列化后的索引模式
+	Headers         string            `gorm:"type:text" json:"-"`            // JSON 序列化后的请求头
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
+	// 以下字段仅在 API 响应中使用
+	IndexPatternsMap map[string]string `json:"index_patterns,omitempty" gorm:"-"`
+	HeadersMap       map[string]string `json:"headers,omitempty" gorm:"-"`
+}
+
+// ToConfig 转换为 LogBackendConfig
+func (b ClusterLogBackend) ToConfig() LogBackendConfig {
+	cfg := LogBackendConfig{
+		Type: b.Type,
+		URL:  b.URL,
+		IndexPatterns: map[string]string{
+			"all":     "k8s-es-logs-*",
+			"ingress": "nginx-ingress-*",
+			"coredns": "k8s-es-logs-*",
+			"lb":      "k8s-es-logs-*",
+			"app":     "k8s-es-logs-*",
+		},
+		Headers: map[string]string{},
+	}
+	if b.IndexPatterns != "" {
+		_ = json.Unmarshal([]byte(b.IndexPatterns), &cfg.IndexPatterns)
+	}
+	if b.Headers != "" {
+		_ = json.Unmarshal([]byte(b.Headers), &cfg.Headers)
+	}
+	return cfg
+}
+
+// FromConfig 从 LogBackendConfig 填充数据
+func (b *ClusterLogBackend) FromConfig(cfg LogBackendConfig) {
+	b.Type = cfg.Type
+	b.URL = cfg.URL
+	if cfg.IndexPatterns != nil {
+		data, _ := json.Marshal(cfg.IndexPatterns)
+		b.IndexPatterns = string(data)
+	}
+	if cfg.Headers != nil {
+		data, _ := json.Marshal(cfg.Headers)
+		b.Headers = string(data)
+	}
+}
+
+// TableName 指定表名
+func (ClusterLogBackend) TableName() string {
+	return "cluster_log_backends"
 }
 
 // ClusterMetadata 集群元数据模型
@@ -350,3 +410,12 @@ type InspectionRule struct {
 }
 
 func (InspectionRule) TableName() string { return "inspection_rules" }
+
+// SystemSetting 系统配置表
+type SystemSetting struct {
+	Key       string `gorm:"primaryKey;size:128" json:"key"`
+	Value     string `gorm:"type:text" json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (SystemSetting) TableName() string { return "system_settings" }
