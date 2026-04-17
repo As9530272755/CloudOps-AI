@@ -44,6 +44,7 @@ import {
 
 import html2pdf from 'html2pdf.js'
 import { inspectionAPI, InspectionTask, InspectionJob, InspectionResultItem } from '../lib/inspection-api'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 
 const riskColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -163,10 +164,20 @@ export default function Inspection() {
     }
   }
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
+
   const handleDeleteTask = async (id: number) => {
-    if (!confirm('确定删除该巡检任务？')) return
-    await inspectionAPI.deleteTask(id)
+    setConfirmId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDeleteTask = async () => {
+    if (!confirmId) return
+    await inspectionAPI.deleteTask(confirmId)
     loadTasks()
+    setConfirmOpen(false)
+    setConfirmId(null)
   }
 
   const handleTrigger = async (id: number) => {
@@ -312,7 +323,14 @@ export default function Inspection() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {task.cluster_ids?.length ? `${task.cluster_ids.length} 个集群` : '全部活跃集群'}
+                          {(() => {
+                            const names = (task.cluster_ids || [])
+                              .map(id => clusters.find(c => c.id === id)?.display_name)
+                              .filter(Boolean) as string[]
+                            if (names.length === 0) return '全部活跃集群'
+                            if (names.length <= 2) return names.join(', ')
+                            return `${names.slice(0, 2).join(', ')} 等 ${names.length} 个集群`
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Chip label={task.enabled ? '已启用' : '已停用'} color={task.enabled ? 'success' : 'default'} size="small" />
@@ -428,7 +446,7 @@ export default function Inspection() {
               value={quickClusterIds}
               label="关联集群"
               onChange={e => setQuickClusterIds(e.target.value as number[])}
-              renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name || id).join(', ')}
+              renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name || clusters.find(c => c.id === id)?.name || `集群${id}`).join(', ')}
             >
               {clusters.map(c => (
                 <MenuItem key={c.id} value={c.id}>
@@ -476,7 +494,7 @@ export default function Inspection() {
                 value={form.cluster_ids || []}
                 label="关联集群"
                 onChange={e => setForm({ ...form, cluster_ids: e.target.value as number[] })}
-                renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name).filter(Boolean).join(', ')}
+                renderValue={selected => (selected as number[]).map(id => clusters.find(c => c.id === id)?.display_name || clusters.find(c => c.id === id)?.name || '').filter(Boolean).join(', ')}
               >
                 {clusters.map(c => (
                   <MenuItem key={c.id} value={c.id}>
@@ -541,7 +559,7 @@ export default function Inspection() {
                       <CardContent>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                           <Typography variant="subtitle1" fontWeight={600}>
-                            {clusters.find(c => c.id === r.cluster_id)?.display_name || `集群 ${r.cluster_id}`}
+                            {clusters.find(c => c.id === r.cluster_id)?.display_name || clusters.find(c => c.id === r.cluster_id)?.name || `集群 ${r.cluster_id}`}
                           </Typography>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Chip label={`评分 ${r.score}`} color={r.score >= 90 ? 'success' : r.score >= 70 ? 'warning' : 'error'} size="small" />
@@ -646,6 +664,14 @@ export default function Inspection() {
           <Button onClick={() => setReportDialog(false)} sx={{ textTransform: 'none' }}>关闭</Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除巡检任务"
+        message="确定删除该巡检任务吗？"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doDeleteTask}
+      />
     </Box>
   )
 }

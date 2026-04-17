@@ -10,7 +10,7 @@ import (
 // NewAdapter 根据集群日志后端配置创建对应适配器
 func NewAdapter(cfg model.LogBackendConfig) Adapter {
 	switch cfg.Type {
-	case "elasticsearch":
+	case "elasticsearch", "opensearch":
 		return NewESAdapter(cfg.URL, cfg.IndexPatterns, cfg.Headers)
 	case "loki":
 		return NewLokiAdapter(cfg.URL, cfg.Headers)

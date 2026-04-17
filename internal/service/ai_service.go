@@ -94,16 +94,16 @@ func (s *AIService) GeneralChatWithPlatformSession(ctx context.Context, platform
 		}
 	}
 
-	reply, err := provider.ChatCompletion(ctx, truncateMessages(messages, provider.MaxHistoryMessages()))
+	res, err := provider.ChatCompletion(ctx, truncateMessages(messages, provider.MaxHistoryMessages()), nil)
 	if err != nil {
 		return "", err
 	}
 
 	if sessionID != "" {
-		_ = s.sessionSvc.SaveMessage(sessionID, ai.Message{Role: "assistant", Content: reply})
+		_ = s.sessionSvc.SaveMessage(sessionID, ai.Message{Role: "assistant", Content: res.Content})
 		s.tryGenerateTitle(platformID, sessionID, messages)
 	}
-	return reply, nil
+	return res.Content, nil
 }
 
 // GeneralChatStream 通用流式对话（兼容旧接口）
@@ -142,7 +142,7 @@ func (s *AIService) GeneralChatStreamWithPlatformSession(ctx context.Context, pl
 		onChunk(chunk)
 	}
 
-	err = provider.ChatCompletionStream(ctx, truncateMessages(messages, provider.MaxHistoryMessages()), wrappedOnChunk)
+	err = provider.ChatCompletionStream(ctx, truncateMessages(messages, provider.MaxHistoryMessages()), nil, wrappedOnChunk)
 	if err != nil {
 		return err
 	}
@@ -183,13 +183,13 @@ func (s *AIService) tryGenerateTitle(platformID string, sessionID string, messag
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		title, err := provider.ChatCompletion(ctx, []ai.Message{
+		res, err := provider.ChatCompletion(ctx, []ai.Message{
 			{Role: "user", Content: summaryPrompt},
-		})
+		}, nil)
 		if err != nil {
 			return
 		}
-		title = strings.TrimSpace(title)
+		title := strings.TrimSpace(res.Content)
 		if title != "" {
 			_ = s.sessionSvc.UpdateTitle(sessionID, title)
 		}
@@ -223,10 +223,14 @@ func (s *AIService) AnalyzeLogs(ctx context.Context, logs string) (string, error
 		"你是一位 Kubernetes 运维专家。请分析下面的容器日志，给出：1) 整体状态判断；2) 关键错误/告警提取；3) 排查建议。\n\n```\n%s\n```",
 		logs,
 	)
-	return provider.ChatCompletion(ctx, []ai.Message{
+	res, err := provider.ChatCompletion(ctx, []ai.Message{
 		{Role: "system", Content: "你是一个专业的 K8s 日志分析师。"},
 		{Role: "user", Content: prompt},
-	})
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	return res.Content, nil
 }
 
 // AnalyzeInspection 深度分析巡检报告（走默认平台）
@@ -239,10 +243,14 @@ func (s *AIService) AnalyzeInspection(ctx context.Context, report string) (strin
 		"你是一位 Kubernetes 架构师。请对下面的巡检报告进行深度分析，给出：1) 核心风险点；2) 优先级排序；3) 具体的修复建议。\n\n%s",
 		report,
 	)
-	return provider.ChatCompletion(ctx, []ai.Message{
+	res, err := provider.ChatCompletion(ctx, []ai.Message{
 		{Role: "system", Content: "你是一个专业的 K8s 架构师。"},
 		{Role: "user", Content: prompt},
-	})
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	return res.Content, nil
 }
 
 // AnalyzeNetworkTrace 分析网络追踪数据（走默认平台）
@@ -255,8 +263,12 @@ func (s *AIService) AnalyzeNetworkTrace(ctx context.Context, rawLogs string) (st
 		"你是一位 Kubernetes 网络运维专家。请根据下面 tcpdump 抓包日志，为普通工程师写一段 150 字以内的中文总结。需包含：1) 和谁通信；2) 用了什么协议；3) 流量大小；4) 是否有异常。\n\n%s",
 		rawLogs,
 	)
-	return provider.ChatCompletion(ctx, []ai.Message{
+	res, err := provider.ChatCompletion(ctx, []ai.Message{
 		{Role: "system", Content: "你是一个专业的 K8s 网络分析师。"},
 		{Role: "user", Content: prompt},
-	})
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	return res.Content, nil
 }

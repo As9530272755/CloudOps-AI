@@ -1,8 +1,8 @@
 import { apiClient as api } from './api'
 
 export interface LogQueryRequest {
-  cluster_ids: number[]
-  log_type: 'ingress' | 'coredns' | 'lb' | 'app'
+  backend_ids: number[]
+  log_type: 'all' | 'ingress' | 'coredns' | 'lb' | 'app'
   time_range: {
     from: string
     to: string
@@ -10,6 +10,7 @@ export interface LogQueryRequest {
   filters?: Record<string, string>
   limit?: number
   offset?: number
+  mode?: 'aggregate' | 'detail'
 }
 
 export interface LogEntry {
@@ -27,8 +28,10 @@ export interface LogQueryResult {
   total: number
   limit: number
   offset: number
-  cluster_results: any[]
+  backend_results: any[]
   entries: LogEntry[]
+  messages?: string[]
+  level_counts?: Record<string, number>
 }
 
 export interface HistogramPoint {
@@ -42,7 +45,7 @@ export const logAPI = {
     return res.data as { success: boolean; data?: LogQueryResult; error?: string }
   },
 
-  histogram: async (req: Omit<LogQueryRequest, 'cluster_ids'> & { cluster_id: number }) => {
+  histogram: async (req: Omit<LogQueryRequest, 'backend_ids'> & { backend_id: number }) => {
     const res = await api.post('/logs/histogram', req)
     return res.data as { success: boolean; data?: { histogram: HistogramPoint[] }; error?: string }
   },
@@ -50,10 +53,5 @@ export const logAPI = {
   analyze: async (req: LogQueryRequest) => {
     const res = await api.post('/logs/analyze', req)
     return res.data as { success: boolean; data?: { sample: string; error_count: number; total_count: number }; error?: string }
-  },
-
-  testBackend: async (clusterId: number) => {
-    const res = await api.get(`/clusters/${clusterId}/logs/test`)
-    return res.data as { success: boolean; message?: string; error?: string }
   },
 }

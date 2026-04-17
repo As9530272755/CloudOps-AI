@@ -615,17 +615,12 @@ func (s *InspectionService) queryPrometheusData(ctx context.Context, tenantID ui
 			for _, globalDS := range globalDSList {
 				extraLabels := make(map[string]string)
 				if cluster.ClusterLabelValue != "" {
-					labelName := "cluster"
-					if globalDS.Config != "" {
-						var cfg map[string]interface{}
-						if json.Unmarshal([]byte(globalDS.Config), &cfg) == nil {
-							if v, ok := cfg["cluster_label_name"].(string); ok && v != "" {
-								labelName = v
-							}
-						}
+					labelName := cluster.ClusterLabelName
+					if labelName == "" {
+						labelName = "cluster"
 					}
 					extraLabels[labelName] = cluster.ClusterLabelValue
-				}
+					}
 				if tryFill(globalDS, extraLabels) {
 					return data
 				}

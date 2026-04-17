@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -24,10 +25,11 @@ func NewLogHandler(logService *service.LogService) *LogHandler {
 	return &LogHandler{logService: logService}
 }
 
-// LogQueryRequest 日志查询请求
+// ====== 日志查询 ======
+
 type LogQueryRequest struct {
-	ClusterIDs []uint            `json:"cluster_ids" binding:"required,min=1,max=20"`
-	LogType    string            `json:"log_type" binding:"required,oneof=ingress coredns lb app"`
+	BackendIDs []uint            `json:"backend_ids" binding:"required,min=1,max=20"`
+	LogType    string            `json:"log_type" binding:"required,oneof=all ingress coredns lb app"`
 	TimeRange  struct {
 		From time.Time `json:"from" binding:"required"`
 		To   time.Time `json:"to" binding:"required"`
@@ -35,6 +37,7 @@ type LogQueryRequest struct {
 	Filters map[string]string `json:"filters"`
 	Limit   int               `json:"limit" binding:"min=1,max=500"`
 	Offset  int               `json:"offset" binding:"min=0"`
+	Mode    string            `json:"mode,omitempty"`
 }
 
 // QueryLogs 查询日志
@@ -54,37 +57,37 @@ func (h *LogHandler) QueryLogs(c *gin.Context) {
 		Filters: req.Filters,
 		Limit:   req.Limit,
 		Offset:  req.Offset,
+		Mode:    req.Mode,
 	}
 	qReq.TimeRange.From = req.TimeRange.From
 	qReq.TimeRange.To = req.TimeRange.To
 
-	results, err := h.logService.QueryLogsMultiCluster(c.Request.Context(), req.ClusterIDs, qReq)
+	results, err := h.logService.QueryLogsMultiBackend(c.Request.Context(), req.BackendIDs, qReq)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 
-	// 合并统计
 	var total int64
 	allEntries := make([]log.LogEntry, 0)
+	levelCounts := make(map[string]int64)
 	for _, r := range results {
 		total += r.Total
 		allEntries = append(allEntries, r.Entries...)
-	}
-
-	// 按时间倒序合并后截断
-	if len(allEntries) > req.Limit {
-		allEntries = allEntries[:req.Limit]
+		for k, v := range r.LevelCounts {
+			levelCounts[k] += v
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"total":      total,
-			"limit":      req.Limit,
-			"offset":     req.Offset,
-			"cluster_results": results,
-			"entries":    allEntries,
+			"total":           total,
+			"limit":             req.Limit,
+			"offset":            req.Offset,
+			"backend_results": results,
+			"entries":           allEntries,
+			"level_counts":    levelCounts,
 		},
 	})
 }
@@ -92,7 +95,7 @@ func (h *LogHandler) QueryLogs(c *gin.Context) {
 // QueryHistogram 查询日志时序分布
 func (h *LogHandler) QueryHistogram(c *gin.Context) {
 	var req struct {
-		ClusterID uint              `json:"cluster_id" binding:"required"`
+		BackendID uint              `json:"backend_id" binding:"required"`
 		LogType   string            `json:"log_type" binding:"required"`
 		TimeRange struct {
 			From time.Time `json:"from" binding:"required"`
@@ -112,7 +115,7 @@ func (h *LogHandler) QueryHistogram(c *gin.Context) {
 	qReq.TimeRange.From = req.TimeRange.From
 	qReq.TimeRange.To = req.TimeRange.To
 
-	result, err := h.logService.QueryHistogram(c.Request.Context(), req.ClusterID, qReq)
+	result, err := h.logService.QueryHistogram(c.Request.Context(), req.BackendID, qReq)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
@@ -124,65 +127,10 @@ func (h *LogHandler) QueryHistogram(c *gin.Context) {
 	})
 }
 
-// GetLogBackend 获取集群日志后端配置
-func (h *LogHandler) GetLogBackend(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	if id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的集群 ID"})
-		return
-	}
-
-	cfg, err := h.logService.GetLogBackend(uint(id))
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg})
-}
-
-// UpdateLogBackend 更新集群日志后端配置
-func (h *LogHandler) UpdateLogBackend(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	if id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的集群 ID"})
-		return
-	}
-
-	var req model.LogBackendConfig
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	if err := h.logService.UpdateLogBackend(uint(id), req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "配置已保存"})
-}
-
-// TestLogBackend 测试集群日志后端连通性
-func (h *LogHandler) TestLogBackend(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	if id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的集群 ID"})
-		return
-	}
-
-	if err := h.logService.TestConnection(c.Request.Context(), uint(id)); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "日志后端连接正常"})
-}
-
 // AnalyzeLogs AI 分析日志
 func (h *LogHandler) AnalyzeLogs(c *gin.Context) {
 	var req struct {
-		ClusterIDs []uint   `json:"cluster_ids" binding:"required"`
+		BackendIDs []uint   `json:"backend_ids" binding:"required"`
 		LogType    string   `json:"log_type" binding:"required"`
 		TimeRange  struct {
 			From time.Time `json:"from" binding:"required"`
@@ -195,7 +143,6 @@ func (h *LogHandler) AnalyzeLogs(c *gin.Context) {
 		return
 	}
 
-	// 先查询日志（限制 100 条用于分析）
 	qReq := log.QueryRequest{
 		LogType: req.LogType,
 		Filters: req.Filters,
@@ -204,13 +151,12 @@ func (h *LogHandler) AnalyzeLogs(c *gin.Context) {
 	qReq.TimeRange.From = req.TimeRange.From
 	qReq.TimeRange.To = req.TimeRange.To
 
-	results, err := h.logService.QueryLogsMultiCluster(c.Request.Context(), req.ClusterIDs, qReq)
+	results, err := h.logService.QueryLogsMultiBackend(c.Request.Context(), req.BackendIDs, qReq)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 
-	// 提取错误日志优先，构造 Prompt
 	var errorLogs []string
 	var normalLogs []string
 	for _, r := range results {
@@ -231,19 +177,16 @@ func (h *LogHandler) AnalyzeLogs(c *gin.Context) {
 		}
 	}
 
-	// 采样：错误优先 + 补充正常日志，总长度控制
 	sample := buildLogSample(errorLogs, normalLogs, 8000)
 	if len(sample) == 0 {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": "未找到符合条件的日志"})
 		return
 	}
 
-	// TODO: 调用 AI 分析（此处复用 AIService.AnalyzeLogs，需要依赖注入）
-	// 当前简化返回采样日志，供前端展示或后续接入 AI Stream
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"sample":     sample,
+			"sample":      sample,
 			"error_count": len(errorLogs),
 			"total_count": len(errorLogs) + len(normalLogs),
 		},
@@ -254,7 +197,6 @@ func buildLogSample(errorLogs, normalLogs []string, maxChars int) string {
 	var sb strings.Builder
 	added := make(map[string]bool)
 
-	// 先加错误日志
 	for _, l := range errorLogs {
 		if added[l] {
 			continue
@@ -267,7 +209,6 @@ func buildLogSample(errorLogs, normalLogs []string, maxChars int) string {
 		added[l] = true
 	}
 
-	// 再补正常日志
 	for _, l := range normalLogs {
 		if added[l] {
 			continue
@@ -281,4 +222,137 @@ func buildLogSample(errorLogs, normalLogs []string, maxChars int) string {
 	}
 
 	return sb.String()
+}
+
+func fillBackendResp(b model.ClusterLogBackend) model.ClusterLogBackend {
+	if b.IndexPatterns != "" {
+		_ = json.Unmarshal([]byte(b.IndexPatterns), &b.IndexPatternsMap)
+	}
+	if b.Headers != "" {
+		_ = json.Unmarshal([]byte(b.Headers), &b.HeadersMap)
+	}
+	return b
+}
+
+// ====== 日志后端配置 CRUD ======
+
+// ListLogBackends 列出日志后端
+func (h *LogHandler) ListLogBackends(c *gin.Context) {
+	clusterID, _ := strconv.Atoi(c.Query("cluster_id"))
+	list, err := h.logService.ListLogBackends(uint(clusterID))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	for i := range list {
+		list[i] = fillBackendResp(list[i])
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": list})
+}
+
+// GetLogBackend 获取单个日志后端
+func (h *LogHandler) GetLogBackend(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的后端 ID"})
+		return
+	}
+	backend, err := h.logService.GetLogBackend(uint(id))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	backend = fillBackendResp(backend)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": backend})
+}
+
+// CreateLogBackend 创建日志后端
+func (h *LogHandler) CreateLogBackend(c *gin.Context) {
+	var req struct {
+		model.ClusterLogBackend
+		Headers map[string]string `json:"headers"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if req.Name == "" || req.URL == "" || req.Type == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "名称、类型和地址不能为空"})
+		return
+	}
+	if req.IndexPatterns == "" {
+		req.IndexPatterns = `{"ingress":"nginx-ingress-*","coredns":"logstash-*","lb":"logstash-*","app":"logstash-*"}`
+	}
+	if len(req.Headers) > 0 {
+		b, _ := json.Marshal(req.Headers)
+		req.ClusterLogBackend.Headers = string(b)
+	}
+	if err := h.logService.CreateLogBackend(&req.ClusterLogBackend); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	req.ClusterLogBackend = fillBackendResp(req.ClusterLogBackend)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": req.ClusterLogBackend})
+}
+
+// UpdateLogBackend 更新日志后端
+func (h *LogHandler) UpdateLogBackend(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的后端 ID"})
+		return
+	}
+
+	var req struct {
+		model.ClusterLogBackend
+		Headers map[string]string `json:"headers"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if req.Name == "" || req.URL == "" || req.Type == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "名称、类型和地址不能为空"})
+		return
+	}
+	if len(req.Headers) > 0 {
+		b, _ := json.Marshal(req.Headers)
+		req.ClusterLogBackend.Headers = string(b)
+	}
+
+	if err := h.logService.UpdateLogBackend(uint(id), &req.ClusterLogBackend); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "配置已保存"})
+}
+
+// DeleteLogBackend 删除日志后端
+func (h *LogHandler) DeleteLogBackend(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的后端 ID"})
+		return
+	}
+
+	if err := h.logService.DeleteLogBackend(uint(id)); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "配置已删除"})
+}
+
+// TestLogBackend 测试日志后端连通性
+func (h *LogHandler) TestLogBackend(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的后端 ID"})
+		return
+	}
+
+	if err := h.logService.TestConnection(c.Request.Context(), uint(id)); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "日志后端连接正常"})
 }

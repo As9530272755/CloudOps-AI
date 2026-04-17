@@ -22,6 +22,7 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
 import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel, CreatePanelRequest } from '../lib/dashboard-api'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { ChartPanel } from '../components/charts/ChartPanel'
 import PanelEditor from '../components/dashboard/PanelEditor'
 
@@ -207,14 +208,25 @@ export default function Dashboard() {
     setEditorOpen(true)
   }
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmPanel, setConfirmPanel] = useState<DashboardPanel | null>(null)
+
   const handleDeletePanel = async (panel: DashboardPanel) => {
     if (!dashboard) return
-    if (!confirm(`确定删除面板 "${panel.title}" 吗？`)) return
+    setConfirmPanel(panel)
+    setConfirmOpen(true)
+  }
+
+  const doDeletePanel = async () => {
+    if (!dashboard || !confirmPanel) return
     try {
-      await dashboardAPI.deletePanel(dashboard.id, panel.id)
+      await dashboardAPI.deletePanel(dashboard.id, confirmPanel.id)
       loadDashboard()
     } catch (err: any) {
       alert(err.message || '删除失败')
+    } finally {
+      setConfirmOpen(false)
+      setConfirmPanel(null)
     }
   }
 
@@ -471,6 +483,14 @@ export default function Dashboard() {
         onClose={() => setEditorOpen(false)}
         onSave={handleSavePanel}
         initialData={editingPanel}
+      />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除面板"
+        message={confirmPanel ? `确定删除面板 "${confirmPanel.title}" 吗？` : ''}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doDeletePanel}
       />
     </Box>
   )

@@ -14,6 +14,7 @@ export interface Cluster {
   name: string
   display_name?: string
   server?: string
+  cluster_label_name?: string
   cluster_label_value?: string
   metadata?: ClusterMetadata
 }
@@ -23,6 +24,7 @@ export interface CreateClusterRequest {
   display_name?: string
   description?: string
   auth_type: 'kubeconfig' | 'token'
+  cluster_label_name?: string
   cluster_label_value?: string
   kubeconfig?: string
   token?: string
@@ -32,7 +34,22 @@ export interface CreateClusterRequest {
 export interface UpdateClusterRequest {
   display_name?: string
   description?: string
+  cluster_label_name?: string
   cluster_label_value?: string
+}
+
+export interface ProbeLabelSuggestion {
+  key: string
+  value: string
+  source: string
+}
+
+export interface TestAndProbeResult {
+  connected: boolean
+  kubernetes_version: string
+  cluster_name_from_context: string
+  suggested_labels: ProbeLabelSuggestion[]
+  message?: string
 }
 
 export interface ClusterListParams {
@@ -60,5 +77,10 @@ export const clusterAPI = {
   deleteCluster: async (id: number) => {
     const response = await api.delete(`/clusters/${id}`)
     return response.data
+  },
+
+  testAndProbe: async (data: CreateClusterRequest) => {
+    const response = await api.post('/clusters/test-and-probe', data)
+    return response.data as { success: boolean; data?: TestAndProbeResult; error?: string }
   }
 }

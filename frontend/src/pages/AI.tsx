@@ -15,6 +15,8 @@ import {
   InputLabel,
   Tooltip,
   useTheme,
+  Switch,
+  FormControlLabel,
 } from '@mui/material'
 import {
   Send as SendIcon,
@@ -28,188 +30,32 @@ import {
   ContentCopy as CopyIcon,
   Edit as EditIcon,
   ArrowDownward as ArrowDownwardIcon,
+  Build as BuildIcon,
+  ExpandMore as ExpandMoreIcon,
+  Psychology as PsychologyIcon,
 } from '@mui/icons-material'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { marked } from 'marked'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
-import { aiChatAPI, Message } from '../lib/ai-chat-api'
+import { aiChatAPI, Message, AgentEvent } from '../lib/ai-chat-api'
 import { aiPlatformAPI, AIPlatform } from '../lib/ai-platform-api'
 import { aiSessionAPI, AIChatSession } from '../lib/ai-session-api'
+import ContentBlock, { copyToClipboard } from '../components/ContentBlock'
+import { compressImage, readTextFile } from '../lib/file-utils'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 interface ChatMessage extends Message {
   id: string
   loading?: boolean
   images?: string[]
   timestamp?: number
+  agentEvents?: AgentEvent[]
 }
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9)
 }
 
-async function copyToClipboard(text: string) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-      return
-    }
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    textArea.style.position = 'fixed'
-    textArea.style.left = '-9999px'
-    textArea.style.top = '0'
-    document.body.appendChild(textArea)
-    textArea.focus()
-    textArea.select()
-    const success = document.execCommand('copy')
-    document.body.removeChild(textArea)
-    if (!success) {
-      console.error('Copy failed')
-    }
-  } catch (e) {
-    console.error('Copy failed', e)
-  }
-}
 
-function compressImage(file: File, maxWidth = 1024, quality = 0.8): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      let width = img.width
-      let height = img.height
-      if (width > maxWidth) {
-        height = Math.round(height * (maxWidth / width))
-        width = maxWidth
-      }
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('canvas context not available'))
-        return
-      }
-      ctx.fillStyle = '#FFFFFF'
-      ctx.fillRect(0, 0, width, height)
-      ctx.drawImage(img, 0, 0, width, height)
-      resolve(canvas.toDataURL('image/jpeg', quality))
-    }
-    img.onerror = reject
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      img.src = e.target?.result as string
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
-const ContentBlock = memo(function ContentBlock({ content }: { content: string }) {
-  const theme = useTheme()
-  const isDark = theme.palette.mode === 'dark'
-  return (
-    <Box
-      sx={{
-        '& p': { m: 0, mb: 1 },
-        '& p:last-child': { mb: 0 },
-        '& ul, & ol': { pl: 2, m: 0, mb: 1 },
-        '& li': { mb: 0.5 },
-        '& h1, & h2, & h3, & h4, & h5, & h6': { mt: 1, mb: 1, fontWeight: 600 },
-        '& a': { color: 'primary.main' },
-        '& blockquote': {
-          borderLeft: '4px solid',
-          borderColor: 'divider',
-          pl: 1,
-          ml: 0,
-          color: 'text.secondary',
-        },
-        '& table': { borderCollapse: 'collapse', width: '100%' },
-        '& th, & td': { border: '1px solid', borderColor: 'divider', p: 0.5 },
-        '& pre': { m: 0 },
-      }}
-    >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          pre({ children }: any) {
-            const codeText = React.Children.toArray(children)
-              .map((c: any) => c?.props?.children)
-              .join('')
-            return (
-              <Box sx={{ position: 'relative', my: 1 }}>
-                <IconButton
-                  size="small"
-                  onClick={() => copyToClipboard(codeText)}
-                  sx={{
-                    position: 'absolute',
-                    top: 4,
-                    right: 4,
-                    color: isDark ? '#ccc' : '#333',
-                    bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.7)',
-                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.9)' },
-                    zIndex: 1,
-                  }}
-                >
-                  <CopyIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-                <Box
-                  component="pre"
-                  sx={{
-                    backgroundColor: isDark ? '#1e1e1e' : '#f5f5f5',
-                    color: isDark ? '#d4d4d4' : '#333',
-                    p: 1.5,
-                    pr: 4,
-                    borderRadius: 1,
-                    overflowX: 'auto',
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    m: 0,
-                  }}
-                >
-                  {children}
-                </Box>
-              </Box>
-            )
-          },
-          code({ inline, className, children, ...props }: any) {
-            if (inline) {
-              return (
-                <code
-                  style={{
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                    padding: '2px 4px',
-                    borderRadius: 4,
-                    fontFamily: 'monospace',
-                    fontSize: '0.9em',
-                  }}
-                  className={className}
-                  {...props}
-                >
-                  {children}
-                </code>
-              )
-            }
-            return (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            )
-          },
-          table({ children }: any) {
-            return (
-              <Box sx={{ overflowX: 'auto', my: 1 }}>
-                <table style={{ borderCollapse: 'collapse', width: '100%' }}>{children}</table>
-              </Box>
-            )
-          },
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </Box>
-  )
-})
 
 const StreamingMessage = forwardRef<{ append: (text: string) => void; finalize: () => void }, { className?: string }>(
   function StreamingMessage(_, ref) {
@@ -284,7 +130,16 @@ const StreamingMessage = forwardRef<{ append: (text: string) => void; finalize: 
   }
 )
 
-const MessageItem = memo(function MessageItem({ msg, onDelete }: { msg: ChatMessage; onDelete?: (id: string) => void }) {
+const MessageItem = memo(function MessageItem({
+  msg,
+  onDelete,
+  streamingRef,
+}: {
+  msg: ChatMessage
+  onDelete?: (id: string) => void
+  streamingRef?: React.Ref<{ append: (text: string) => void; finalize: () => void }>
+}) {
+  const [thinkingExpanded, setThinkingExpanded] = useState(false)
   return (
     <Box
       sx={{
@@ -336,6 +191,78 @@ const MessageItem = memo(function MessageItem({ msg, onDelete }: { msg: ChatMess
               ))}
             </Box>
           )}
+          {msg.agentEvents && msg.agentEvents.length > 0 && (
+            <Box sx={{ mb: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {(() => {
+                const thinkingText = msg.agentEvents
+                  .filter((e) => e.type === 'thinking')
+                  .map((e) => e.content)
+                  .join('')
+                return thinkingText ? (
+                  <Box
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      bgcolor: 'action.hover',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        px: 1,
+                        py: 0.5,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                      }}
+                      onClick={() => setThinkingExpanded((v) => !v)}
+                    >
+                      <PsychologyIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                      <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1 }}>
+                        模型思考过程
+                      </Typography>
+                      <ExpandMoreIcon
+                        sx={{
+                          fontSize: 16,
+                          color: 'text.secondary',
+                          transform: thinkingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s',
+                        }}
+                      />
+                    </Box>
+                    {thinkingExpanded && (
+                      <Box sx={{ px: 1, pb: 0.5, fontSize: 12, color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
+                        {thinkingText}
+                      </Box>
+                    )}
+                  </Box>
+                ) : null
+              })()}
+              {msg.agentEvents.map((ev, idx) => (
+                <Box key={idx}>
+                  {ev.type === 'tool_start' && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'info.main', fontSize: 12 }}>
+                      <CircularProgress size={12} sx={{ color: 'info.main' }} />
+                      <span>正在调用工具 <b>{ev.tool}</b>...</span>
+                    </Box>
+                  )}
+                  {ev.type === 'tool_end' && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'success.main', fontSize: 12 }}>
+                      <BuildIcon sx={{ fontSize: 14 }} />
+                      <span>工具 <b>{ev.tool}</b> 执行完成</span>
+                    </Box>
+                  )}
+                  {ev.type === 'error' && (
+                    <Box sx={{ color: 'error.main', fontSize: 12 }}>
+                      错误: {ev.content}
+                    </Box>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          )}
           {msg.loading && !msg.content ? (
             <CircularProgress size={20} sx={{ color: 'text.secondary' }} />
           ) : msg.role === 'user' ? (
@@ -343,7 +270,7 @@ const MessageItem = memo(function MessageItem({ msg, onDelete }: { msg: ChatMess
               {msg.content}
             </Typography>
           ) : msg.loading ? (
-            <StreamingMessage />
+            <StreamingMessage ref={streamingRef} />
           ) : (
             <ContentBlock content={msg.content} />
           )}
@@ -443,6 +370,19 @@ const ChatInput = memo(function ChatInput({
         } catch {
           // ignore
         }
+      } else if (
+        file.type.startsWith('text/') ||
+        /\.(txt|md|json|yaml|yml|log|csv|go|py|js|ts|jsx|tsx|html|css|sh|sql|xml|properties|conf|ini|dockerfile|gradle|gitignore)$/i.test(file.name)
+      ) {
+        try {
+          const text = await readTextFile(file)
+          setInput((prev) => {
+            const prefix = prev.trim() ? prev + '\n\n' : ''
+            return `${prefix}[文件: ${file.name}]\n\`\`\`\n${text}\n\`\`\``
+          })
+        } catch {
+          // ignore
+        }
       }
     }
     e.target.value = ''
@@ -520,7 +460,7 @@ const ChatInput = memo(function ChatInput({
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
         <input
           type="file"
-          accept="image/*"
+          accept="image/*,text/plain,text/markdown,application/json,text/yaml,text/x-log,text/csv,text/xml,text/html,text/css,text/x-sh,application/sql,text/x-properties,text/x-ini,text/x-dockerfile,text/x-gradle,.txt,.md,.yaml,.yml,.log,.csv,.go,.py,.js,.ts,.jsx,.tsx,.html,.css,.sh,.sql,.xml,.properties,.conf,.ini,.dockerfile,.gradle,.gitignore"
           multiple
           hidden
           ref={fileInputRef}
@@ -625,6 +565,7 @@ export default function AI() {
   ])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
+  const [agentMode, setAgentMode] = useState(false)
   const [initLoading, setInitLoading] = useState(true)
   const [atBottom, setAtBottom] = useState(true)
 
@@ -869,17 +810,27 @@ export default function AI() {
     setEditingTitleValue('')
   }
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmType, setConfirmType] = useState<'delete' | 'clear' | null>(null)
+  const [confirmSessionId, setConfirmSessionId] = useState<string | null>(null)
+
   // 删除会话
   const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('确定要删除此会话吗？')) return
+    setConfirmType('delete')
+    setConfirmSessionId(sessionId)
+    setConfirmOpen(true)
+  }
+
+  const doConfirmDeleteSession = async () => {
+    if (!confirmSessionId) return
     try {
-      await aiSessionAPI.delete(sessionId)
-      delete pendingRepliesRef.current[sessionId]
+      await aiSessionAPI.delete(confirmSessionId)
+      delete pendingRepliesRef.current[confirmSessionId]
       savePending()
       forceUpdateSidebar()
       const sessList = await loadSessions()
-      if (currentSessionId === sessionId) {
+      if (currentSessionId === confirmSessionId) {
         if (sessList.length > 0) {
           await switchSession(sessList[0].id)
         } else {
@@ -888,13 +839,21 @@ export default function AI() {
       }
     } catch (err: any) {
       alert(err.message || '删除失败')
+    } finally {
+      setConfirmOpen(false)
+      setConfirmSessionId(null)
     }
   }
 
   // 清空当前会话消息
   const handleClearChat = async () => {
     if (!currentSessionId) return
-    if (!confirm('确定要清空当前会话的所有消息吗？')) return
+    setConfirmType('clear')
+    setConfirmOpen(true)
+  }
+
+  const doConfirmClearChat = async () => {
+    if (!currentSessionId) return
     try {
       await aiSessionAPI.clearMessages(currentSessionId)
       setMessages([
@@ -995,8 +954,8 @@ export default function AI() {
     const sendStartAt = Date.now()
     let lastContentAt = Date.now()
 
-    const STREAM_MAX_MS = 120_000
-    const CONTENT_IDLE_MS = 60_000
+    const STREAM_MAX_MS = 600_000
+    const CONTENT_IDLE_MS = 300_000
 
     const runWatchdog = () => {
       if (hasEnded) return
@@ -1082,76 +1041,167 @@ export default function AI() {
     }
 
     let hasEnded = false
-    const abort = aiChatAPI.chatStream(
-      sendMessages,
-      (chunk) => {
-        if (hasEnded) return
+    let abort = () => {}
+    if (agentMode) {
+      console.log('[AI] agentChatStream start', sendMessages)
+      abort = aiChatAPI.agentChatStream(
+        sendMessages,
+        (ev) => {
+          console.log('[AI] agent event', ev)
+          if (hasEnded) return
+          const pending = pendingRepliesRef.current[mySessionId]
+          if (pending) {
+            if (ev.type === 'error') {
+              pending.loading = false
+              pending.error = ev.content
+            } else if (ev.type === 'text' && ev.content) {
+              pending.content += ev.content
+            } else if (ev.type === 'done') {
+              pending.loading = false
+            }
+            savePending()
+            forceUpdateSidebar()
+          }
+          if (mySessionId !== currentSessionIdRef.current) return
+          if (ev.type === 'error') {
+            hasEnded = true
+            if (timerRef.current) {
+              window.clearTimeout(timerRef.current)
+              timerRef.current = null
+            }
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: streamingContentRef.current, loading: false, agentEvents: [...(m.agentEvents || [])] } : m))
+            )
+            setError(ev.content || '请求失败')
+            setStreaming(false)
+            streamingContentRef.current = ''
+            streamingMsgRef.current = null
+            return
+          }
+          if (ev.type === 'text' && typeof ev.content === 'string') {
+            lastContentAt = Date.now()
+            if (ev.content) {
+              streamingContentRef.current += ev.content
+              streamingMsgRef.current?.append(ev.content)
+            }
+          }
+          if (ev.type === 'thinking') {
+            lastContentAt = Date.now()
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsg.id
+                  ? { ...m, agentEvents: [...(m.agentEvents || []), ev] }
+                  : m
+              )
+            )
+          }
+          if (ev.type === 'tool_start' || ev.type === 'tool_end') {
+            lastContentAt = Date.now()
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsg.id
+                  ? { ...m, agentEvents: [...(m.agentEvents || []), ev] }
+                  : m
+              )
+            )
+          }
+          if (ev.type === 'done') {
+            hasEnded = true
+            if (timerRef.current) {
+              window.clearTimeout(timerRef.current)
+              timerRef.current = null
+            }
+            try {
+              streamingMsgRef.current?.finalize()
+            } catch (e) {
+              // ignore finalize errors
+            }
+            const finalContent = streamingContentRef.current
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: finalContent, loading: false } : m))
+            )
+            setStreaming(false)
+            streamingContentRef.current = ''
+            streamingMsgRef.current = null
+          }
+        },
+        currentSessionId,
+        currentPlatformId
+      )
+    } else {
+      abort = aiChatAPI.chatStream(
+        sendMessages,
+        (chunk) => {
+          if (hasEnded) return
 
-        const pending = pendingRepliesRef.current[mySessionId]
-        if (pending) {
+          const pending = pendingRepliesRef.current[mySessionId]
+          if (pending) {
+            if (chunk.error) {
+              pending.loading = false
+              pending.error = chunk.error
+            } else if (chunk.content) {
+              pending.content += chunk.content
+            } else if (chunk.done) {
+              pending.loading = false
+            }
+            savePending()
+            forceUpdateSidebar()
+          }
+
+          if (mySessionId !== currentSessionIdRef.current) return
+
           if (chunk.error) {
-            pending.loading = false
-            pending.error = chunk.error
-          } else if (chunk.content) {
-            pending.content += chunk.content
-          } else if (chunk.done) {
-            pending.loading = false
+            hasEnded = true
+            if (timerRef.current) {
+              window.clearTimeout(timerRef.current)
+              timerRef.current = null
+            }
+            try {
+              streamingMsgRef.current?.finalize()
+            } catch (e) {
+              // ignore finalize errors
+            }
+            const finalContent = streamingContentRef.current
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: finalContent, loading: false } : m))
+            )
+            setError(chunk.error)
+            setStreaming(false)
+            streamingContentRef.current = ''
+            streamingMsgRef.current = null
+            return
           }
-          savePending()
-          forceUpdateSidebar()
-        }
-
-        if (mySessionId !== currentSessionIdRef.current) return
-
-        if (chunk.error) {
-          hasEnded = true
-          if (timerRef.current) {
-            window.clearTimeout(timerRef.current)
-            timerRef.current = null
+          if (typeof chunk.content === 'string') {
+            lastContentAt = Date.now()
+            if (chunk.content) {
+              streamingContentRef.current += chunk.content
+              streamingMsgRef.current?.append(chunk.content)
+            }
           }
-          try {
-            streamingMsgRef.current?.finalize()
-          } catch (e) {
-            // ignore finalize errors
+          if (chunk.done) {
+            hasEnded = true
+            if (timerRef.current) {
+              window.clearTimeout(timerRef.current)
+              timerRef.current = null
+            }
+            try {
+              streamingMsgRef.current?.finalize()
+            } catch (e) {
+              // ignore finalize errors
+            }
+            const finalContent = streamingContentRef.current
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: finalContent, loading: false } : m))
+            )
+            setStreaming(false)
+            streamingContentRef.current = ''
+            streamingMsgRef.current = null
           }
-          const finalContent = streamingContentRef.current
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: finalContent, loading: false } : m))
-          )
-          setError(chunk.error)
-          setStreaming(false)
-          streamingContentRef.current = ''
-          streamingMsgRef.current = null
-          return
-        }
-        if (chunk.content) {
-          lastContentAt = Date.now()
-          streamingContentRef.current += chunk.content
-          streamingMsgRef.current?.append(chunk.content)
-        }
-        if (chunk.done) {
-          hasEnded = true
-          if (timerRef.current) {
-            window.clearTimeout(timerRef.current)
-            timerRef.current = null
-          }
-          try {
-            streamingMsgRef.current?.finalize()
-          } catch (e) {
-            // ignore finalize errors
-          }
-          const finalContent = streamingContentRef.current
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: finalContent, loading: false } : m))
-          )
-          setStreaming(false)
-          streamingContentRef.current = ''
-          streamingMsgRef.current = null
-        }
-      },
-      currentSessionId,
-      currentPlatformId
-    )
+        },
+        currentSessionId,
+        currentPlatformId
+      )
+    }
 
     timerRef.current = window.setTimeout(runWatchdog, 5000)
     abortRef.current = () => {
@@ -1308,6 +1358,19 @@ export default function AI() {
                 ))}
               </Select>
             </FormControl>
+            {false && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={agentMode}
+                    onChange={(e) => setAgentMode(e.target.checked)}
+                    disabled={streaming}
+                    size="small"
+                  />
+                }
+                label={<Typography variant="body2">Agent 模式</Typography>}
+              />
+            )}
             <Button
               startIcon={<ClearIcon />}
               onClick={handleClearChat}
@@ -1344,7 +1407,9 @@ export default function AI() {
           <Virtuoso
             ref={virtuosoRef}
             data={messages.filter((m) => m.role !== 'system')}
-            itemContent={(_, msg) => <MessageItem msg={msg} onDelete={handleDeleteMessage} />}
+            itemContent={(_, msg) => (
+              <MessageItem msg={msg} onDelete={handleDeleteMessage} streamingRef={msg.loading && msg.role === 'assistant' ? streamingMsgRef : undefined} />
+            )}
             followOutput="auto"
             atBottomStateChange={setAtBottom}
             style={{ height: '100%' }}
@@ -1388,6 +1453,14 @@ export default function AI() {
 
         <ChatInput disabled={streaming || !currentPlatformId} onSend={handleSend} />
       </Box>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title={confirmType === 'delete' ? '删除会话' : '清空会话'}
+        message={confirmType === 'delete' ? '确定要删除此会话吗？' : '确定要清空当前会话的所有消息吗？'}
+        onClose={() => { setConfirmOpen(false); setConfirmType(null); setConfirmSessionId(null) }}
+        onConfirm={confirmType === 'delete' ? doConfirmDeleteSession : doConfirmClearChat}
+      />
     </Box>
   )
 }

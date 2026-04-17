@@ -134,3 +134,23 @@ func (h *ClusterHandler) DeleteCluster(c *gin.Context) {
 		"message": "cluster deleted successfully",
 	})
 }
+
+// TestAndProbeCluster 测试连接并探测监控标签
+func (h *ClusterHandler) TestAndProbeCluster(c *gin.Context) {
+	var req service.CreateClusterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	result, err := h.clusterService.TestAndProbeCluster(c.Request.Context(), &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}

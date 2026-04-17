@@ -35,16 +35,20 @@ type QueryRequest struct {
 	Filters map[string]string
 	Limit   int
 	Offset  int
+	Mode    string // aggregate | detail
 }
 
 // QueryResult 日志查询结果
 type QueryResult struct {
-	ClusterID uint64           `json:"cluster_id"`
-	Total     int64            `json:"total"`
-	Entries   []LogEntry       `json:"entries"`
-	Histogram []HistogramPoint `json:"histogram,omitempty"`
-	Error     string           `json:"error,omitempty"`
-	TookMs    int64            `json:"took_ms"`
+	BackendID   uint64           `json:"backend_id"`
+	ClusterID   uint64           `json:"cluster_id"`
+	Total       int64            `json:"total"`
+	Entries     []LogEntry       `json:"entries"`
+	Histogram   []HistogramPoint `json:"histogram,omitempty"`
+	LevelCounts map[string]int64 `json:"level_counts,omitempty"`
+	Error       string           `json:"error,omitempty"`
+	Message     string           `json:"message,omitempty"`
+	TookMs      int64            `json:"took_ms"`
 }
 
 // Adapter 日志后端适配器接口

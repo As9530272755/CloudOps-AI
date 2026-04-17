@@ -69,13 +69,16 @@ func (p *OpenClawProvider) normalizeModel() string {
 }
 
 type openAIMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+	Role       string      `json:"role"`
+	Content    interface{} `json:"content"`
+	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID string      `json:"tool_call_id,omitempty"`
 }
 
 func toOpenAIMessages(messages []Message) []openAIMessage {
 	result := make([]openAIMessage, 0, len(messages))
 	for _, m := range messages {
+		om := openAIMessage{Role: m.Role, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID}
 		if len(m.Images) > 0 {
 			parts := []map[string]interface{}{
 				{"type": "text", "text": m.Content},
@@ -86,18 +89,22 @@ func toOpenAIMessages(messages []Message) []openAIMessage {
 					"image_url": map[string]interface{}{"url": img},
 				})
 			}
-			result = append(result, openAIMessage{Role: m.Role, Content: parts})
+			om.Content = parts
 		} else {
-			result = append(result, openAIMessage{Role: m.Role, Content: m.Content})
+			om.Content = m.Content
 		}
+		result = append(result, om)
 	}
 	return result
 }
 
-func (p *OpenClawProvider) ChatCompletion(ctx context.Context, messages []Message) (string, error) {
+func (p *OpenClawProvider) ChatCompletion(ctx context.Context, messages []Message, tools []Tool) (*CompletionResult, error) {
 	payload := map[string]interface{}{
 		"model":    p.normalizeModel(),
 		"messages": toOpenAIMessages(messages),
+	}
+	if len(tools) > 0 {
+		payload["tools"] = tools
 	}
 	if p.SessionID != "" {
 		payload["session_id"] = p.SessionID
@@ -107,12 +114,12 @@ func (p *OpenClawProvider) ChatCompletion(ctx context.Context, messages []Messag
 
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/v1/chat/completions", bytes.NewReader(b))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if p.SessionID != "" {
@@ -123,41 +130,48 @@ func (p *OpenClawProvider) ChatCompletion(ctx context.Context, messages []Messag
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("OpenClaw API 返回状态码 %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("OpenClaw API 返回状态码 %d: %s", resp.StatusCode, string(body))
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string     `json:"content"`
+				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
 		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return "", err
+		return nil, err
 	}
 	if result.SessionID != "" {
 		p.SessionID = result.SessionID
 	}
 	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("AI 返回空结果")
+		return nil, fmt.Errorf("AI 返回空结果")
 	}
-	return result.Choices[0].Message.Content, nil
+	return &CompletionResult{
+		Content:   result.Choices[0].Message.Content,
+		ToolCalls: result.Choices[0].Message.ToolCalls,
+	}, nil
 }
 
-func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []Message, onChunk func(StreamResponse)) error {
+func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []Message, tools []Tool, onChunk func(StreamResponse)) error {
 	payload := map[string]interface{}{
 		"model":    p.normalizeModel(),
 		"messages": toOpenAIMessages(messages),
 		"stream":   true,
+	}
+	if len(tools) > 0 {
+		payload["tools"] = tools
 	}
 	if p.SessionID != "" {
 		payload["session_id"] = p.SessionID
@@ -200,7 +214,8 @@ func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []
 		var result struct {
 			Choices []struct {
 				Message struct {
-					Content string `json:"content"`
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
 				} `json:"message"`
 			} `json:"choices"`
 			SessionID string `json:"session_id"`
@@ -209,9 +224,11 @@ func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []
 			if result.SessionID != "" {
 				p.SessionID = result.SessionID
 			}
+			tcs := []ToolCall{}
 			if len(result.Choices) > 0 {
-				onChunk(StreamResponse{Content: result.Choices[0].Message.Content})
+				tcs = result.Choices[0].Message.ToolCalls
 			}
+			onChunk(StreamResponse{Content: result.Choices[0].Message.Content, ToolCalls: tcs})
 		}
 		onChunk(StreamResponse{Done: true})
 		return nil
@@ -239,10 +256,12 @@ func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []
 		var result struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
 				} `json:"delta"`
 				Message struct {
-					Content string `json:"content"`
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
 				} `json:"message"`
 			} `json:"choices"`
 			SessionID string `json:"session_id"`
@@ -255,10 +274,14 @@ func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []
 		}
 		if len(result.Choices) > 0 {
 			content := result.Choices[0].Delta.Content
+			tcs := result.Choices[0].Delta.ToolCalls
 			if content == "" {
 				content = result.Choices[0].Message.Content
 			}
-			onChunk(StreamResponse{Content: content})
+			if len(tcs) == 0 {
+				tcs = result.Choices[0].Message.ToolCalls
+			}
+			onChunk(StreamResponse{Content: content, ToolCalls: tcs})
 		}
 	}
 	onChunk(StreamResponse{Done: true})
