@@ -87,7 +87,7 @@ func (h *K8sHandler) GetResourceYAML(c *gin.Context) {
 }
 
 // SearchResources 全局资源搜索
-// GET /api/v1/search/resources?keyword=xxx&limit=20
+// GET /api/v1/search/resources?keyword=xxx&limit=20&kind=&namespace=&cluster_id=&label_selector=
 func (h *K8sHandler) SearchResources(c *gin.Context) {
 	keyword := c.Query("keyword")
 	if keyword == "" {
@@ -98,8 +98,12 @@ func (h *K8sHandler) SearchResources(c *gin.Context) {
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
+	kindFilter := c.Query("kind")
+	nsFilter := c.Query("namespace")
+	clusterFilter, _ := strconv.ParseUint(c.Query("cluster_id"), 10, 32)
+	labelFilter := c.Query("label_selector")
 
-	results, err := h.k8sService.SearchResources(c.Request.Context(), keyword, limit)
+	results, err := h.k8sService.SearchResources(c.Request.Context(), keyword, limit, kindFilter, nsFilter, uint(clusterFilter), labelFilter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return

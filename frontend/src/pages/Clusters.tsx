@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useEffect, useMemo } from 'react'
 import {
   Box,
@@ -27,6 +28,11 @@ import {
   Alert,
   CircularProgress,
   Autocomplete,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormLabel,
+
 } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -39,7 +45,8 @@ import {
   Search as SearchIcon,
 } from '@mui/icons-material'
 
-import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest, UpdateClusterRequest } from '../lib/cluster-api'
+import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest, UpdateClusterRequest, TestAndProbeResult } from '../lib/cluster-api'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
 
 // 状态颜色映射
@@ -57,6 +64,39 @@ const statusLabels: Record<string, string> = {
   pending: '检测中',
 }
 
+const SearchListbox = React.forwardRef<HTMLUListElement, React.HTMLAttributes<HTMLUListElement>>(
+  function SearchListbox(props, ref) {
+    return (
+      <Box component="ul" ref={ref} {...props}>
+        <Box
+          component="li"
+          sx={{
+            position: 'sticky',
+            top: 0,
+            bgcolor: 'background.paper',
+            zIndex: 1,
+            px: 1.5,
+            py: 0.75,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          <Typography variant="caption" sx={{ fontWeight: 600, minWidth: 140, color: 'text.secondary' }}>名称</Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, width: 70, color: 'text.secondary' }}>资源</Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, minWidth: 80, color: 'text.secondary' }}>NS</Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, flex: 1, textAlign: 'right', color: 'text.secondary' }}>集群</Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, width: 120, textAlign: 'right', color: 'text.secondary' }}>标签</Typography>
+        </Box>
+        {props.children}
+      </Box>
+    )
+  }
+)
+
 export default function Clusters() {
   const navigate = useNavigate()
   const [clusters, setClusters] = useState<Cluster[]>([])
@@ -69,11 +109,16 @@ export default function Clusters() {
     display_name: '',
     description: '',
     auth_type: 'kubeconfig',
+    cluster_label_name: 'cluster',
     cluster_label_value: '',
     kubeconfig: '',
     token: '',
     server: '',
   })
+  const [probeOpen, setProbeOpen] = useState(false)
+  const [probeLoading, setProbeLoading] = useState(false)
+  const [probeResult, setProbeResult] = useState<TestAndProbeResult | null>(null)
+  const [selectedProbeLabel, setSelectedProbeLabel] = useState('')
   const [error, setError] = useState('')
   const [filters, setFilters] = useState<ClusterListParams>({
     keyword: '',
@@ -83,6 +128,21 @@ export default function Clusters() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOptions, setSearchOptions] = useState<SearchResourceItem[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchKindFilter, setSearchKindFilter] = useState('')
+  const [searchNsFilter, setSearchNsFilter] = useState('')
+  const [searchClusterFilter, setSearchClusterFilter] = useState<number | ''>('')
+  const [searchLabelFilter, setSearchLabelFilter] = useState('')
+
+  // 从搜索结果中提取唯一的命名空间列表（用于下拉筛选）
+  const searchNamespaces = useMemo(() => {
+    const set = new Set<string>()
+    searchOptions.forEach((o) => {
+      if (o.namespace && o.namespace !== '-') {
+        set.add(o.namespace)
+      }
+    })
+    return Array.from(set).sort()
+  }, [searchOptions])
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -91,7 +151,14 @@ export default function Clusters() {
     }
     const timer = setTimeout(() => {
       setSearchLoading(true)
-      k8sAPI.searchResources(searchQuery, 20)
+      k8sAPI.searchResources(
+        searchQuery,
+        50,
+        searchKindFilter,
+        searchNsFilter,
+        searchClusterFilter,
+        searchLabelFilter
+      )
         .then((res) => {
           if (res.success && res.data) {
             setSearchOptions(res.data)
@@ -101,7 +168,7 @@ export default function Clusters() {
         .finally(() => setSearchLoading(false))
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchQuery])
+  }, [searchQuery, searchKindFilter, searchNsFilter, searchClusterFilter, searchLabelFilter])
 
   // 加载集群列表
   const loadClusters = async () => {
@@ -134,6 +201,7 @@ export default function Clusters() {
       display_name: '',
       description: '',
       auth_type: 'kubeconfig',
+      cluster_label_name: 'cluster',
       cluster_label_value: '',
       kubeconfig: '',
       token: '',
@@ -153,6 +221,7 @@ export default function Clusters() {
       display_name: cluster.display_name || '',
       description: '',
       auth_type: 'kubeconfig',
+      cluster_label_name: cluster.cluster_label_name || 'cluster',
       cluster_label_value: cluster.cluster_label_value || '',
       kubeconfig: '',
       token: '',
@@ -168,6 +237,7 @@ export default function Clusters() {
         const payload: UpdateClusterRequest = {
           display_name: formData.display_name,
           description: formData.description,
+          cluster_label_name: formData.cluster_label_name,
           cluster_label_value: formData.cluster_label_value,
         }
         const result = await clusterAPI.updateCluster(editingId, payload)
@@ -192,6 +262,63 @@ export default function Clusters() {
     }
   }
 
+  const handleTestAndProbe = async () => {
+    if (!editingId) {
+      if (authType === 'kubeconfig' && !formData.kubeconfig?.trim()) {
+        setError('请先填写 Kubeconfig')
+        return
+      }
+      if (authType === 'token' && (!formData.server?.trim() || !formData.token?.trim())) {
+        setError('请先填写 API Server 地址和 Token')
+        return
+      }
+    }
+    setProbeLoading(true)
+    setError('')
+    try {
+      const payload: CreateClusterRequest = {
+        ...formData,
+        auth_type: authType,
+      }
+      const result = await clusterAPI.testAndProbe(payload)
+      if (result.success && result.data) {
+        setProbeResult(result.data)
+        setSelectedProbeLabel('')
+        setProbeOpen(true)
+        // 自动回填集群名称建议
+        if (result.data.cluster_name_from_context && !formData.name) {
+          setFormData((prev) => ({ ...prev, name: result.data!.cluster_name_from_context }))
+        }
+      } else {
+        setError(result.error || '探测失败')
+      }
+    } catch (err: any) {
+      setError(err.message || '请求异常')
+    } finally {
+      setProbeLoading(false)
+    }
+  }
+
+  const applyProbeLabel = () => {
+    if (!probeResult) return
+    if (selectedProbeLabel === 'custom') {
+      // 保持手动输入，关闭弹窗
+      setProbeOpen(false)
+      return
+    }
+    const found = probeResult.suggested_labels.find(
+      (l) => `${l.key}=${l.value}|${l.source}` === selectedProbeLabel
+    )
+    if (found) {
+      setFormData((prev) => ({
+        ...prev,
+        cluster_label_name: found.key,
+        cluster_label_value: found.value,
+      }))
+    }
+    setProbeOpen(false)
+  }
+
   // 处理删除集群
   // 实时模糊搜索过滤
   const filteredClusters = useMemo(() => {
@@ -205,13 +332,24 @@ export default function Clusters() {
     )
   }, [clusters, searchQuery])
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
+
   const handleDelete = async (id: number) => {
-    if (!confirm('确定要删除此集群吗？')) return
+    setConfirmId(id)
+    setConfirmOpen(true)
+  }
+
+  const doDelete = async () => {
+    if (!confirmId) return
     try {
-      await clusterAPI.deleteCluster(id)
+      await clusterAPI.deleteCluster(confirmId)
       loadClusters()
     } catch (err: any) {
       setError(err.message || '删除集群失败')
+    } finally {
+      setConfirmOpen(false)
+      setConfirmId(null)
     }
   }
 
@@ -275,14 +413,28 @@ export default function Clusters() {
                   navigate(`/clusters/${value.cluster_id}?category=${category}&resource=${value.kind}${nsParam}&name=${encodeURIComponent(value.name)}`)
                 }
               }}
-              renderOption={(props, option) => (
-                <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 140 }}>{option.name}</Typography>
-                  <Chip label={resourceLabels[option.kind] || option.kind} size="small" sx={{ fontSize: 10, height: 18 }} />
-                  <Typography variant="caption" sx={{ color: 'text.secondary', minWidth: 80 }}>{option.namespace}</Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1, textAlign: 'right' }}>{option.cluster_name}</Typography>
-                </Box>
-              )}
+              renderOption={(props, option) => {
+                const labelEntries = option.labels ? Object.entries(option.labels).slice(0, 2) : []
+                const labelMore = option.labels ? Object.keys(option.labels).length - labelEntries.length : 0
+                return (
+                  <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, px: 1.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option.name}</Typography>
+                    <Chip label={resourceLabels[option.kind] || option.kind} size="small" sx={{ fontSize: 10, height: 18, width: 70, justifyContent: 'flex-start' }} />
+                    <Typography variant="caption" sx={{ color: 'text.secondary', minWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option.namespace}</Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option.cluster_name}</Typography>
+                    <Box sx={{ width: 120, display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                      {labelEntries.map(([k, v]) => (
+                        <Tooltip key={k} title={`${k}: ${v}`}>
+                          <Chip label={k} size="small" sx={{ fontSize: 9, height: 16, maxWidth: 60 }} />
+                        </Tooltip>
+                      ))}
+                      {labelMore > 0 && (
+                        <Chip label={`+${labelMore}`} size="small" sx={{ fontSize: 9, height: 16 }} />
+                      )}
+                    </Box>
+                  </Box>
+                )
+              }}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -300,7 +452,58 @@ export default function Clusters() {
                   }}
                 />
               )}
-              ListboxProps={{ style: { maxHeight: 320 } }}
+              ListboxProps={{
+                style: { maxHeight: 360, padding: 0 },
+                component: SearchListbox,
+              } as any}
+            />
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>资源类型</InputLabel>
+              <Select
+                value={searchKindFilter}
+                label="资源类型"
+                onChange={(e) => setSearchKindFilter(e.target.value as string)}
+              >
+                <MenuItem value="">全部</MenuItem>
+                {Object.entries(resourceLabels).map(([k, v]) => (
+                  <MenuItem key={k} value={k}>{v}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>集群</InputLabel>
+              <Select
+                value={searchClusterFilter}
+                label="集群"
+                onChange={(e) => setSearchClusterFilter(e.target.value as number | '')}
+              >
+                <MenuItem value="">全部集群</MenuItem>
+                {clusters.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>{c.display_name || c.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Namespace</InputLabel>
+              <Select
+                value={searchNsFilter}
+                label="Namespace"
+                onChange={(e) => setSearchNsFilter(e.target.value as string)}
+                disabled={searchNamespaces.length === 0}
+              >
+                <MenuItem value="">全部</MenuItem>
+                {searchNamespaces.map((ns) => (
+                  <MenuItem key={ns} value={ns}>{ns}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              size="small"
+              sx={{ minWidth: 140 }}
+              label="标签筛选"
+              placeholder="app=nginx"
+              value={searchLabelFilter}
+              onChange={(e) => setSearchLabelFilter(e.target.value)}
             />
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <InputLabel>状态</InputLabel>
@@ -332,8 +535,11 @@ export default function Clusters() {
               variant="outlined"
               onClick={() => {
                 setSearchQuery('')
+                setSearchKindFilter('')
+                setSearchNsFilter('')
+                setSearchClusterFilter('')
+                setSearchLabelFilter('')
                 setFilters({ keyword: '', status: '', auth_type: '' })
-                // 重置后自动刷新
                 setTimeout(() => loadClusters(), 0)
               }}
             >
@@ -530,15 +736,37 @@ export default function Clusters() {
               rows={2}
             />
 
-            {/* 监控标签值 */}
-            <TextField
-              label="监控标签值"
-              placeholder="例如：ks、prod-bj"
-              value={formData.cluster_label_value}
-              onChange={(e) => setFormData({ ...formData, cluster_label_value: e.target.value })}
-              fullWidth
-              helperText="在全局 Prometheus / VM 数据源中，该集群对应的 extra_label 标签值"
-            />
+            {/* 监控标签配置 */}
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+              <TextField
+                label="标签名"
+                placeholder="cluster"
+                value={formData.cluster_label_name}
+                onChange={(e) => setFormData({ ...formData, cluster_label_name: e.target.value })}
+                sx={{ width: 140 }}
+                helperText="extra_label 键"
+              />
+              <TextField
+                label="标签值"
+                placeholder="例如：ks、prod-bj"
+                value={formData.cluster_label_value}
+                onChange={(e) => setFormData({ ...formData, cluster_label_value: e.target.value })}
+                fullWidth
+                helperText="在全局 Prometheus / VM 数据源中，该集群对应的 extra_label 标签值"
+              />
+            </Box>
+
+            {!editingId && (
+              <Button
+                variant="outlined"
+                onClick={handleTestAndProbe}
+                disabled={probeLoading}
+                startIcon={probeLoading ? <CircularProgress size={18} /> : undefined}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                {probeLoading ? '探测中...' : '测试连接并探测标签'}
+              </Button>
+            )}
 
             {/* 根据认证方式显示不同输入 */}
             {!editingId && (
@@ -590,6 +818,87 @@ export default function Clusters() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 探测结果弹窗 */}
+      <Dialog open={probeOpen} onClose={() => setProbeOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>探测结果</DialogTitle>
+        <DialogContent>
+          {probeResult && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {probeResult.connected ? (
+                <Alert severity="success">
+                  集群连接成功（Kubernetes {probeResult.kubernetes_version}）
+                </Alert>
+              ) : (
+                <Alert severity="error">集群连接失败</Alert>
+              )}
+
+              {probeResult.message && (
+                <Typography variant="body2" color="text.secondary">
+                  {probeResult.message}
+                </Typography>
+              )}
+
+              {probeResult.suggested_labels.length > 0 && (
+                <>
+                  <FormControl component="fieldset">
+                    <FormLabel component="legend">检测到以下监控标签配置，请选择：</FormLabel>
+                    <RadioGroup
+                      value={selectedProbeLabel}
+                      onChange={(e) => setSelectedProbeLabel(e.target.value)}
+                    >
+                      {probeResult.suggested_labels.map((l, idx) => (
+                        <FormControlLabel
+                          key={idx}
+                          value={`${l.key}=${l.value}|${l.source}`}
+                          control={<Radio />}
+                          label={
+                            <Box>
+                              <Typography variant="body2" fontWeight={600}>
+                                {l.key} = {l.value}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                来源：{l.source}
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      ))}
+                      <FormControlLabel
+                        value="custom"
+                        control={<Radio />}
+                        label="手动输入"
+                      />
+                    </RadioGroup>
+                  </FormControl>
+                </>
+              )}
+
+              {probeResult.suggested_labels.length === 0 && probeResult.connected && (
+                <Alert severity="info">未检测到自动标签配置，请手动填写上方标签名和标签值</Alert>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setProbeOpen(false)} sx={{ textTransform: 'none' }}>
+            取消
+          </Button>
+          {probeResult && probeResult.suggested_labels.length > 0 && (
+            <Button onClick={applyProbeLabel} variant="contained" disabled={!selectedProbeLabel}>
+              确认选择
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除集群"
+        message="确定要删除此集群吗？删除后相关数据将无法恢复。"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doDelete}
+      />
     </Box>
   )
 }

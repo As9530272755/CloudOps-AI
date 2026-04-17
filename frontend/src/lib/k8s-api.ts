@@ -32,6 +32,7 @@ export interface SearchResourceItem {
   namespace: string
   name: string
   status: string
+  labels?: Record<string, string>
 }
 
 export interface SearchResourcesResult {
@@ -52,8 +53,22 @@ export interface ClusterStatsResult {
 
 export const k8sAPI = {
   // 全局资源搜索
-  searchResources: async (keyword: string, limit: number = 20) => {
-    const response = await api.get(`/search/resources?keyword=${encodeURIComponent(keyword)}&limit=${limit}`)
+  searchResources: async (
+    keyword: string,
+    limit: number = 20,
+    kind: string = '',
+    namespace: string = '',
+    clusterId: number | '' = '',
+    labelSelector: string = ''
+  ) => {
+    const params = new URLSearchParams()
+    params.set('keyword', keyword)
+    params.set('limit', String(limit))
+    if (kind) params.set('kind', kind)
+    if (namespace) params.set('namespace', namespace)
+    if (clusterId !== '') params.set('cluster_id', String(clusterId))
+    if (labelSelector) params.set('label_selector', labelSelector)
+    const response = await api.get(`/search/resources?${params.toString()}`)
     return response.data as SearchResourcesResult
   },
 

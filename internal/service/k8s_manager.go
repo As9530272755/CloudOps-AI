@@ -112,20 +112,55 @@ func (km *K8sManager) GetClient(clusterID uint) *kubernetes.Clientset {
 
 // SearchResult 全局资源搜索结果
 type SearchResult struct {
-	ClusterID   uint   `json:"cluster_id"`
-	ClusterName string `json:"cluster_name"`
-	Kind        string `json:"kind"`
-	Namespace   string `json:"namespace"`
-	Name        string `json:"name"`
-	Status      string `json:"status"`
+	ClusterID   uint              `json:"cluster_id"`
+	ClusterName string            `json:"cluster_name"`
+	Kind        string            `json:"kind"`
+	Namespace   string            `json:"namespace"`
+	Name        string            `json:"name"`
+	Status      string            `json:"status"`
+	Labels      map[string]string `json:"labels"`
 }
 
-// SearchGlobalResources 跨集群全局搜索资源（按名称模糊匹配）
-func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]SearchResult, error) {
+func copyLabels(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func matchLabelSelector(labels map[string]string, selector string) bool {
+	if selector == "" {
+		return true
+	}
+	// support key=value or key:value or just key
+	if strings.Contains(selector, "=") {
+		parts := strings.SplitN(selector, "=", 2)
+		if len(parts) == 2 {
+			key, val := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+			if v, ok := labels[key]; ok && strings.Contains(strings.ToLower(v), strings.ToLower(val)) {
+				return true
+			}
+		}
+		return false
+	}
+	for k, v := range labels {
+		if strings.Contains(strings.ToLower(k), strings.ToLower(selector)) || strings.Contains(strings.ToLower(v), strings.ToLower(selector)) {
+			return true
+		}
+	}
+	return false
+}
+
+// SearchGlobalResources 跨集群全局搜索资源（按名称模糊匹配，支持过滤）
+func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilter string, nsFilter string, clusterFilter uint, labelFilter string) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	keywordLower := strings.ToLower(keyword)
+	kwordLower := strings.ToLower(keyword)
 
 	km.mu.RLock()
 	clients := make(map[uint]*ClusterClient)
@@ -141,17 +176,29 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		if store == nil {
 			return
 		}
+		if kindFilter != "" && kindFilter != kind {
+			return
+		}
 		for _, obj := range store.List() {
 			if len(result) >= limit {
 				return
 			}
 			if r, ok := matchFunc(obj); ok {
+				if nsFilter != "" && r.Namespace != "-" && r.Namespace != nsFilter {
+					continue
+				}
+				if labelFilter != "" && !matchLabelSelector(r.Labels, labelFilter) {
+					continue
+				}
 				result = append(result, r)
 			}
 		}
 	}
 
 	for id, cc := range clients {
+		if clusterFilter != 0 && id != clusterFilter {
+			continue
+		}
 		// fetch cluster name
 		var clusterName string
 		var cluster model.Cluster
@@ -164,8 +211,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 
 		appendFromStore(cc, "pods", cc.PodStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Pod)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "pods", Namespace: v.Namespace, Name: v.Name, Status: string(v.Status.Phase)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "pods", Namespace: v.Namespace, Name: v.Name, Status: string(v.Status.Phase), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -174,8 +221,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "deployments", cc.DeploymentStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*appsv1.Deployment)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "deployments", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "deployments", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -184,8 +231,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "statefulsets", cc.StatefulSetStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*appsv1.StatefulSet)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "statefulsets", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "statefulsets", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -194,8 +241,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "daemonsets", cc.DaemonSetStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*appsv1.DaemonSet)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "daemonsets", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.NumberReady, v.Status.DesiredNumberScheduled)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "daemonsets", Namespace: v.Namespace, Name: v.Name, Status: fmt.Sprintf("%d/%d", v.Status.NumberReady, v.Status.DesiredNumberScheduled), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -204,8 +251,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "services", cc.ServiceStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Service)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "services", Namespace: v.Namespace, Name: v.Name, Status: string(v.Spec.Type)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "services", Namespace: v.Namespace, Name: v.Name, Status: string(v.Spec.Type), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -214,8 +261,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "ingresses", cc.IngressStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*networkingv1.Ingress)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "ingresses", Namespace: v.Namespace, Name: v.Name, Status: ""}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "ingresses", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -224,8 +271,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "configmaps", cc.ConfigMapStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.ConfigMap)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "configmaps", Namespace: v.Namespace, Name: v.Name, Status: ""}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "configmaps", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -234,8 +281,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "secrets", cc.SecretStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Secret)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "secrets", Namespace: v.Namespace, Name: v.Name, Status: ""}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "secrets", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -244,7 +291,7 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "nodes", cc.NodeStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Node)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
 				status := "Unknown"
 				for _, c := range v.Status.Conditions {
 					if c.Type == corev1.NodeReady {
@@ -256,7 +303,7 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 						break
 					}
 				}
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "nodes", Namespace: "-", Name: v.Name, Status: status}, true
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "nodes", Namespace: "-", Name: v.Name, Status: status, Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -265,8 +312,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "namespaces", cc.NamespaceStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Namespace)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "namespaces", Namespace: "-", Name: v.Name, Status: string(v.Status.Phase)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "namespaces", Namespace: "-", Name: v.Name, Status: string(v.Status.Phase), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -275,8 +322,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "events", cc.EventStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Event)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) || strings.Contains(strings.ToLower(v.Reason), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "events", Namespace: v.Namespace, Name: v.Name, Status: v.Reason}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) || strings.Contains(strings.ToLower(v.Reason), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "events", Namespace: v.Namespace, Name: v.Name, Status: v.Reason, Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -285,8 +332,8 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int) ([]Search
 		}
 		appendFromStore(cc, "customresourcedefinitions", cc.CRDStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*v1.CustomResourceDefinition)
-			if strings.Contains(strings.ToLower(v.Name), keywordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "customresourcedefinitions", Namespace: "-", Name: v.Name, Status: string(v.Spec.Scope)}, true
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "customresourcedefinitions", Namespace: "-", Name: v.Name, Status: string(v.Spec.Scope), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
