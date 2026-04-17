@@ -72,3 +72,9 @@ frontend.log
 # Debug/test artifacts
 debug_*.png
 test_ai_spinner.*
+
+# Uploads
+uploads/
+
+# Dev context (internal only)
+CONTEXT.md
