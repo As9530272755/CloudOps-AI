@@ -371,90 +371,67 @@ func (e *ESAdapter) buildQuery(req QueryRequest) map[string]interface{} {
 		},
 	}
 
-	// 根据 log_type 追加场景化基础过滤（使用 .keyword 子字段以确保 wildcard / term 正确匹配）
+	// 场景化自动识别：按组件 Pod/Container 名称前缀匹配（最准确）
+	// fallback 到 message 精确特征匹配（兼容无 metadata 字段的采集配置）
+	// 使用 prefix / match_phrase / match 等 ES 基础查询，不依赖 regexp/exists，不会触发 query_shard_exception
+	var should []map[string]interface{}
+
+	// 辅助：在多个可能的字段名上添加 prefix 查询（ES 中不存在的字段自动忽略，不会报错）
+	addPrefix := func(values []string) {
+		fields := []string{"kubernetes.pod_name", "pod_name", "kubernetes.container_name", "container_name"}
+		for _, field := range fields {
+			for _, v := range values {
+				should = append(should, map[string]interface{}{"prefix": map[string]interface{}{field: v}})
+			}
+		}
+	}
+	// 辅助：在 message / log 上做 match_phrase 短语匹配
+	addPhrase := func(phrases []string) {
+		for _, phrase := range phrases {
+			should = append(should,
+				map[string]interface{}{"match_phrase": map[string]interface{}{"message": phrase}},
+				map[string]interface{}{"match_phrase": map[string]interface{}{"log": phrase}},
+			)
+		}
+	}
+
 	switch req.LogType {
 	case "ingress":
-		must = append(must, map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{
-								{"wildcard": map[string]interface{}{"kubernetes.namespace_name.keyword": "*ingress*"}},
-								{"wildcard": map[string]interface{}{"namespace.keyword": "*ingress*"}},
-							},
-							"minimum_should_match": 1,
-						},
-					},
-					{
-						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{
-								{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*ingress*"}},
-								{"wildcard": map[string]interface{}{"pod_name.keyword": "*ingress*"}},
-								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*nginx*"}},
-								{"wildcard": map[string]interface{}{"container_name.keyword": "*nginx*"}},
-								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*controller*"}},
-								{"wildcard": map[string]interface{}{"container_name.keyword": "*controller*"}},
-							},
-							"minimum_should_match": 1,
-						},
-					},
-				},
-			},
-		})
+		// 入口网关组件 Pod 前缀（覆盖常见 Ingress Controller）
+		addPrefix([]string{"ingress-nginx", "nginx-ingress", "traefik", "kong", "haproxy-ingress"})
+		// HTTP access log 强特征：协议版本（Nginx/Traefik 标准格式 "GET /xxx HTTP/1.1"）
+		addPhrase([]string{"HTTP/1.1", "HTTP/1.0", "HTTP/2.0"})
+		// JSON 结构化 HTTP 日志特征（如 KubeSphere 控制台请求日志）
+		addPhrase([]string{"\"method\":\"GET\"", "\"method\":\"POST\"", "\"method\":\"PUT\"", "\"method\":\"DELETE\""})
+		// 独立 method 字段
+		for _, kw := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
+			should = append(should, map[string]interface{}{"match": map[string]interface{}{"method": kw}})
+		}
 	case "coredns":
-		must = append(must, map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{
-								{"wildcard": map[string]interface{}{"kubernetes.namespace_name.keyword": "*kube-system*"}},
-								{"wildcard": map[string]interface{}{"namespace.keyword": "*kube-system*"}},
-							},
-							"minimum_should_match": 1,
-						},
-					},
-					{
-						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{
-								{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*coredns*"}},
-								{"wildcard": map[string]interface{}{"pod_name.keyword": "*coredns*"}},
-								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*coredns*"}},
-								{"wildcard": map[string]interface{}{"container_name.keyword": "*coredns*"}},
-							},
-							"minimum_should_match": 1,
-						},
-					},
-				},
-			},
-		})
+		// CoreDNS 组件 Pod 前缀
+		addPrefix([]string{"coredns"})
+		// CoreDNS 标准日志格式特征（"A IN domain.com" / "AAAA IN domain.com"）
+		addPhrase([]string{"\"A IN ", "\"AAAA IN "})
+		// DNS 响应码
+		addPhrase([]string{"NOERROR", "NXDOMAIN", "SERVFAIL"})
+		// CoreDNS 特有配置名
+		addPhrase([]string{"Corefile", "cluster.local"})
 	case "lb":
+		// 负载均衡组件 Pod 前缀：
+		//   kube-proxy — K8s Service 负载均衡（iptables/ipvs）
+		//   metallb    — MetalLB 负载均衡器
+		addPrefix([]string{"kube-proxy", "metallb"})
+		// kube-proxy 日志特征（iptables/ipvs 规则同步）
+		addPhrase([]string{"iptables", "ipvs", "proxier", "syncProxyRules"})
+		// MetalLB 日志特征
+		addPhrase([]string{"announcing", "memberlist", "load balancer"})
+	}
+
+	if len(should) > 0 {
 		must = append(must, map[string]interface{}{
 			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{
-								{"wildcard": map[string]interface{}{"kubernetes.namespace_name.keyword": "*ingress*"}},
-								{"wildcard": map[string]interface{}{"namespace.keyword": "*ingress*"}},
-							},
-							"minimum_should_match": 1,
-						},
-					},
-					{
-						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{
-								{"exists": map[string]interface{}{"field": "upstream_addr"}},
-								{"wildcard": map[string]interface{}{"kubernetes.pod_name.keyword": "*ingress*"}},
-								{"wildcard": map[string]interface{}{"pod_name.keyword": "*ingress*"}},
-								{"wildcard": map[string]interface{}{"kubernetes.container_name.keyword": "*nginx*"}},
-								{"wildcard": map[string]interface{}{"container_name.keyword": "*nginx*"}},
-							},
-							"minimum_should_match": 1,
-						},
-					},
-				},
+				"should":               should,
+				"minimum_should_match": 1,
 			},
 		})
 	}
