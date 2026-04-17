@@ -1,6 +1,14 @@
 # CloudOps Platform v2.0
 
 > 云原生智能运维管理平台 —— 基于 Kubernetes 的一站式容器运维与 AI 助手解决方案
+>
+> **English** | A cloud-native intelligent O&M management platform based on Kubernetes, providing one-stop container operations and AI assistant solutions.
+>
+> **日本語** | Kubernetes ベースのクラウドネイティブインテリジェント運用管理プラットフォーム。コンテナ運用と AI アシスタントをワンストップで提供するソリューションです。
+>
+> **한국어** | Kubernetes 기반의 클라우드 네이티브 지능형 운영 관리 플랫폼으로, 원스톱 컨테이너 운영 및 AI 어시스턴트 솔루션을 제공합니다.
+>
+> 📝 *Note: Future updates to this README will maintain descriptions in Chinese, English, Japanese, and Korean.*
 
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
