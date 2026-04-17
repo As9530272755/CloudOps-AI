@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/cloudops/platform/internal/api/handlers"
 	"github.com/cloudops/platform/internal/api/middleware"
@@ -30,11 +31,12 @@ type Router struct {
 	agentToolsHandler    *handlers.AgentToolsHandler
 	logHandler           *handlers.LogHandler
 	settingHandler       *handlers.SettingHandler
+	terminalHandler      *handlers.TerminalHandler
 	jwtManager           *auth.JWTManager
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService, db *gorm.DB, k8sManager *service.K8sManager) *Router {
 	return &Router{
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
@@ -50,6 +52,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		agentToolsHandler:    handlers.NewAgentToolsHandler(agentService),
 		logHandler:           handlers.NewLogHandler(logService),
 		settingHandler:       handlers.NewSettingHandler(settingService),
+		terminalHandler:      handlers.NewTerminalHandler(db, k8sManager, jwtManager),
 		jwtManager:           jwtManager,
 	}
 }
@@ -195,10 +198,10 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				protected.DELETE("/log-backends/:id", r.logHandler.DeleteLogBackend)
 				protected.GET("/log-backends/:id/test", r.logHandler.TestLogBackend)
 
-				// 系统设置
-				protected.GET("/settings/site", r.settingHandler.GetSiteConfig)
-				protected.PUT("/settings/site", r.settingHandler.UpdateSiteConfig)
-				protected.POST("/settings/site/logo", r.settingHandler.UploadLogo)
+				// 系统设置（读取站点配置无需认证，登录页需要显示自定义 Logo 和名称）
+			v1.GET("/settings/site", r.settingHandler.GetSiteConfig)
+			protected.PUT("/settings/site", r.settingHandler.UpdateSiteConfig)
+			protected.POST("/settings/site/logo", r.settingHandler.UploadLogo)
 
 				// TODO: 添加更多路由
 				// AI问答
@@ -206,6 +209,9 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				// 租户管理
 		}
 	}
+
+	// Web Terminal (WebSocket)
+	engine.GET("/ws/terminal", r.terminalHandler.Terminal)
 
 	// 内部 Agent 工具执行 API（仅允许本机访问）
 	internal := engine.Group("/internal")

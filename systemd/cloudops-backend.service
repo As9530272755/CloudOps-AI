@@ -1,0 +1,17 @@
+[Unit]
+Description=CloudOps Backend
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=cloudops
+Group=cloudops
+WorkingDirectory=/opt/cloudops
+ExecStart=/opt/cloudops/cloudops-backend
+Restart=on-failure
+RestartSec=5
+Environment="CONFIG_PATH=/opt/cloudops/config/config.yaml"
+Environment="GIN_MODE=release"
+
+[Install]
+WantedBy=multi-user.target

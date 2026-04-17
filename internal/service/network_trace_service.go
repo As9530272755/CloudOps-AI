@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -455,6 +456,65 @@ func inferProtocolByPortName(portName string) string {
 
 // ==================== 调试 / 抓包 ====================
 
+// defaultDebugCommand 后端默认的安全抓包命令
+const defaultDebugCommand = "tcpdump -i any -nn -U -w /tmp/capture.pcap & TPID=$!; while kill -0 $TPID 2>/dev/null; do sleep 10; echo '===PCAP_BEGIN==='; base64 /tmp/capture.pcap | tr -d '\\n'; echo ''; echo '===PCAP_END==='; done; echo 'capture stopped'"
+
+// validateDebugCommand 校验用户输入的命令是否安全
+// 只允许网络诊断相关的命令，禁止系统破坏类操作
+func validateDebugCommand(cmd string) error {
+	if cmd == "" {
+		return nil // 空命令将使用后端默认安全命令
+	}
+
+	trimmed := strings.TrimSpace(cmd)
+
+	// 完全匹配默认命令时放行（兼容前端直接提交默认命令的场景）
+	if trimmed == defaultDebugCommand {
+		return nil
+	}
+
+	// 禁止的 shell 元字符和危险操作符（管道、重定向、子 shell、命令分隔等）
+	dangerousPatterns := []string{
+		";", "&&", "||", "|", "`", "$()", "${", ">>", ">", "<", "&",
+	}
+	for _, p := range dangerousPatterns {
+		if strings.Contains(cmd, p) {
+			return fmt.Errorf("命令包含危险字符 '%s'，禁止执行", p)
+		}
+	}
+
+	// 允许的前缀白名单（只允许这些网络诊断工具）
+	allowedPrefixes := []string{
+		"tcpdump", "ping", "traceroute", "tracepath",
+		"curl", "wget", "nc ", "ncat ", "nslookup", "dig ",
+		"ss ", "netstat", "ip ", "iptables", "tshark",
+		"host", "whois", "mtr", "arping", "nmap",
+		"cat /tmp/capture", "base64 /tmp/capture",
+		"sleep", "echo", "kill",
+	}
+
+	allowed := false
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return fmt.Errorf("命令 '%s' 不在允许的网络诊断工具白名单中", trimmed)
+	}
+
+	// 禁止绝对路径执行非标准目录下的二进制
+	if regexp.MustCompile(`^/[a-zA-Z0-9_/-]+/[a-zA-Z0-9_-]+\s`).MatchString(trimmed) {
+		// 只允许 /usr/bin/、/usr/sbin/、/bin/、/sbin/ 下的标准工具
+		if !regexp.MustCompile(`^/(usr/)?(bin|sbin)/[a-zA-Z0-9_-]+`).MatchString(trimmed) {
+			return fmt.Errorf("禁止执行非标准系统路径下的命令")
+		}
+	}
+
+	return nil
+}
+
 // CreateEphemeralDebug 为目标 Pod 创建 Ephemeral Container
 func (s *NetworkTraceService) CreateEphemeralDebug(ctx context.Context, clusterID uint, namespace, pod, image, command string) error {
 	client := s.k8sMgr.GetClient(clusterID)
@@ -464,8 +524,14 @@ func (s *NetworkTraceService) CreateEphemeralDebug(ctx context.Context, clusterI
 	if image == "" {
 		image = s.GetSettings().DebugImage
 	}
+
+	// 安全校验：拒绝危险命令
+	if err := validateDebugCommand(command); err != nil {
+		return fmt.Errorf("命令安全检查失败: %w", err)
+	}
+
 	if command == "" {
-		command = "tcpdump -i any -nn -U -w /tmp/capture.pcap & TPID=$!; while kill -0 $TPID 2>/dev/null; do sleep 10; echo '===PCAP_BEGIN==='; base64 /tmp/capture.pcap | tr -d '\\n'; echo ''; echo '===PCAP_END==='; done; echo 'capture stopped'"
+		command = defaultDebugCommand
 	}
 
 	patchObj := map[string]interface{}{

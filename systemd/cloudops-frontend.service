@@ -1,0 +1,15 @@
+[Unit]
+Description=CloudOps Frontend
+After=network.target cloudops-backend.service
+
+[Service]
+Type=simple
+User=cloudops
+Group=cloudops
+WorkingDirectory=/opt/cloudops/frontend/dist
+ExecStart=/usr/local/bin/npx vite preview --port 18000 --host
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

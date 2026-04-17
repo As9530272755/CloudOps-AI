@@ -345,6 +345,56 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 	return result, nil
 }
 
+// BuildConfig 暴露 buildConfig 给外部服务（如 Terminal）
+func (km *K8sManager) BuildConfig(clusterID uint) (*rest.Config, error) {
+	return km.buildConfig(clusterID)
+}
+
+// GetClusterKubeconfigContent 返回可用于 kubectl 的 kubeconfig YAML 内容
+func (km *K8sManager) GetClusterKubeconfigContent(clusterID uint) ([]byte, error) {
+	var secret model.ClusterSecret
+	if err := km.db.Where("cluster_id = ?", clusterID).First(&secret).Error; err != nil {
+		return nil, fmt.Errorf("cluster secret not found")
+	}
+
+	decryptedData, err := km.encryptor.Decrypt(secret.EncryptedData)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt failed: %w", err)
+	}
+
+	if secret.SecretType == "kubeconfig" {
+		return []byte(decryptedData), nil
+	}
+
+	if secret.SecretType == "token" {
+		var cluster model.Cluster
+		if err := km.db.First(&cluster, clusterID).Error; err != nil {
+			return nil, fmt.Errorf("cluster not found")
+		}
+		kubeconfig := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: %s
+  name: cluster
+current-context: ctx
+contexts:
+- context:
+    cluster: cluster
+    user: user
+  name: ctx
+users:
+- name: user
+  user:
+    token: %s
+`, cluster.Server, decryptedData)
+		return []byte(kubeconfig), nil
+	}
+
+	return nil, fmt.Errorf("unsupported secret type: %s", secret.SecretType)
+}
+
 // GetClusterClient 获取完整ClusterClient（含Store）
 func (km *K8sManager) GetClusterClient(clusterID uint) *ClusterClient {
 	km.mu.RLock()

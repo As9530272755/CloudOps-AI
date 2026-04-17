@@ -1,38 +1,42 @@
-# CloudOps Platform v2.0 配置文件
+# CloudOps Platform 配置文件模板
+# 安装脚本会自动替换以下占位符：
+#   {{DB_HOST}}       - 数据库地址
+#   {{DB_PASSWORD}}   - 数据库密码
+#   {{JWT_SECRET}}    - JWT 密钥
+#   {{ENCRYPTION_KEY}}- AES 加密密钥
 
 server:
   backend:
     host: "0.0.0.0"
     port: 9000
-    mode: "debug"
+    mode: "release"
     read_timeout: 60s
     write_timeout: 600s
     max_connections: 10000
-  
+
   frontend:
     host: "0.0.0.0"
     port: 18000
-  
+
   ai_service:
     host: "0.0.0.0"
     port: 8001
-    enabled: true
+    enabled: false
 
 database:
   postgres:
-    host: "127.0.0.1"
+    host: "{{DB_HOST}}"
     port: 5432
     database: "cloudops"
     username: "cloudops"
-    password: "cloudops123"
+    password: "{{DB_PASSWORD}}"
     ssl_mode: "disable"
     max_connections: 100
     max_idle: 10
-  
+
   redis:
     host: "127.0.0.1"
     port: 6379
-    password: "${REDIS_PASSWORD}"
     db: 0
     pool_size: 100
 
@@ -41,7 +45,7 @@ kubernetes:
     max_size: 50
     idle_timeout: 10m
     health_check: 30s
-  
+
   terminal:
     enabled: true
     max_sessions: 100
@@ -54,33 +58,24 @@ kubernetes:
 
 ai:
   openclaw:
-    enabled: true
-    api_url: "${OPENCLAW_URL:http://localhost:8080}"
-    api_key: "${OPENCLAW_API_KEY}"
-    timeout: 60s
-    max_tokens: 4096
-  
-  knowledge_base:
-    enabled: true
-    vector_db: "chroma"
-    embedding_model: "text-embedding-3-small"
+    enabled: false
 
 security:
   jwt:
-    secret: "${JWT_SECRET}"
+    secret: "{{JWT_SECRET}}"
     access_expire: 1h
     refresh_expire: 24h
-  
+
   encryption:
     algorithm: "AES-256-GCM"
     key_id: "default"
-    key: "${ENCRYPTION_KEY}"
-  
+    key: "{{ENCRYPTION_KEY}}"
+
   rate_limit:
     enabled: true
     requests_per_minute: 100
     burst: 20
-  
+
   audit:
     enabled: true
     log_path: "/var/log/cloudops/audit.log"
@@ -90,7 +85,6 @@ tenant:
   enabled: true
   max_tenants: 100
   default_tenant: "default"
-  
   quotas:
     max_clusters: 20
     max_users: 100

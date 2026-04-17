@@ -1,0 +1,15 @@
+[Unit]
+Description=CloudOps Agent Runtime
+After=network.target cloudops-backend.service
+
+[Service]
+Type=simple
+User=cloudops
+Group=cloudops
+WorkingDirectory=/opt/cloudops/agent-runtime
+ExecStart=/usr/local/bin/node dist/server.js --port 19000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

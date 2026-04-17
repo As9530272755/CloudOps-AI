@@ -168,7 +168,7 @@ func main() {
 	log.Println("✅ Agent Runtime 代理初始化完成")
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, agentRuntimeProxy, logService, settingService)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, agentRuntimeProxy, logService, settingService, db, k8sManager)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {
