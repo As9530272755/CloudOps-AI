@@ -5,8 +5,8 @@ server:
     host: "0.0.0.0"
     port: 9000
     mode: "debug"
-    read_timeout: 30s
-    write_timeout: 30s
+    read_timeout: 60s
+    write_timeout: 600s
     max_connections: 10000
   
   frontend:
@@ -24,7 +24,7 @@ database:
     port: 5432
     database: "cloudops"
     username: "cloudops"
-    password: "cloudops123"
+    password: "${DB_PASSWORD}"
     ssl_mode: "disable"
     max_connections: 100
     max_idle: 10
