@@ -128,7 +128,8 @@ func (h *TerminalHandler) Terminal(c *gin.Context) {
 
 	// 写入 .bashrc（备用，非 login shell 场景）
 	bashrcPath := filepath.Join(homeDir, ".bashrc")
-	bashrcContent := `shopt -s progcomp
+	bashrcContent := `unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY ALL_PROXY all_proxy ftp_proxy FTP_PROXY socks_proxy SOCKS_PROXY
+shopt -s progcomp
 set -o emacs
 bind '"\t": complete'
 if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
@@ -146,7 +147,8 @@ export BASHRC_LOADED=1
 
 	// 写入 .bash_profile（login shell 直接加载，不依赖 .bashrc 是否被读取）
 	bashProfilePath := filepath.Join(homeDir, ".bash_profile")
-	bashProfileContent := `if [ -f ~/.bashrc ]; then
+	bashProfileContent := `unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY ALL_PROXY all_proxy ftp_proxy FTP_PROXY socks_proxy SOCKS_PROXY
+if [ -f ~/.bashrc ]; then
     source ~/.bashrc
 fi
 shopt -s progcomp
@@ -220,6 +222,7 @@ export BASHRC_LOADED=1
 
 	// 安全：不再使用 mknod 创建设备（防止用户创建设备节点直接读写宿主机磁盘）
 	// 改为从宿主机 bind-mount 已知安全的字符设备
+	// 注意：bind mount 文件时，目标文件必须预先存在
 	safeDevices := []struct{ src, name string }{
 		{"/dev/null", "null"},
 		{"/dev/zero", "zero"},
@@ -228,7 +231,9 @@ export BASHRC_LOADED=1
 		{"/dev/tty", "tty"},
 	}
 	for _, dev := range safeDevices {
-		_ = syscall.Mount(dev.src, filepath.Join(sandboxRoot, "dev", dev.name), "", syscall.MS_BIND|syscall.MS_RDONLY, "")
+		dstPath := filepath.Join(sandboxRoot, "dev", dev.name)
+		_ = os.WriteFile(dstPath, []byte{}, 0644)
+		_ = syscall.Mount(dev.src, dstPath, "", syscall.MS_BIND|syscall.MS_RDONLY, "")
 	}
 	_ = syscall.Mount("/dev/pts", filepath.Join(sandboxRoot, "dev/pts"), "", syscall.MS_BIND|syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "")
 
@@ -241,7 +246,18 @@ export BASHRC_LOADED=1
 
 	cmd := exec.Command("/bin/bash", "-l")
 	cmd.Dir = "/root"
-	cmd.Env = append(os.Environ(),
+	// 过滤掉代理环境变量（沙盒内 127.0.0.1 不是宿主机的代理地址）
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		lower := strings.ToLower(e)
+		if strings.HasPrefix(lower, "http_proxy=") || strings.HasPrefix(lower, "https_proxy=") ||
+			strings.HasPrefix(lower, "all_proxy=") || strings.HasPrefix(lower, "no_proxy=") ||
+			strings.HasPrefix(lower, "ftp_proxy=") || strings.HasPrefix(lower, "socks_proxy=") {
+			continue
+		}
+		env = append(env, e)
+	}
+	cmd.Env = append(env,
 		"TERM=xterm-256color",
 		"KUBECONFIG=/root/.kubeconfig.yaml",
 		"HOME=/root",
