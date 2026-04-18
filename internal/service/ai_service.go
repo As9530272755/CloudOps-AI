@@ -13,15 +13,13 @@ import (
 type AIService struct {
 	platformSvc *AIPlatformService
 	sessionSvc  *AIChatSessionService
-	configSvc   *AIConfigService // 保留给旧版分析任务做兼容
 }
 
 // NewAIService 创建 AI 服务
-func NewAIService(platformSvc *AIPlatformService, sessionSvc *AIChatSessionService, configSvc *AIConfigService) *AIService {
+func NewAIService(platformSvc *AIPlatformService, sessionSvc *AIChatSessionService) *AIService {
 	return &AIService{
 		platformSvc: platformSvc,
 		sessionSvc:  sessionSvc,
-		configSvc:   configSvc,
 	}
 }
 
@@ -44,7 +42,18 @@ func (s *AIService) resolvePlatformID(platformID string, sessionID string) (stri
 }
 
 // truncateMessages 截断消息数组，保留 system + 最近 limit 条，防止上下文过长导致超时
+// 同时过滤掉空的 assistant 消息（流式中断时可能产生）
 func truncateMessages(messages []ai.Message, limit int) []ai.Message {
+	// 过滤空内容的 assistant 消息
+	filtered := make([]ai.Message, 0, len(messages))
+	for _, m := range messages {
+		if m.Role == "assistant" && m.Content == "" {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+	messages = filtered
+
 	if len(messages) <= limit {
 		return messages
 	}
