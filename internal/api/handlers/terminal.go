@@ -106,12 +106,14 @@ func (h *TerminalHandler) Terminal(c *gin.Context) {
 	homeDir := fmt.Sprintf("/tmp/cloudops-home/cluster-%d", clusterID)
 	_ = os.MkdirAll(homeDir, 0755)
 
-	// 把 kubeconfig 直接放在家目录下，生命周期与集群家目录一致
+	// 把 kubeconfig 放在家目录下（同时写入 ~/.kube/config 供 kubectl 默认读取）
 	kubeconfigPath := filepath.Join(homeDir, ".kubeconfig.yaml")
 	if err := os.WriteFile(kubeconfigPath, kubeconfigBytes, 0600); err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"success": false, "error": "写入临时凭证失败"})
 		return
 	}
+	_ = os.MkdirAll(filepath.Join(homeDir, ".kube"), 0755)
+	_ = os.WriteFile(filepath.Join(homeDir, ".kube", "config"), kubeconfigBytes, 0600)
 
 	// 从内嵌资源复制 kubectl 命令补全脚本到集群家目录
 	kubectlCompPath := filepath.Join(homeDir, ".kubectl-completion.bash")
@@ -185,8 +187,8 @@ export BASHRC_LOADED=1
 	_ = os.RemoveAll(sandboxRoot)
 	_ = os.MkdirAll(sandboxRoot, 0755)
 
-	// 创建必要的目录结构（注意：不再创建 proc）
-	for _, d := range []string{"bin", "sbin", "usr", "usr/local", "usr/local/bin", "lib", "lib64", "etc", "dev", "dev/pts", "tmp", "root"} {
+	// 创建必要的目录结构
+	for _, d := range []string{"bin", "sbin", "usr", "usr/local", "usr/local/bin", "lib", "lib64", "etc", "dev", "dev/pts", "tmp", "root", "proc"} {
 		_ = os.MkdirAll(filepath.Join(sandboxRoot, d), 0755)
 	}
 
@@ -198,6 +200,12 @@ export BASHRC_LOADED=1
 		}
 		_ = syscall.Mount(src, dst, "", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_NOSUID|syscall.MS_NODEV, "")
 	}
+
+	// 挂载 /proc（CLONE_NEWPID 下 PID 1 是 bash，/proc/1/root 不会逃逸到宿主机）
+	_ = syscall.Mount("proc", filepath.Join(sandboxRoot, "proc"), "proc", syscall.MS_NOSUID|syscall.MS_NOEXEC|syscall.MS_NODEV, "")
+
+	// 创建 /dev/fd 符号链接（kubectl completion 使用进程替换 <(...) 需要它）
+	_ = os.Symlink("/proc/self/fd", filepath.Join(sandboxRoot, "dev/fd"))
 
 	// 复制 kubectl 到 chroot 内（避免 bind mount 文件需要目标文件预先存在的限制）
 	if src, err := os.Open("/data/projects/cloudops-v2/data/kubectl"); err == nil {
@@ -342,13 +350,13 @@ func cleanupSandboxMounts(sandboxRoot string) error {
 	// 按正确的顺序卸载：先卸载子挂载点，再卸载父挂载点
 	mounts := []string{
 		filepath.Join(sandboxRoot, "root"),              // homeDir bind mount
-		filepath.Join(sandboxRoot, "usr/local/bin/kubectl"),
 		filepath.Join(sandboxRoot, "dev/pts"),
 		filepath.Join(sandboxRoot, "dev/null"),
 		filepath.Join(sandboxRoot, "dev/zero"),
 		filepath.Join(sandboxRoot, "dev/random"),
 		filepath.Join(sandboxRoot, "dev/urandom"),
 		filepath.Join(sandboxRoot, "dev/tty"),
+		filepath.Join(sandboxRoot, "proc"),
 		filepath.Join(sandboxRoot, "tmp"),
 		filepath.Join(sandboxRoot, "etc"),
 		filepath.Join(sandboxRoot, "lib64"),
