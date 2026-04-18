@@ -140,6 +140,12 @@ if [ -f ~/.kubectl-completion.bash ]; then
 fi
 bind 'set show-all-if-ambiguous on'
 bind 'set show-all-if-unmodified on'
+alias ls='ls --color=auto'
+alias ll='ls -alF --color=auto'
+alias grep='grep --color=auto'
+if command -v dircolors >/dev/null 2>&1; then
+    eval "$(dircolors -b)" 2>/dev/null || true
+fi
 export PATH="/usr/local/bin:$PATH"
 export BASHRC_LOADED=1
 `
@@ -162,6 +168,12 @@ if [ -f ~/.kubectl-completion.bash ]; then
 fi
 bind 'set show-all-if-ambiguous on'
 bind 'set show-all-if-unmodified on'
+alias ls='ls --color=auto'
+alias ll='ls -alF --color=auto'
+alias grep='grep --color=auto'
+if command -v dircolors >/dev/null 2>&1; then
+    eval "$(dircolors -b)" 2>/dev/null || true
+fi
 export PATH="/usr/local/bin:$PATH"
 export BASHRC_LOADED=1
 `
