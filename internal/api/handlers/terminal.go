@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -80,11 +81,18 @@ func (h *TerminalHandler) Terminal(c *gin.Context) {
 		}
 	}
 
-	// 4. 获取集群信息
+	// 4. 获取集群信息及健康状态
 	var cluster model.Cluster
 	if err := h.db.Where("id = ?", clusterID).First(&cluster).Error; err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "集群不存在"})
 		return
+	}
+	var clusterMeta model.ClusterMetadata
+	if err := h.db.Where("cluster_id = ?", clusterID).First(&clusterMeta).Error; err == nil {
+		if clusterMeta.HealthStatus != "healthy" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "error": fmt.Sprintf("集群当前状态为 %s，无法建立终端连接", clusterMeta.HealthStatus)})
+			return
+		}
 	}
 
 	// 5. 获取 kubeconfig 内容
@@ -191,8 +199,16 @@ export BASHRC_LOADED=1
 		_ = syscall.Mount(src, dst, "", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_NOSUID|syscall.MS_NODEV, "")
 	}
 
-	// bind-mount 内嵌的 kubectl 二进制到 chroot 内
-	_ = syscall.Mount("/data/projects/cloudops-v2/data/kubectl", filepath.Join(sandboxRoot, "usr/local/bin/kubectl"), "", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_NOSUID, "")
+	// 复制 kubectl 到 chroot 内（避免 bind mount 文件需要目标文件预先存在的限制）
+	if src, err := os.Open("/data/projects/cloudops-v2/data/kubectl"); err == nil {
+		defer src.Close()
+		dstPath := filepath.Join(sandboxRoot, "usr/local/bin/kubectl")
+		if dst, err := os.Create(dstPath); err == nil {
+			_, _ = io.Copy(dst, src)
+			dst.Close()
+			_ = os.Chmod(dstPath, 0755)
+		}
+	}
 
 	// 安全：不再使用 mknod 创建设备（防止用户创建设备节点直接读写宿主机磁盘）
 	// 改为从宿主机 bind-mount 已知安全的字符设备

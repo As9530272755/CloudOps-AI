@@ -19,9 +19,12 @@ import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import { clusterAPI } from '../lib/cluster-api'
 
-interface Cluster {
+interface TerminalCluster {
   id: number
   name: string
+  metadata?: {
+    health_status?: string
+  }
 }
 
 interface Session {
@@ -35,22 +38,25 @@ interface Session {
 }
 
 export default function TerminalPage() {
-  const [clusters, setClusters] = useState<Cluster[]>([])
+  const [clusters, setClusters] = useState<TerminalCluster[]>([])
   const [selectedCluster, setSelectedCluster] = useState<number | ''>('')
   const [sessions, setSessions] = useState<Session[]>([])
   const [activeTab, setActiveTab] = useState<string | null>(null)
   const token = localStorage.getItem('access_token') || ''
 
-  // 加载集群列表
+  // 加载集群列表（只保留 healthy 状态的集群）
   useEffect(() => {
     clusterAPI
       .getClusters()
       .then((res: any) => {
         const payload = res?.data ?? res
-        const list: Cluster[] = Array.isArray(payload) ? payload : []
-        setClusters(list)
-        if (list.length > 0) {
-          setSelectedCluster(list[0].id)
+        const list: TerminalCluster[] = Array.isArray(payload) ? payload : []
+        const healthyList = list.filter((c) => c.metadata?.health_status === 'healthy')
+        setClusters(healthyList)
+        if (healthyList.length > 0) {
+          setSelectedCluster(healthyList[0].id)
+        } else {
+          setSelectedCluster('')
         }
       })
       .catch((err) => {
@@ -192,7 +198,11 @@ export default function TerminalPage() {
               value={selectedCluster}
               label="集群"
               onChange={(e) => setSelectedCluster(Number(e.target.value))}
+              disabled={clusters.length === 0}
             >
+              {clusters.length === 0 && (
+                <MenuItem disabled value="">暂无健康集群</MenuItem>
+              )}
               {clusters.map((c) => (
                 <MenuItem key={c.id} value={c.id}>
                   {c.name}
@@ -205,7 +215,7 @@ export default function TerminalPage() {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={createSession}
-            disabled={!selectedCluster || !token}
+            disabled={!selectedCluster || !token || clusters.length === 0}
           >
             新建连接
           </Button>
