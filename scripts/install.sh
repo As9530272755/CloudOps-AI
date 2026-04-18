@@ -22,7 +22,7 @@ ENCRYPTION_KEY=""
 RUN_USER="cloudops"
 FRONTEND_PORT="18000"
 BACKEND_PORT="9000"
-AGENT_PORT="19000"
+
 
 # 颜色
 RED='\033[0;31m'
@@ -60,6 +60,7 @@ Options:
     --encryption-key <key>    加密密钥 (默认: 自动生成)
     --frontend-port <port>    前端端口 (默认: 18000)
     --backend-port <port>     后端端口 (默认: 9000)
+    --agent-port <port>       Agent Runtime 端口 (默认: 19000)
     -y, --yes                 自动确认，无需交互
     -h, --help                显示帮助
 
@@ -125,6 +126,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --backend-port)
             BACKEND_PORT="$2"
+            shift 2
+            ;;
+        --agent-port)
+            AGENT_PORT="$2"
             shift 2
             ;;
         -y|--yes)
@@ -434,7 +439,7 @@ server:
   ai_service:
     host: "0.0.0.0"
     port: 8001
-    enabled: false
+    enabled: true
 
 database:
 EOF
@@ -484,10 +489,6 @@ kubernetes:
     allowed_shells:
       - "/bin/sh"
       - "/bin/bash"
-
-ai:
-  openclaw:
-    enabled: false
 
 security:
   jwt:
@@ -588,25 +589,6 @@ Environment="ENCRYPTION_KEY=${ENCRYPTION_KEY}"
 WantedBy=multi-user.target
 EOF
 
-# Agent Runtime 服务
-cat > /etc/systemd/system/cloudops-agent.service <<EOF
-[Unit]
-Description=CloudOps Agent Runtime
-After=network.target cloudops-backend.service
-
-[Service]
-Type=simple
-User=${RUN_USER}
-Group=${RUN_USER}
-WorkingDirectory=${INSTALL_DIR}/agent-runtime
-ExecStart=/usr/local/bin/node dist/server.js --port ${AGENT_PORT}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # 前端服务
 cat > /etc/systemd/system/cloudops-frontend.service <<EOF
 [Unit]
@@ -627,7 +609,7 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable cloudops-backend cloudops-agent cloudops-frontend
+systemctl enable cloudops-backend cloudops-frontend
 log_info "systemd 服务已创建并启用"
 
 # =============================================================================
@@ -659,9 +641,6 @@ if curl -s "http://127.0.0.1:${BACKEND_PORT}/health" > /dev/null 2>&1; then
 else
     log_warn "后端服务可能未就绪，请检查日志: journalctl -u cloudops-backend -f"
 fi
-
-systemctl start cloudops-agent
-sleep 1
 
 systemctl start cloudops-frontend
 sleep 2
@@ -696,8 +675,8 @@ echo -e "${GREEN}配置文件:${NC} ${CONFIG_FILE}"
 echo -e "${GREEN}环境变量:${NC} ${ENV_FILE}"
 echo ""
 echo -e "${GREEN}服务管理:${NC}"
-echo "  启动: systemctl start cloudops-backend cloudops-agent cloudops-frontend"
-echo "  停止: systemctl stop cloudops-backend cloudops-agent cloudops-frontend"
+echo "  启动: systemctl start cloudops-backend cloudops-frontend"
+echo "  停止: systemctl stop cloudops-backend cloudops-frontend"
 echo "  状态: systemctl status cloudops-backend"
 echo "  日志: journalctl -u cloudops-backend -f"
 echo ""

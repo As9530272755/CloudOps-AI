@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -147,10 +148,12 @@ func main() {
 	log.Println("✅ Agent 服务初始化完成")
 
 	// 启动 Node.js Agent Runtime
+	execPath, _ := os.Executable()
+	execDir := filepath.Dir(execPath)
 	agentRuntime := exec.CommandContext(context.Background(), "node", "agent-runtime/dist/server.js", "--port", "19000")
 	agentRuntime.Stdout = os.Stdout
 	agentRuntime.Stderr = os.Stderr
-	agentRuntime.Dir = "/data/projects/cloudops-v2"
+	agentRuntime.Dir = execDir
 	if err := agentRuntime.Start(); err != nil {
 		log.Printf("⚠️ Agent Runtime 启动失败: %v", err)
 	} else {

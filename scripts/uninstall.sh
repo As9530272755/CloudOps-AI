@@ -40,13 +40,12 @@ fi
 
 # 停止服务
 log_info "停止服务..."
-systemctl stop cloudops-backend cloudops-agent cloudops-frontend 2>/dev/null || true
-systemctl disable cloudops-backend cloudops-agent cloudops-frontend 2>/dev/null || true
+systemctl stop cloudops-backend cloudops-frontend 2>/dev/null || true
+systemctl disable cloudops-backend cloudops-frontend 2>/dev/null || true
 
 # 删除 systemd 配置
 log_info "删除 systemd 服务配置..."
 rm -f /etc/systemd/system/cloudops-backend.service
-rm -f /etc/systemd/system/cloudops-agent.service
 rm -f /etc/systemd/system/cloudops-frontend.service
 systemctl daemon-reload
 
