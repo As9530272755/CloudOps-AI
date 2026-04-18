@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"gorm.io/gorm"
@@ -193,6 +195,10 @@ func (s *ClusterService) DeleteCluster(ctx context.Context, userID uint, tenantI
 		return err
 	}
 
+	// 清理该集群的终端家目录（仅在用户手动删除时执行）
+	homeDir := filepath.Join("/tmp/cloudops-home", fmt.Sprintf("cluster-%d", clusterID))
+	_ = os.RemoveAll(homeDir)
+
 	// 清理巡检任务中引用的该集群ID
 	var tasks []model.InspectionTask
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tasks).Error; err == nil {
@@ -280,6 +286,36 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 // updateClusterHealth 更新集群健康状态
 func (s *ClusterService) updateClusterHealth(clusterID uint, status string, errorMsg string) {
 	s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Update("health_status", status)
+}
+
+// StartHealthMonitor 启动集群健康检查（每 30 秒一次）
+func (s *ClusterService) StartHealthMonitor() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			var list []model.Cluster
+			if err := s.db.Find(&list).Error; err != nil {
+				continue
+			}
+			for _, c := range list {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				client, err := s.GetK8sClient(ctx, c.ID)
+				if err != nil {
+					cancel()
+					s.updateClusterHealth(c.ID, "error", "")
+					continue
+				}
+				_, err = client.Discovery().ServerVersion()
+				cancel()
+				status := "error"
+				if err == nil {
+					status = "healthy"
+				}
+				s.updateClusterHealth(c.ID, status, "")
+			}
+		}
+	}()
 }
 
 // GetK8sClient 获取K8s客户端
