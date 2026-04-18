@@ -78,3 +78,7 @@ uploads/
 
 # Dev context (internal only)
 CONTEXT.md
+
+# Sensitive config files (contain real passwords)
+config/config.yaml
+offline-package/config/config.yaml

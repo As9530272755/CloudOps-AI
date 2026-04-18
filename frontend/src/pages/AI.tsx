@@ -7,6 +7,7 @@ import {
   Paper,
   Avatar,
   Alert,
+  Snackbar,
   CircularProgress,
   Button,
   Select,
@@ -804,11 +805,15 @@ export default function AI() {
       await aiSessionAPI.updateTitle(sessionId, editingTitleValue)
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title: editingTitleValue } : s)))
     } catch (err: any) {
-      alert(err.message || '重命名失败')
+      showSnack(err.message || '重命名失败', 'error')
     }
     setEditingTitleId(null)
     setEditingTitleValue('')
   }
+
+  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+  const showSnack = (message: string, severity: 'success' | 'error' = 'success') => setSnack({ open: true, message, severity })
+  const closeSnack = () => setSnack((s) => ({ ...s, open: false }))
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmType, setConfirmType] = useState<'delete' | 'clear' | null>(null)
@@ -838,7 +843,7 @@ export default function AI() {
         }
       }
     } catch (err: any) {
-      alert(err.message || '删除失败')
+      showSnack(err.message || '删除失败', 'error')
     } finally {
       setConfirmOpen(false)
       setConfirmSessionId(null)
@@ -1461,6 +1466,12 @@ export default function AI() {
         onClose={() => { setConfirmOpen(false); setConfirmType(null); setConfirmSessionId(null) }}
         onConfirm={confirmType === 'delete' ? doConfirmDeleteSession : doConfirmClearChat}
       />
+
+      <Snackbar open={snack.open} autoHideDuration={4000} onClose={closeSnack} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity={snack.severity} onClose={closeSnack} sx={{ borderRadius: '12px' }}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

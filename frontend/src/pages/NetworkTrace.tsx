@@ -80,7 +80,7 @@ export default function NetworkTrace() {
   const [debugLoading, setDebugLoading] = useState(false)
   const [debugLogs, setDebugLogs] = useState<string>('')
   const [logWrap, setLogWrap] = useState(false)
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'success' })
 
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -465,7 +465,7 @@ export default function NetworkTrace() {
         <Button variant="contained" color="secondary" disabled={loading || !pod} onClick={handleEnhanceTopology}>
           解析抓包并刷新拓扑
         </Button>
-        <Button variant="outlined" startIcon={<DownloadIcon />} disabled={!topology} onClick={() => alert('导出功能开发中')}>
+        <Button variant="outlined" startIcon={<DownloadIcon />} disabled={!topology} onClick={() => setSnackbar({ open: true, message: '导出功能开发中', severity: 'info' })}>
           导出
         </Button>
         <Button variant="outlined" startIcon={<SettingsIcon />} onClick={() => setConfigDialogOpen(true)}>

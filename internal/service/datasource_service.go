@@ -288,3 +288,21 @@ func (s *DatasourceService) ProxyPrometheusQuery(ctx context.Context, ds *model.
 	}
 	return &result, nil
 }
+
+// StartHealthMonitor 启动数据源健康检查（每 30 秒一次）
+func (s *DatasourceService) StartHealthMonitor() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			var list []model.DataSource
+			if err := s.db.Find(&list).Error; err != nil {
+				continue
+			}
+			for _, ds := range list {
+				active, _ := s.TestConnection(context.Background(), ds.TenantID, ds.ID)
+				_ = s.db.Model(&model.DataSource{}).Where("id = ?", ds.ID).Update("is_active", active)
+			}
+		}
+	}()
+}

@@ -292,3 +292,31 @@ func (s *LogService) TestConnection(ctx context.Context, backendID uint) error {
 	adapter := log.NewAdapter(cfg)
 	return adapter.TestConnection(ctx)
 }
+
+// StartHealthMonitor 启动日志后端健康检查（每 30 秒一次）
+func (s *LogService) StartHealthMonitor() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			var list []model.ClusterLogBackend
+			if err := s.db.Find(&list).Error; err != nil {
+				continue
+			}
+			for _, b := range list {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				err := s.TestConnection(ctx, b.ID)
+				cancel()
+				status := "offline"
+				if err == nil {
+					status = "online"
+				}
+				now := time.Now()
+				_ = s.db.Model(&model.ClusterLogBackend{}).Where("id = ?", b.ID).Updates(map[string]interface{}{
+					"status":          status,
+					"last_checked_at": now,
+				})
+			}
+		}
+	}()
+}

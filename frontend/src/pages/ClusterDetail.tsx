@@ -221,7 +221,7 @@ export default function ClusterDetail() {
       await k8sAPI.refreshCluster(id)
       setError('')
       // 异步任务已启动，提示用户稍后手动刷新
-      alert('缓存刷新任务已启动，请等待 5-10 秒后重新加载数据')
+      setSnackbar({ open: true, message: '缓存刷新任务已启动，请等待 5-10 秒后重新加载数据', severity: 'success' })
     } catch (err: any) {
       setError(err.message || '刷新失败')
     }

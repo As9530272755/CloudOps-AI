@@ -10,6 +10,8 @@ import {
   IconButton,
   Tooltip,
   useTheme,
+  Snackbar,
+  Alert,
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -181,7 +183,7 @@ export default function Dashboard() {
         setPanels([])
       }
     } catch (err: any) {
-      alert(err.message || '创建仪表盘失败')
+      showSnack(err.message || '创建仪表盘失败', 'error')
     }
   }
 
@@ -208,6 +210,10 @@ export default function Dashboard() {
     setEditorOpen(true)
   }
 
+  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+  const showSnack = (message: string, severity: 'success' | 'error' = 'success') => setSnack({ open: true, message, severity })
+  const closeSnack = () => setSnack((s) => ({ ...s, open: false }))
+
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmPanel, setConfirmPanel] = useState<DashboardPanel | null>(null)
 
@@ -223,7 +229,7 @@ export default function Dashboard() {
       await dashboardAPI.deletePanel(dashboard.id, confirmPanel.id)
       loadDashboard()
     } catch (err: any) {
-      alert(err.message || '删除失败')
+      showSnack(err.message || '删除失败', 'error')
     } finally {
       setConfirmOpen(false)
       setConfirmPanel(null)
@@ -250,7 +256,7 @@ export default function Dashboard() {
       await dashboardAPI.createPanel(dashboard.id, data)
       loadDashboard()
     } catch (err: any) {
-      alert(err.message || '复制失败')
+      showSnack(err.message || '复制失败', 'error')
     }
   }
 
@@ -492,6 +498,12 @@ export default function Dashboard() {
         onClose={() => setConfirmOpen(false)}
         onConfirm={doDeletePanel}
       />
+
+      <Snackbar open={snack.open} autoHideDuration={4000} onClose={closeSnack} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity={snack.severity} onClose={closeSnack} sx={{ borderRadius: '12px' }}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

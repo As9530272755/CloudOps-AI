@@ -90,10 +90,6 @@ func main() {
 		log.Println("✅ 巡检调度器启动完成")
 	}
 
-	// 创建 AI 配置服务（旧版兼容）
-	aiConfigService := service.NewAIConfigService(cfg.Security.JWT.Secret)
-	log.Println("✅ AI 配置服务初始化完成")
-
 	// 创建 AI 平台服务（多平台资源池）
 	aiPlatformService := service.NewAIPlatformService(db, cfg.Security.JWT.Secret)
 	log.Println("✅ AI 平台服务初始化完成")
@@ -103,7 +99,7 @@ func main() {
 	log.Println("✅ AI 会话服务初始化完成")
 
 	// 创建通用 AI 服务
-	aiService := service.NewAIService(aiPlatformService, aiChatSessionService, aiConfigService)
+	aiService := service.NewAIService(aiPlatformService, aiChatSessionService)
 	log.Println("✅ AI 服务初始化完成")
 
 	// 初始化 Redis（可选，失败只打警告不退出）
@@ -167,8 +163,15 @@ func main() {
 	agentRuntimeProxy := service.NewAgentRuntimeProxy(aiPlatformService)
 	log.Println("✅ Agent Runtime 代理初始化完成")
 
+	// 启动第三方对接系统健康检查（每 30 秒一次）
+	dsService.StartHealthMonitor()
+	aiPlatformService.StartHealthMonitor()
+	logService.StartHealthMonitor()
+	clusterService.StartHealthMonitor()
+	log.Println("✅ 第三方系统健康检查 Monitor 启动完成")
+
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiConfigService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, agentRuntimeProxy, logService, settingService, db, k8sManager)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, agentRuntimeProxy, logService, settingService, db, k8sManager)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {

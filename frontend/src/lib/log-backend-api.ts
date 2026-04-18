@@ -6,6 +6,8 @@ export interface LogBackend {
   name: string
   type: 'elasticsearch' | 'opensearch' | 'loki'
   url: string
+  status?: string
+  last_checked_at?: string
   index_patterns?: {
     all?: string
     ingress?: string

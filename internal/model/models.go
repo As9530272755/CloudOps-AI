@@ -146,8 +146,10 @@ type ClusterLogBackend struct {
 	URL             string            `gorm:"size:512;not null" json:"url"`
 	IndexPatterns   string            `gorm:"type:text" json:"-"`            // JSON 序列化后的索引模式
 	Headers         string            `gorm:"type:text" json:"-"`            // JSON 序列化后的请求头
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
+	Status        string     `gorm:"size:32;default:'unknown'" json:"status"`
+	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 	// 以下字段仅在 API 响应中使用
 	IndexPatternsMap map[string]string `json:"index_patterns,omitempty" gorm:"-"`
 	HeadersMap       map[string]string `json:"headers,omitempty" gorm:"-"`
