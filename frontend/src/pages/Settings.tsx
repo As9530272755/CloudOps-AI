@@ -199,7 +199,7 @@ function DataSourceSettings() {
                   <TableCell>
                     <Chip
                       label={ds.is_active ? '有效' : '无效'}
-                      color={ds.is_active ? 'success' : 'default'}
+                      color={ds.is_active ? 'success' : 'error'}
                       size="small"
                     />
                   </TableCell>
@@ -957,6 +957,7 @@ function LogBackendSettings() {
               <TableCell>集群</TableCell>
               <TableCell>类型</TableCell>
               <TableCell>地址</TableCell>
+              <TableCell>状态</TableCell>
               <TableCell align="right">操作</TableCell>
             </TableRow>
           </TableHead>
