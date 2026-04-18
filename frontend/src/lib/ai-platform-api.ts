@@ -3,12 +3,18 @@ import { apiClient as api } from './api'
 export interface AIPlatform {
   id: string
   name: string
-  provider_type: 'openclaw' | 'ollama'
+  provider_type: string
   config_json: string
   status: string
   is_default: boolean
   last_checked_at?: string
   created_at: string
+}
+
+export interface ProviderInfo {
+  type: string
+  name: string
+  description: string
 }
 
 export interface PlatformFormConfig {
@@ -54,5 +60,9 @@ export const aiPlatformAPI = {
   setDefault: async (id: string) => {
     const response = await api.post(`/ai/platforms/${id}/default`)
     return response.data as { success: boolean; error?: string }
+  },
+  getProviderTypes: async () => {
+    const response = await api.get('/ai/platforms/providers')
+    return response.data as { success: boolean; data?: ProviderInfo[]; error?: string }
   },
 }

@@ -30,6 +30,22 @@ type OllamaDetail struct {
 	MaxHistoryMessages int    `json:"max_history_messages"` // 默认 10
 }
 
+// ProviderInfo 支持的 AI Provider 元信息
+type ProviderInfo struct {
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// SupportedProviders 返回所有支持的 Provider 类型列表
+func SupportedProviders() []ProviderInfo {
+	return []ProviderInfo{
+		{Type: "openclaw", Name: "OpenClaw", Description: "OpenClaw / OpenAI 兼容 API"},
+		{Type: "openai", Name: "OpenAI", Description: "OpenAI 兼容 API（通用）"},
+		{Type: "ollama", Name: "Ollama", Description: "本地 Ollama 服务"},
+	}
+}
+
 // NewProvider 根据配置创建对应 Provider
 func NewProvider(cfg PlatformConfig, timeout time.Duration) (Provider, error) {
 	switch cfg.Provider {

@@ -30,7 +30,7 @@ import {
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as TestIcon } from '@mui/icons-material'
 
 import { DataSource, datasourceAPI, CreateDataSourceRequest } from '../lib/datasource-api'
-import { aiPlatformAPI, AIPlatform, PlatformFormConfig } from '../lib/ai-platform-api'
+import { aiPlatformAPI, AIPlatform, PlatformFormConfig, ProviderInfo } from '../lib/ai-platform-api'
 import { logBackendAPI, LogBackend, LogBackendForm } from '../lib/log-backend-api'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 import { settingAPI } from '../lib/setting-api'
@@ -136,9 +136,14 @@ function DataSourceSettings() {
     setTestingId(id)
     try {
       const result = await datasourceAPI.test(id)
-      alert(result.success ? `连通成功: ${result.message}` : `连通失败: ${result.message}`)
+      if (result.success) {
+        showSnack(`连通成功: ${result.message}`)
+      } else {
+        showSnack(`连通失败: ${result.message}`, 'error')
+      }
+      load()
     } catch (err: any) {
-      alert(err.message || '测试失败')
+      showSnack(err.message || '测试失败', 'error')
     } finally {
       setTestingId(null)
     }
@@ -193,7 +198,7 @@ function DataSourceSettings() {
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: 13 }}>{ds.url}</TableCell>
                   <TableCell>
                     <Chip
-                      label={ds.is_active ? '有效' : '禁用'}
+                      label={ds.is_active ? '有效' : '无效'}
                       color={ds.is_active ? 'success' : 'default'}
                       size="small"
                     />
@@ -305,9 +310,10 @@ function AISettings() {
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [providerTypes, setProviderTypes] = useState<ProviderInfo[]>([])
   const [form, setForm] = useState<{
     name: string
-    provider_type: 'openclaw' | 'ollama' | ''
+    provider_type: string
     config: PlatformFormConfig
   }>({
     name: '',
@@ -338,6 +344,11 @@ function AISettings() {
 
   useEffect(() => {
     load()
+    aiPlatformAPI.getProviderTypes().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setProviderTypes(res.data)
+      }
+    })
   }, [])
 
   const handleOpen = async (p?: AIPlatform) => {
@@ -353,7 +364,7 @@ function AISettings() {
             config: {
               url: data.config?.url || '',
               token: data.config?.token || '',
-              model: data.config?.model || (data.provider_type === 'ollama' ? 'llama3' : 'openclaw'),
+              model: data.config?.model || (data.provider_type === 'ollama' ? 'llama3' : ''),
               timeout: data.config?.timeout || (data.provider_type === 'ollama' ? 600 : 300),
               max_context_length: data.config?.max_context_length || (data.provider_type === 'ollama' ? 4096 : undefined),
               max_history_messages: data.config?.max_history_messages || 10,
@@ -363,7 +374,7 @@ function AISettings() {
           setForm({
             name: p.name,
             provider_type: p.provider_type as any,
-            config: { url: '', token: '', model: '', timeout: p.provider_type === 'ollama' ? 600 : 300, max_history_messages: 10 },
+            config: { url: '', token: '', model: '', timeout: p.provider_type === 'ollama' ? 600 : 300, max_context_length: p.provider_type === 'ollama' ? 4096 : undefined, max_history_messages: 10 },
           })
         }
       } catch {
@@ -388,7 +399,7 @@ function AISettings() {
       return
     }
     if (!form.config.model) {
-      form.config.model = form.provider_type === 'ollama' ? 'llama3' : 'openclaw'
+      form.config.model = form.provider_type === 'ollama' ? 'llama3' : ''
     }
     setSaving(true)
     try {
@@ -505,7 +516,7 @@ function AISettings() {
                 <TableRow key={p.id}>
                   <TableCell>{p.name}</TableCell>
                   <TableCell>
-                    <Chip label={p.provider_type.toUpperCase()} size="small" />
+                    <Chip label={providerTypes.find(pt => pt.type === p.provider_type)?.name || p.provider_type} size="small" />
                   </TableCell>
                   <TableCell>
                     <Chip
@@ -574,7 +585,7 @@ function AISettings() {
                     provider_type: pt,
                     config: {
                       ...form.config,
-                      model: pt === 'ollama' ? 'llama3' : 'openclaw',
+                      model: pt === 'ollama' ? 'llama3' : '',
                       timeout: pt === 'ollama' ? 600 : 300,
                       max_context_length: pt === 'ollama' ? 4096 : undefined,
                       max_history_messages: form.config.max_history_messages || 10,
@@ -582,8 +593,9 @@ function AISettings() {
                   })
                 }}
               >
-                <MenuItem value="openclaw">OpenClaw</MenuItem>
-                <MenuItem value="ollama">Ollama</MenuItem>
+                {providerTypes.map((pt) => (
+                  <MenuItem key={pt.type} value={pt.type}>{pt.name}</MenuItem>
+                ))}
               </Select>
             </FormControl>
 
@@ -594,9 +606,9 @@ function AISettings() {
                   value={form.config.url}
                   onChange={(e) => setForm({ ...form, config: { ...form.config, url: e.target.value } })}
                   fullWidth
-                  placeholder={form.provider_type === 'ollama' ? 'http://localhost:11434' : 'http://127.0.0.1:18789'}
+                  placeholder={form.provider_type === 'ollama' ? 'http://localhost:11434' : 'http://127.0.0.1:8080'}
                 />
-                {form.provider_type === 'openclaw' && (
+                {form.provider_type !== 'ollama' && (
                   <TextField
                     label="API Token"
                     type="password"
@@ -611,7 +623,7 @@ function AISettings() {
                   value={form.config.model}
                   onChange={(e) => setForm({ ...form, config: { ...form.config, model: e.target.value } })}
                   fullWidth
-                  placeholder={form.provider_type === 'ollama' ? 'llama3' : 'openclaw'}
+                  placeholder={form.provider_type === 'ollama' ? 'llama3' : 'gpt-4o'}
                 />
                 <TextField
                   label="请求超时时长（秒）"
@@ -620,7 +632,7 @@ function AISettings() {
                   onChange={(e) => setForm({ ...form, config: { ...form.config, timeout: parseInt(e.target.value) || 300 } })}
                   fullWidth
                   placeholder="300"
-                  helperText={form.provider_type === 'ollama' ? 'Ollama 首次加载模型较慢，建议 300 ~ 1200 秒' : '建议 60 ~ 1800 秒'}
+                  helperText={form.provider_type === 'ollama' ? 'Ollama 首次加载模型较慢，建议 300 ~ 1200 秒' : '建议 60 ~ 1800 秒，Hermes 等 Agent 建议 300 秒以上'}
                 />
                 {form.provider_type === 'ollama' && (
                   <TextField
@@ -951,14 +963,14 @@ function LogBackendSettings() {
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={5} align="center">
+                <TableCell colSpan={6} align="center">
                   <CircularProgress size={24} sx={{ my: 2 }} />
                 </TableCell>
               </TableRow>
             )}
             {!loading && backends.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} align="center" sx={{ color: 'text.secondary', py: 4 }}>
+                <TableCell colSpan={6} align="center" sx={{ color: 'text.secondary', py: 4 }}>
                   暂无日志后端配置，点击右上角添加
                 </TableCell>
               </TableRow>
@@ -969,6 +981,13 @@ function LogBackendSettings() {
                 <TableCell>{clusterMap[b.cluster_id] || `集群${b.cluster_id}`}</TableCell>
                 <TableCell><Chip label={b.type.toUpperCase()} size="small" /></TableCell>
                 <TableCell>{b.url}</TableCell>
+                <TableCell>
+                  <Chip
+                    label={b.status === 'online' ? '有效' : b.status === 'offline' ? '无效' : '未知'}
+                    color={b.status === 'online' ? 'success' : b.status === 'offline' ? 'error' : 'default'}
+                    size="small"
+                  />
+                </TableCell>
                 <TableCell align="right">
                   <IconButton size="small" onClick={() => handleOpenEdit(b)} title="编辑">
                     <EditIcon fontSize="small" />

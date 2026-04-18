@@ -18,6 +18,12 @@ func NewAIPlatformHandler(svc *service.AIPlatformService) *AIPlatformHandler {
 	return &AIPlatformHandler{svc: svc}
 }
 
+// ListProviderTypes 获取支持的 AI Provider 类型列表
+func (h *AIPlatformHandler) ListProviderTypes(c *gin.Context) {
+	providers := h.svc.GetSupportedProviders()
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": providers})
+}
+
 // ListPlatforms 列出所有平台
 func (h *AIPlatformHandler) ListPlatforms(c *gin.Context) {
 	platforms, err := h.svc.ListPlatforms()

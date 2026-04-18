@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/cloudops/platform/internal/model"
@@ -31,13 +30,32 @@ type AIPlatformService struct {
 
 // NewAIPlatformService 创建 AI 平台服务
 func NewAIPlatformService(db *gorm.DB, secretKey string) *AIPlatformService {
-	s := &AIPlatformService{
+	return &AIPlatformService{
 		db:        db,
 		encryptor: crypto.NewAES256Encrypt(secretKey),
 	}
-	_ = s.MigrateFromLegacyConfig()
-	_ = s.fixDoubleEncryptedTokens()
-	return s
+}
+
+// StartHealthMonitor 启动 AI 平台健康检查（每 30 秒一次）
+func (s *AIPlatformService) StartHealthMonitor() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			var list []model.AIPlatform
+			if err := s.db.Find(&list).Error; err != nil {
+				continue
+			}
+			for _, p := range list {
+				_ = s.TestConnection(p.ID)
+			}
+		}
+	}()
+}
+
+// GetSupportedProviders 获取支持的 AI Provider 类型列表
+func (s *AIPlatformService) GetSupportedProviders() []ai.ProviderInfo {
+	return ai.SupportedProviders()
 }
 
 // ListPlatforms 列出所有平台（按默认优先、创建时间倒序）
@@ -220,100 +238,6 @@ func (s *AIPlatformService) GetDefaultPlatform() (*model.AIPlatform, error) {
 		return nil, err
 	}
 	return &p, nil
-}
-
-// MigrateFromLegacyConfig 从旧版 JSON 配置文件迁移
-func (s *AIPlatformService) MigrateFromLegacyConfig() error {
-	var count int64
-	if err := s.db.Model(&model.AIPlatform{}).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	const legacyFile = "data/ai_platform_config.json"
-	b, err := os.ReadFile(legacyFile)
-	if err != nil {
-		return nil // 文件不存在则无需迁移
-	}
-
-	var legacy ai.PlatformConfig
-	if err := json.Unmarshal(b, &legacy); err != nil {
-		return err
-	}
-
-	now := time.Now()
-	var p model.AIPlatform
-	switch legacy.Provider {
-	case "ollama":
-		cfgJSON, _ := json.Marshal(legacy.Ollama)
-		enc, _ := s.encryptor.Encrypt(string(cfgJSON))
-		p = model.AIPlatform{
-			ID:           "default",
-			Name:         "默认 Ollama",
-			ProviderType: "ollama",
-			ConfigJSON:   enc,
-			Status:       "unknown",
-			IsDefault:    true,
-			CreatedBy:    1,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-	case "openclaw", "openai":
-		// 旧版配置文件中 token 是二次加密的，需先解密得到明文后再入库
-		if legacy.OpenClaw.Token != "" {
-			if dec, err := s.encryptor.Decrypt(legacy.OpenClaw.Token); err == nil {
-				legacy.OpenClaw.Token = dec
-			}
-		}
-		cfgJSON, _ := json.Marshal(legacy.OpenClaw)
-		enc, _ := s.encryptor.Encrypt(string(cfgJSON))
-		p = model.AIPlatform{
-			ID:           "default",
-			Name:         "默认 OpenClaw",
-			ProviderType: "openclaw",
-			ConfigJSON:   enc,
-			Status:       "unknown",
-			IsDefault:    true,
-			CreatedBy:    1,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-	default:
-		return nil
-	}
-
-	return s.db.Create(&p).Error
-}
-
-// fixDoubleEncryptedTokens 修复旧版迁移导致的 token 二次加密问题
-func (s *AIPlatformService) fixDoubleEncryptedTokens() error {
-	var platforms []model.AIPlatform
-	if err := s.db.Where("provider_type IN ?", []string{"openclaw", "openai"}).Find(&platforms).Error; err != nil {
-		return err
-	}
-	for _, p := range platforms {
-		decrypted, err := s.encryptor.Decrypt(p.ConfigJSON)
-		if err != nil {
-			continue
-		}
-		var detail ai.OpenClawDetail
-		if err := json.Unmarshal([]byte(decrypted), &detail); err != nil {
-			continue
-		}
-		if detail.Token == "" {
-			continue
-		}
-		// 尝试二次解密：如果成功，说明 token 被重复加密了
-		if plain, err := s.encryptor.Decrypt(detail.Token); err == nil {
-			detail.Token = plain
-			fixedJSON, _ := json.Marshal(detail)
-			fixedEnc, _ := s.encryptor.Encrypt(string(fixedJSON))
-			_ = s.db.Model(&model.AIPlatform{}).Where("id = ?", p.ID).Update("config_json", fixedEnc)
-		}
-	}
-	return nil
 }
 
 // 内部方法：根据 provider 类型加密配置

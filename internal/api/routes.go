@@ -21,7 +21,6 @@ type Router struct {
 	dashboardHandler     *handlers.DashboardHandler
 	inspectionHandler    *handlers.InspectionHandler
 	networkTraceHandler  *handlers.NetworkTraceHandler
-	aiConfigHandler      *handlers.AIConfigHandler
 	aiPlatformHandler    *handlers.AIPlatformHandler
 	aiChatSessionHandler *handlers.AIChatSessionHandler
 	aiChatHandler        *handlers.AIChatHandler
@@ -36,7 +35,7 @@ type Router struct {
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiConfigService *service.AIConfigService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService, db *gorm.DB, k8sManager *service.K8sManager) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService, db *gorm.DB, k8sManager *service.K8sManager) *Router {
 	return &Router{
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
@@ -45,7 +44,6 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		dashboardHandler:     handlers.NewDashboardHandler(dashboardService),
 		inspectionHandler:    handlers.NewInspectionHandler(inspectionService),
 		networkTraceHandler:  handlers.NewNetworkTraceHandler(networkTraceService),
-		aiConfigHandler:      handlers.NewAIConfigHandler(aiConfigService, aiPlatformService),
 		aiPlatformHandler:    handlers.NewAIPlatformHandler(aiPlatformService),
 		aiChatSessionHandler: handlers.NewAIChatSessionHandler(aiChatSessionService),
 		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService, agentService, agentRuntimeProxy),
@@ -145,13 +143,8 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				inspection.GET("/results/:id", r.inspectionHandler.GetResult)
 			}
 
-			// AI 平台配置（旧版兼容）
-			protected.GET("/settings/ai", r.aiConfigHandler.GetConfig)
-			protected.PUT("/settings/ai", r.aiConfigHandler.UpdateConfig)
-			protected.POST("/settings/ai/test", r.aiConfigHandler.TestConnection)
-			protected.GET("/settings/ai/models", r.aiConfigHandler.GetModels)
-
-			// AI 平台管理（新版）
+			// AI 平台管理
+			protected.GET("/ai/platforms/providers", r.aiPlatformHandler.ListProviderTypes)
 			protected.GET("/ai/platforms", r.aiPlatformHandler.ListPlatforms)
 			protected.POST("/ai/platforms", r.aiPlatformHandler.CreatePlatform)
 			protected.GET("/ai/platforms/:id", r.aiPlatformHandler.GetPlatform)
