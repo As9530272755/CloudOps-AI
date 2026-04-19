@@ -203,10 +203,11 @@ export default function ClusterDetail() {
       const status = err.response?.status
       const backendError = err.response?.data?.error
       if (status === 403) {
-        setNsError(typeof backendError === 'string' ? backendError : '权限不足')
-      } else {
-        setNsError(backendError || err.message || '命名空间加载失败')
+        // 无集群访问权限，直接返回集群列表
+        navigate('/clusters')
+        return
       }
+      setNsError(backendError || err.message || '命名空间加载失败')
       setNamespaces([])
     }
   }

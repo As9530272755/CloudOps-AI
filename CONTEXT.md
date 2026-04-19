@@ -1331,3 +1331,31 @@ isNsScoped := len(allowed) > 0 && allowed[0].Namespace != "*"
 ### 编译状态
 - 后端 `go build` ✅
 - 后端已重启 ✅
+
+
+## 2026-04-19 续：无权限集群自动重定向到列表页
+
+### 需求
+namespace 级用户被撤销全部授权后，仍停留在集群详情页面（概览为空），用户体验差。希望自动跳转回集群管理列表。
+
+### 修复
+
+#### 后端
+`internal/api/handlers/k8s.go` `GetNamespaces`：
+- namespace 级用户没有任何 NS 授权时，返回 HTTP 403 + `"您没有该集群的访问权限"`
+
+#### 前端
+`frontend/src/pages/ClusterDetail.tsx` `loadNamespaces`：
+- catch 块中捕获 403 时，不再显示错误提示，直接 `navigate('/clusters')` 跳转回集群列表
+
+### 生效机制
+1. 用户点击集群进入详情页
+2. 页面加载时请求 `/clusters/:id/namespaces`
+3. 后端判定该用户对此集群无授权 → 返回 403
+4. 前端 catch 到 403 → 直接 `navigate('/clusters')`
+5. 用户无感知地回到集群列表页
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+- 后端已重启 ✅

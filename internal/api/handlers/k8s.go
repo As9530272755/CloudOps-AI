@@ -220,6 +220,10 @@ func (h *K8sHandler) GetNamespaces(c *gin.Context) {
 
 	if isNsScoped {
 		allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
+		if len(allowed) == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "您没有该集群的访问权限"})
+			return
+		}
 		allowedSet := make(map[string]bool)
 		for _, a := range allowed {
 			allowedSet[a.Namespace] = true
