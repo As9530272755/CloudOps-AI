@@ -110,6 +110,9 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		tenantID = c.GetUint("tenant_id")
 	}
 
+	// 使用事务确保原子性
+	tx := h.db.Begin()
+
 	user := model.User{
 		TenantID:     tenantID,
 		Username:     req.Username,
@@ -118,16 +121,17 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		IsActive:     req.IsActive,
 	}
 
-	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+	if err := tx.Create(&user).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": translateDBError(err)})
 		return
 	}
 
 	// 关联角色
 	if len(req.RoleIDs) > 0 {
 		var roles []model.Role
-		h.db.Find(&roles, req.RoleIDs)
-		h.db.Model(&user).Association("Roles").Append(&roles)
+		tx.Find(&roles, req.RoleIDs)
+		tx.Model(&user).Association("Roles").Append(&roles)
 	}
 
 	// 创建模块权限覆盖
@@ -139,9 +143,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 			EnabledModules:  string(enabledJSON),
 			DisabledModules: string(disabledJSON),
 		}
-		h.db.Create(&override)
+		tx.Create(&override)
 	}
 
+	tx.Commit()
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": user})
 }
 
@@ -479,4 +484,19 @@ func fieldToChinese(field string) string {
 		return v
 	}
 	return field
+}
+
+// translateDBError 将数据库错误翻译为中文
+func translateDBError(err error) string {
+	errStr := err.Error()
+	if strings.Contains(errStr, "idx_tenant_username") {
+		return "该用户名已存在"
+	}
+	if strings.Contains(errStr, "idx_tenant_email") {
+		return "该邮箱已被使用"
+	}
+	if strings.Contains(errStr, "duplicate key") {
+		return "数据重复，请检查用户名或邮箱是否已存在"
+	}
+	return errStr
 }
