@@ -362,6 +362,23 @@ func (s *ClusterService) StartHealthMonitor() {
 					status = "healthy"
 				}
 				s.updateClusterHealth(c.ID, status, "")
+
+				// 同步 informer 缓存中的 node/pod 数量到数据库，解决列表页与详情页数据不一致
+				if status == "healthy" {
+					if cc := s.k8sManager.GetClusterClient(c.ID); cc != nil {
+						cc.SyncMu.RLock()
+						ready := cc.SyncReady
+						cc.SyncMu.RUnlock()
+						if ready {
+							nodeCount := len(cc.NodeStore.List())
+							podCount := len(cc.PodStore.List())
+							s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", c.ID).Updates(map[string]interface{}{
+								"node_count": nodeCount,
+								"pod_count":  podCount,
+							})
+						}
+					}
+				}
 			}
 		}
 	}()

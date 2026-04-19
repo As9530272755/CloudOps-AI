@@ -1963,3 +1963,30 @@ store.Replace(typedObjects, list.GetResourceVersion())
 - 后端 `go build` ✅
 - 前端 `npm run build` ✅
 - 后端已重启 ✅
+
+
+---
+
+## 2026-04-19 修复集群列表页与详情页 Pod 数量不一致
+
+### 问题
+集群列表页显示 "2 节点 / 2 Pod"，但进入详情页概览显示 35 个 Pod。刷新页面也无法更新。
+
+### 根因
+- **集群列表页**：读取 `cluster_metadata` 表的 `node_count` / `pod_count`，这些数据**只在集群创建时写入一次**
+- **详情页概览**：从 informer 实时缓存 `PodStore.List()` 读取，反映最新状态
+- 两者之间没有同步机制，导致列表页数据永久陈旧
+
+### 修复
+`internal/service/cluster_service.go`：
+- 在 `StartHealthMonitor`（每 30 秒运行一次）中，健康检查通过后：
+  - 获取 `ClusterClient`，检查 `SyncReady`
+  - 从 `NodeStore.List()` 和 `PodStore.List()` 获取实时数量
+  - 更新到 `cluster_metadata` 表
+
+### 验证
+修复后 30 秒内，KS-master 列表页显示：`nodes=2 pods=36`（与详情页一致）
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
