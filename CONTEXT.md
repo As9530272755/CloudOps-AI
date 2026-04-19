@@ -801,3 +801,51 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 ---
 
 *最后更新：2026-04-19*
+
+---
+
+## 十七、用户管理模块设计方案 V2（2026-04-19）
+
+### 17.1 背景调整
+
+- 20+ 集群已通过 **KubeSphere** 提供给不同用户使用
+- 当前 CloudOps 只对接了**只读 kubeconfig**
+- 后续部分集群需要升级为 **admin 读写 kubeconfig**
+- 核心诉求：**不改 KubeSphere 现有体系，CloudOps 独立建权，支持渐进扩展**
+
+### 17.2 核心设计：多凭证分级路由
+
+**每个集群支持配置多个凭证（viewer / operator / admin）**，后端根据用户角色自动选择对应凭证：
+
+```
+用户A(viewer)  → 用 viewer-kubeconfig  → get/list/watch
+用户B(operator)→ 用 operator-kubeconfig → 写 Deployment/Pod
+用户C(admin)   → 用 admin-kubeconfig   → 全部操作（Terminal/抓包）
+```
+
+**降级策略**：如果集群没有对应级别凭证，自动降级到 viewer，前端明确提示。
+
+### 17.3 与 V1 的主要差异
+
+| 对比项 | V1 方案 | V2 方案 |
+|--------|---------|---------|
+| 集群凭证 | 每个集群一个 | 每个集群多个（分级） |
+| 只读→读写扩展 | 需改代码 | **只需新增凭证** |
+| K8s RBAC 同步 | Phase 3 评估 | **不做**，用多凭证替代 |
+| 与 KubeSphere 关系 | 未提及 | **明确共存策略** |
+| 降级策略 | 无 | 自动降级 + 前端提示 |
+
+### 17.4 关键决策
+
+- **K8s RBAC 同步不做**：改动太大，多凭证方案已能满足需求
+- **与 KubeSphere 不打通**：保持 CloudOps 独立性，未来通过 LDAP 统一认证源
+- **operator 级别权限范围**：可读全部 + 写工作负载（Pod/Deployment/Service/ConfigMap），不可操作 Namespace/Node/RBAC
+
+### 17.5 文档
+
+- V1 方案：`docs/user-management-proposal.md`（通用场景）
+- V2 方案：`docs/user-management-proposal-v2.md`（KubeSphere 共存 + 多凭证分级场景）
+
+---
+
+*最后更新：2026-04-19*
