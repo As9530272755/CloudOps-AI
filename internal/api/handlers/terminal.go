@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,14 +34,15 @@ var terminalUpgrader = websocket.Upgrader{
 
 // TerminalHandler Web Terminal Handler
 type TerminalHandler struct {
-	db         *gorm.DB
-	k8sManager *service.K8sManager
-	jwtManager *auth.JWTManager
+	db          *gorm.DB
+	k8sManager  *service.K8sManager
+	jwtManager  *auth.JWTManager
+	rbacService *service.RBACService
 }
 
 // NewTerminalHandler 创建 Terminal Handler
 func NewTerminalHandler(db *gorm.DB, k8sManager *service.K8sManager, jwtManager *auth.JWTManager) *TerminalHandler {
-	return &TerminalHandler{db: db, k8sManager: k8sManager, jwtManager: jwtManager}
+	return &TerminalHandler{db: db, k8sManager: k8sManager, jwtManager: jwtManager, rbacService: service.NewRBACService(db)}
 }
 
 // Terminal 建立 WebSocket 终端连接
@@ -68,17 +70,24 @@ func (h *TerminalHandler) Terminal(c *gin.Context) {
 		return
 	}
 
-	// 3. 权限校验：superuser 或 CanExec
-	if !claims.IsSuperuser {
-		var perm model.ClusterPermission
-		hasExec := false
-		if err := h.db.Where("user_id = ? AND cluster_id = ?", userID, clusterID).First(&perm).Error; err == nil {
-			hasExec = perm.CanExec
-		}
-		if !hasExec {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "error": "无终端执行权限"})
-			return
-		}
+	// 3. 权限校验：NS 级权限检查
+	namespace := c.Query("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	effectiveRole, err := h.rbacService.GetEffectiveRole(c.Request.Context(), userID, uint(clusterID), namespace)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "error": "您无权访问该命名空间的终端"})
+		return
+	}
+
+	if !roleHasPermission(effectiveRole.Role, "terminal", "use") {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "您的角色 " + effectiveRole.Role.DisplayName + " 没有终端使用权限",
+		})
+		return
 	}
 
 	// 4. 获取集群信息及健康状态
@@ -150,6 +159,10 @@ export PATH="/usr/local/bin:$PATH"
 export BASHRC_LOADED=1
 `
 	_ = os.WriteFile(bashrcPath, []byte(bashrcContent), 0644)
+
+	// 设置默认 kubectl namespace
+	nsScript := fmt.Sprintf("\nkubectl config set-context --current --namespace=%s 2>/dev/null || true\n", namespace)
+	_ = os.WriteFile(bashrcPath, []byte(bashrcContent+nsScript), 0644)
 
 	// 写入 .bash_profile（login shell 直接加载，不依赖 .bashrc 是否被读取）
 	bashProfilePath := filepath.Join(homeDir, ".bash_profile")
@@ -398,6 +411,34 @@ func cleanupSandboxMounts(sandboxRoot string) error {
 		_ = syscall.Unmount(m, syscall.MNT_DETACH)
 	}
 	return nil
+}
+
+func roleHasPermission(role *model.Role, resource, action string) bool {
+	if role == nil {
+		return false
+	}
+	if role.Scope == "platform" || role.Scope == "cluster" {
+		return true
+	}
+	perms := parsePermissionsData(role.PermissionsData)
+	target := resource + ":" + action
+	for _, p := range perms {
+		if p == target || p == "*:*" || p == resource+":*" {
+			return true
+		}
+	}
+	return false
+}
+
+func parsePermissionsData(data string) []string {
+	if data == "" {
+		return []string{}
+	}
+	var perms []string
+	if err := json.Unmarshal([]byte(data), &perms); err != nil {
+		return []string{}
+	}
+	return perms
 }
 
 func parseResize(s string) (cols, rows int) {

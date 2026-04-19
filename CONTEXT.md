@@ -953,3 +953,31 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - `docs/ai-permission-design.md` - AI 权限方案
 - `docs/module-permission-tenant-isolation.md` - 功能模块权限 + 租户隔离方案
 
+
+## 2026-04-19 续：Phase 1 功能补全
+
+### 完成内容
+
+1. **终端权限改造**
+   - `terminal.go` 接入 RBAC Service，替换旧 `ClusterPermission` 检查
+   - 支持 `namespace` 查询参数，按 NS 级权限校验 `terminal:use`
+   - 终端启动时自动设置默认 kubectl namespace
+
+2. **前端用户管理页面（完整版）**
+   - 用户列表表格：ID、用户名、邮箱、角色标签、状态、操作
+   - 添加/编辑用户弹窗：
+     - Tab 1「基本信息」：用户名、邮箱、密码、角色多选、启用/禁用
+     - Tab 2「功能模块权限」：按分组展示 11 个模块，可勾选覆盖角色默认权限
+     - Tab 3「命名空间授权」：选择集群 + NS + 角色 → 授权；表格展示当前授权，可撤销
+   - 删除用户确认弹窗
+   - Snackbar 提示
+
+3. **其他**
+   - DataSource handler 已有租户过滤
+   - LogBackend List 已有 tenant_id 过滤
+   - NetworkTrace 配置为全局配置，不涉及租户隔离
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+
