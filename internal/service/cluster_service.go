@@ -156,8 +156,13 @@ func (s *ClusterService) ListClusters(ctx context.Context, userID, tenantID uint
 	if userID > 0 {
 		rbacSvc := NewRBACService(s.db)
 		scope, _, allowedClusters, _ := rbacSvc.GetDataScope(ctx, userID)
-		if scope == "namespace" && len(allowedClusters) > 0 {
-			db = db.Where("id IN ?", allowedClusters)
+		if scope == "namespace" {
+			if len(allowedClusters) > 0 {
+				db = db.Where("id IN ?", allowedClusters)
+			} else {
+				// 没有任何授权，返回空结果
+				return []model.Cluster{}, nil
+			}
 		}
 	}
 
