@@ -251,9 +251,15 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	// 物理删除用户（包括关联数据）
-	h.db.Unscoped().Where("user_id = ?", user.ID).Delete(&model.NamespaceGrant{})
 	h.db.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserModuleOverride{})
-	h.db.Unscoped().Delete(&user)
+	h.db.Unscoped().Where("user_id = ?", user.ID).Delete(&model.NamespaceGrant{})
+	// 先删除 user_roles 关联（外键约束）
+	h.db.Exec("DELETE FROM user_roles WHERE user_id = ?", user.ID)
+	// 最后删除用户
+	if err := h.db.Unscoped().Delete(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": translateDBError(err)})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
