@@ -50,9 +50,8 @@ import {
   ContentCopy as CopyIcon,
 } from '@mui/icons-material'
 import Editor from '@monaco-editor/react'
-import yaml from 'js-yaml'
-
 import { k8sAPI, resourceCategories, resourceLabels, ClusterStats } from '../lib/k8s-api'
+import ResourceEditorDialog from '../components/ResourceEditorDialog'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 import { usePermission } from '../hooks/usePermission'
 
@@ -67,24 +66,6 @@ const iconMap: Record<string, any> = {
   Folder: FolderIcon,
   EventNote: EventIcon,
   Extension: ExtensionIcon,
-}
-
-// YAML 创建模板（按资源类型）
-const yamlTemplates: Record<string, string> = {
-  pods: `apiVersion: v1\nkind: Pod\nmetadata:\n  name: my-pod\n  namespace: default\nspec:\n  containers:\n  - name: container-1\n    image: nginx:latest\n`,
-  deployments: `apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: my-deployment\n  namespace: default\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: my-app\n  template:\n    metadata:\n      labels:\n        app: my-app\n    spec:\n      containers:\n      - name: container-1\n        image: nginx:latest\n`,
-  statefulsets: `apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: my-statefulset\n  namespace: default\nspec:\n  serviceName: my-service\n  replicas: 1\n  selector:\n    matchLabels:\n      app: my-app\n  template:\n    metadata:\n      labels:\n        app: my-app\n    spec:\n      containers:\n      - name: container-1\n        image: nginx:latest\n`,
-  daemonsets: `apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: my-daemonset\n  namespace: default\nspec:\n  selector:\n    matchLabels:\n      app: my-app\n  template:\n    metadata:\n      labels:\n        app: my-app\n    spec:\n      containers:\n      - name: container-1\n        image: nginx:latest\n`,
-  jobs: `apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: my-job\n  namespace: default\nspec:\n  template:\n    spec:\n      containers:\n      - name: container-1\n        image: busybox:latest\n        command: ["echo", "hello"]\n      restartPolicy: Never\n`,
-  cronjobs: `apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: my-cronjob\n  namespace: default\nspec:\n  schedule: "*/5 * * * *"\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          containers:\n          - name: container-1\n            image: busybox:latest\n            command: ["echo", "hello"]\n          restartPolicy: Never\n`,
-  services: `apiVersion: v1\nkind: Service\nmetadata:\n  name: my-service\n  namespace: default\nspec:\n  selector:\n    app: my-app\n  ports:\n  - port: 80\n    targetPort: 80\n  type: ClusterIP\n`,
-  configmaps: `apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: my-configmap\n  namespace: default\ndata:\n  key: value\n`,
-  secrets: `apiVersion: v1\nkind: Secret\nmetadata:\n  name: my-secret\n  namespace: default\ntype: Opaque\ndata:\n  key: base64encodedvalue\n`,
-  namespaces: `apiVersion: v1\nkind: Namespace\nmetadata:\n  name: my-namespace\n`,
-  persistentvolumeclaims: `apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: my-pvc\n  namespace: default\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n`,
-  ingresses: `apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: my-ingress\n  namespace: default\nspec:\n  rules:\n  - host: example.com\n    http:\n      paths:\n      - path: /\n        pathType: Prefix\n        backend:\n          service:\n            name: my-service\n            port:\n              number: 80\n`,
-  roles: `apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: my-role\n  namespace: default\nrules:\n- apiGroups: [""]\n  resources: ["pods"]\n  verbs: ["get", "list"]\n`,
-  rolebindings: `apiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: my-rolebinding\n  namespace: default\nsubjects:\n- kind: ServiceAccount\n  name: default\n  namespace: default\nroleRef:\n  kind: Role\n  name: my-role\n  apiGroup: rbac.authorization.k8s.io\n`,
 }
 
 // 复数资源名 -> 单数权限标识
@@ -156,10 +137,9 @@ export default function ClusterDetail() {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<any>(null)
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [createYaml, setCreateYaml] = useState('')
-  const [editMode, setEditMode] = useState(false)
-  const [editYaml, setEditYaml] = useState('')
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
+  const [editorYaml, setEditorYaml] = useState('')
   const preRef = useRef<HTMLPreElement>(null)
 
   // 权限数据
@@ -298,53 +278,35 @@ export default function ClusterDetail() {
     }
   }
 
-  // 创建资源
-  const handleCreateResource = async () => {
+  // 创建/更新资源（通过 ResourceEditorDialog 提交）
+  const handleEditorSubmit = async (manifest: any) => {
     try {
-      let manifest: any
-      try {
-        manifest = yaml.load(createYaml)
-      } catch {
-        setSnackbar({ open: true, message: 'YAML 格式错误', severity: 'error' })
-        return
-      }
-      const ns = namespacedResources.has(activeResource) ? selectedNamespace : ''
-      const result = await k8sAPI.createResource(id, activeResource, ns, manifest)
-      if (result.success) {
-        setSnackbar({ open: true, message: '创建成功', severity: 'success' })
-        setCreateDialogOpen(false)
-        setCreateYaml('')
-        loadResources(activeResource, page)
+      if (editorMode === 'create') {
+        const ns = namespacedResources.has(activeResource) ? selectedNamespace : ''
+        const result = await k8sAPI.createResource(id, activeResource, ns, manifest)
+        if (result.success) {
+          setSnackbar({ open: true, message: '创建成功', severity: 'success' })
+          setEditorOpen(false)
+          setEditorYaml('')
+          loadResources(activeResource, page)
+        } else {
+          setSnackbar({ open: true, message: result.error || '创建失败', severity: 'error' })
+        }
       } else {
-        setSnackbar({ open: true, message: result.error || '创建失败', severity: 'error' })
+        const ns = namespacedResources.has(activeResource) ? detailItem.namespace : ''
+        const result = await k8sAPI.updateResource(id, activeResource, detailItem.name, ns, manifest)
+        if (result.success) {
+          setSnackbar({ open: true, message: '更新成功', severity: 'success' })
+          setEditorOpen(false)
+          setEditorYaml('')
+          loadResources(activeResource, page)
+        } else {
+          setSnackbar({ open: true, message: result.error || '更新失败', severity: 'error' })
+        }
       }
     } catch (err: any) {
-      setSnackbar({ open: true, message: err.response?.data?.error || '创建失败', severity: 'error' })
-    }
-  }
-
-  // 更新资源
-  const handleUpdateResource = async () => {
-    try {
-      let manifest: any
-      try {
-        manifest = yaml.load(editYaml)
-      } catch {
-        setSnackbar({ open: true, message: 'YAML 格式错误', severity: 'error' })
-        return
-      }
-      const ns = namespacedResources.has(activeResource) ? detailItem.namespace : ''
-      const result = await k8sAPI.updateResource(id, activeResource, detailItem.name, ns, manifest)
-      if (result.success) {
-        setSnackbar({ open: true, message: '更新成功', severity: 'success' })
-        setEditMode(false)
-        setDetailOpen(false)
-        loadResources(activeResource, page)
-      } else {
-        setSnackbar({ open: true, message: result.error || '更新失败', severity: 'error' })
-      }
-    } catch (err: any) {
-      setSnackbar({ open: true, message: err.response?.data?.error || '更新失败', severity: 'error' })
+      const action = editorMode === 'create' ? '创建' : '更新'
+      setSnackbar({ open: true, message: err.response?.data?.error || `${action}失败`, severity: 'error' })
     }
   }
 
@@ -640,15 +602,15 @@ export default function ClusterDetail() {
 
               {/* 创建按钮 + 过滤栏 */}
               <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') && (
+                {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') &&
+                  !(namespacedResources.has(activeResource) && selectedNamespace === 'all') && (
                   <Button
                     variant="contained"
                     size="small"
                     onClick={() => {
-                      const tpl = yamlTemplates[activeResource] || ''
-                      const ns = namespacedResources.has(activeResource) ? selectedNamespace : 'default'
-                      setCreateYaml(tpl.replace(/namespace: default/g, `namespace: ${ns}`))
-                      setCreateDialogOpen(true)
+                      setEditorMode('create')
+                      setEditorYaml('')
+                      setEditorOpen(true)
                     }}
                   >
                     创建 {resourceLabels[activeResource] || activeResource}
@@ -712,7 +674,24 @@ export default function ClusterDetail() {
                               <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
                                 <Button
                                   size="small"
-                                  onClick={() => viewDetail(item)}
+                                  onClick={async () => {
+                                    setDetailItem(item)
+                                    setEditorMode('edit')
+                                    setYamlLoading(true)
+                                    try {
+                                      const result = await k8sAPI.getResourceYAML(id, activeResource, item.name, item.namespace)
+                                      if (result.success && result.data) {
+                                        setEditorYaml(result.data)
+                                        setEditorOpen(true)
+                                      } else {
+                                        setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
+                                      }
+                                    } catch {
+                                      setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
+                                    } finally {
+                                      setYamlLoading(false)
+                                    }
+                                  }}
                                 >
                                   编辑
                                 </Button>
@@ -824,25 +803,7 @@ export default function ClusterDetail() {
           )}
         </DialogTitle>
         <DialogContent dividers>
-          {editMode ? (
-            <Box sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(0,0,0,0.08)' }}>
-              <Editor
-                height="60vh"
-                language="yaml"
-                value={editYaml}
-                theme="vs-dark"
-                onChange={(v) => setEditYaml(v || '')}
-                options={{
-                  minimap: { enabled: false },
-                  lineNumbers: 'on',
-                  scrollBeyondLastLine: false,
-                  fontSize: 13,
-                  wordWrap: 'on',
-                  automaticLayout: true,
-                }}
-              />
-            </Box>
-          ) : yamlMode ? (
+          {yamlMode ? (
             <Box sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
               <Editor
                 height="60vh"
@@ -881,7 +842,7 @@ export default function ClusterDetail() {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          {!yamlMode && !editMode && (
+          {!yamlMode && (
             <>
               <Button variant="outlined" onClick={loadYaml} disabled={yamlLoading} sx={{ textTransform: 'none' }}>
                 {yamlLoading ? '加载中...' : '查看 YAML'}
@@ -894,8 +855,9 @@ export default function ClusterDetail() {
                     try {
                       const result = await k8sAPI.getResourceYAML(id, activeResource, detailItem.name, detailItem.namespace)
                       if (result.success && result.data) {
-                        setEditYaml(result.data)
-                        setEditMode(true)
+                        setEditorYaml(result.data)
+                        setEditorMode('edit')
+                        setEditorOpen(true)
                       } else {
                         setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
                       }
@@ -913,51 +875,29 @@ export default function ClusterDetail() {
               )}
             </>
           )}
-          {editMode && (
-            <>
-              <Button variant="contained" onClick={handleUpdateResource} sx={{ textTransform: 'none' }}>
-                保存
-              </Button>
-              <Button variant="outlined" onClick={() => setEditMode(false)} sx={{ textTransform: 'none' }}>
-                取消
-              </Button>
-            </>
+          {yamlMode && (
+            <Button variant="outlined" onClick={() => setYamlMode(false)} sx={{ textTransform: 'none' }}>
+              返回详情
+            </Button>
           )}
-          <Button onClick={() => { setDetailOpen(false); setEditMode(false); }} sx={{ textTransform: 'none' }}>关闭</Button>
+          <Button onClick={() => setDetailOpen(false)} sx={{ textTransform: 'none' }}>关闭</Button>
         </DialogActions>
       </Dialog>
 
-      {/* 创建资源弹窗 */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ fontWeight: 600 }}>
-          创建 {resourceLabels[activeResource] || activeResource}
-        </DialogTitle>
-        <DialogContent dividers>
-          <Box sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(0,0,0,0.08)' }}>
-            <Editor
-              height="60vh"
-              language="yaml"
-              value={createYaml}
-              theme="vs-dark"
-              onChange={(v) => setCreateYaml(v || '')}
-              options={{
-                minimap: { enabled: false },
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                fontSize: 13,
-                wordWrap: 'on',
-                automaticLayout: true,
-              }}
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)} sx={{ textTransform: 'none' }}>取消</Button>
-          <Button variant="contained" onClick={handleCreateResource} sx={{ textTransform: 'none' }}>
-            创建
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* 资源创建/编辑弹窗 */}
+      <ResourceEditorDialog
+        open={editorOpen}
+        onClose={() => {
+          setEditorOpen(false)
+          setEditorYaml('')
+        }}
+        kind={activeResource}
+        namespace={namespacedResources.has(activeResource) ? selectedNamespace : ''}
+        clusterId={id}
+        mode={editorMode}
+        initialYaml={editorYaml}
+        onSubmit={handleEditorSubmit}
+      />
 
       {/* 删除确认弹窗 */}
       <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} maxWidth="xs" fullWidth>

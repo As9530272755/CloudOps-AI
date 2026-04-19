@@ -1116,6 +1116,84 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 
 ---
 
+## 2026-04-19 KubeSphere 风格表单+YAML 双模式弹窗重构
+
+### 需求
+用户要求创建/编辑弹窗参考 KubeSphere 设计：默认表单模式（小白友好），支持「编辑 YAML」切换；all namespace 下隐藏创建按钮。
+
+### 修改内容
+
+#### 1. 新建核心文件
+
+`frontend/src/lib/yaml-helpers.ts`：
+- 表单数据 ↔ K8s manifest 双向转换
+- 支持 Deployment、Service、ConfigMap、Secret、Pod 五种资源类型
+- `generateManifest(kind, formData)` / `parseManifest(kind, manifest)` 统一路由
+- `supportsFormMode(kind)` 判断是否支持表单模式
+
+`frontend/src/components/ResourceEditorDialog.tsx`：
+- 通用弹窗外壳，顶部标题 + 「编辑 YAML」Switch 切换
+- 表单模式：根据 kind 渲染对应表单组件
+- YAML 模式：Monaco Editor
+- 模式切换时双向同步数据
+- 提交前校验 metadata.name 非空
+
+#### 2. 各资源类型表单组件
+
+`frontend/src/components/resource-forms/DeploymentForm.tsx`：
+- 基本信息：名称、命名空间
+- 容器设置：镜像地址、副本数
+- 端口设置：动态添加/删除端口（名称、容器端口、服务端口、协议）
+- 环境变量（高级）：动态添加/删除键值对
+
+`frontend/src/components/resource-forms/ServiceForm.tsx`：
+- 基本信息：名称、命名空间
+- 服务类型：ClusterIP/NodePort/LoadBalancer/ExternalName（带小白说明）
+- 选择器：标签键值对（关联 Pod）
+- 端口映射：动态添加/删除（服务端口、目标端口、节点端口）
+
+`frontend/src/components/resource-forms/ConfigMapForm.tsx`：
+- 基本信息 + 键值对数据（动态添加/删除）
+
+`frontend/src/components/resource-forms/SecretForm.tsx`：
+- 基本信息 + Secret 类型选择（Opaque/TLS/镜像凭证/基本认证，带小白说明）
+- 数据内容：明文输入，保存时自动 Base64 编码
+
+`frontend/src/components/resource-forms/PodForm.tsx`：
+- 基本信息 + 镜像地址 + 重启策略（带小白说明）
+
+#### 3. ClusterDetail.tsx 修改
+
+- 移除旧的 `createDialogOpen` / `createYaml` / `editMode` / `editYaml` state
+- 新增 `editorOpen` / `editorMode` / `editorYaml` state
+- 新建 `handleEditorSubmit` 统一处理创建/更新
+- **all namespace 隐藏创建按钮**：
+  ```tsx
+  !(namespacedResources.has(activeResource) && selectedNamespace === 'all')
+  ```
+- 表格行「编辑」按钮：加载 YAML 后打开 ResourceEditorDialog
+- 详情弹窗「编辑」按钮：加载 YAML 后打开 ResourceEditorDialog
+- 详情弹窗移除内嵌 editMode 编辑器逻辑
+- 移除不再使用的 `yamlTemplates` 和 `yaml` 导入
+
+#### 4. 交互流程
+
+**创建资源**：
+1. 点击「创建 Deployment」→ ResourceEditorDialog 打开（默认表单模式）
+2. 填写表单（名称、镜像、副本数等）或切换到 YAML 模式
+3. 点击「创建」→ `handleEditorSubmit` → `k8sAPI.createResource`
+
+**编辑资源**：
+1. 点击「编辑」→ 加载资源 YAML → ResourceEditorDialog 打开
+2. 支持表单模式（如果资源结构可被解析）或 YAML 模式
+3. 点击「保存」→ `handleEditorSubmit` → `k8sAPI.updateResource`
+
+### 编译状态
+- 前端 `npm run build` ✅
+- 后端已重启 ✅（无后端代码变更）
+
+---
+
 ## 2026-04-19 写操作前端弹窗完善 + kindToGroupVersionResource 修复
 
 ### 问题
