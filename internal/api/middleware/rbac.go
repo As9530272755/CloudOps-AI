@@ -242,6 +242,21 @@ func extractResourceAction(c *gin.Context) (resource, action string) {
 		}
 	}
 
+	// URL 资源名（复数）→ 权限标识（单数）
+	resourceMap := map[string]string{
+		"pods":         "pod",
+		"deployments":  "deployment",
+		"services":     "service",
+		"configmaps":   "configmap",
+		"secrets":      "secret",
+		"events":       "event",
+		"nodes":        "node",
+		"namespaces":   "namespace",
+	}
+	if mapped, ok := resourceMap[resource]; ok {
+		resource = mapped
+	}
+
 	// 映射 HTTP 方法到 action
 	switch method {
 	case http.MethodGet:
