@@ -104,15 +104,13 @@ chmod +x scripts/*.sh
 # 或：指定数据库密码
 ./scripts/install.sh --mode full --db-password MySecurePwd123 --yes
 
-# 或：轻量模式（SQLite，无外部数据库依赖）
-./scripts/install.sh --mode lite --yes
 ```
 
 ### 安装参数
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--mode full\|lite` | 部署模式 | `full` |
+
 | `--install-dir` | 安装目录 | `/opt/cloudops` |
 | `--db-password` | 数据库密码 | 自动生成 |
 | `--db-host` | 数据库地址 | `127.0.0.1` |
@@ -181,13 +179,6 @@ cd /opt/cloudops-offline-package
 | 模式 | 数据库 | 缓存 | 系统依赖 | 资源要求 | 适用场景 |
 |------|--------|------|----------|----------|----------|
 | **full** | PostgreSQL 14+ | Redis 6+ | postgresql, redis, nodejs | 4C8G+ | 生产环境 |
-| **lite** | SQLite（内置） | 内存 sync.Map | nodejs only | 2C4G+ | POC/测试/小团队 |
-
-**lite 模式特点**：
-- 零外部数据库依赖
-- SQLite 数据库文件位于 `${INSTALL_DIR}/cloudops.db`
-- AI 任务状态使用内存缓存（重启后丢失）
-- 适合快速体验或资源受限环境
 
 ---
 
@@ -199,7 +190,6 @@ cd /opt/cloudops-offline-package
 4. **防火墙**：仅开放必要的端口（18000, 9000）
 5. **定期备份**：
    - full 模式：`pg_dump cloudops > backup.sql`
-   - lite 模式：备份 `${INSTALL_DIR}/cloudops.db` 文件
 
 ---
 
