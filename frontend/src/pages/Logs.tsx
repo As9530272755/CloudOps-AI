@@ -368,7 +368,7 @@ export default function Logs() {
       setSelectedNamespace('')
       return
     }
-    const backend = backends.find((b) => b.id === selectedBackends[0])
+    const backend = backends.find((b) => b.id == selectedBackends[0])
     if (!backend) return
     k8sAPI.getNamespaces(backend.cluster_id).then((res: any) => {
       if (res.success && Array.isArray(res.data)) {

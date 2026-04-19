@@ -93,6 +93,8 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			protected.POST("/users", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.CreateUser)
 			protected.GET("/users/:id", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.GetUser)
 			protected.PUT("/users/:id", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.UpdateUser)
+			protected.PUT("/users/:id/password", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.ResetPassword)
+			protected.PATCH("/users/:id/status", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.ToggleUserStatus)
 			protected.DELETE("/users/:id", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.DeleteUser)
 			protected.GET("/roles", r.userHandler.ListRoles)
 

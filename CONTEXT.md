@@ -998,3 +998,38 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 后端 `go build` ✅
 - 前端 `npm run build` ✅
 
+
+## 2026-04-19 续：Phase 1 收尾修复
+
+### 完成内容
+
+1. **用户列表分页 + 搜索**
+   - 后端 `ListUsers` 添加 `page`, `page_size`, `keyword` 查询参数
+   - 返回 `{ list, total, page, page_size }` 分页结构
+   - 前端 `Users.tsx` 添加 `TablePagination` 分页组件
+   - 前端添加搜索框（按用户名/邮箱 ILIKE 模糊搜索）
+
+2. **独立重置密码功能**
+   - 后端新增 `PUT /users/:id/password` — `ResetPassword` handler
+   - 前端点击 🔒 锁图标弹出独立弹窗（新密码 + 确认密码）
+   - 校验：密码 ≥6 位，两次输入一致
+
+3. **用户状态快速切换**
+   - 后端新增 `PATCH /users/:id/status` — `ToggleUserStatus` handler
+   - 前端列表页每行添加 `Switch` 开关，点击直接切换启用/禁用
+   - 不能禁用自己（前后端双重校验）
+
+4. **模块权限覆盖 UX 改进**
+   - Tab 2「功能模块权限」添加「恢复角色默认」按钮
+   - 一键清空 `enabled_modules` / `disabled_modules`，回到角色默认权限
+   - 无覆盖时按钮禁用
+
+5. **修复日志页面 Namespace 下拉为空**
+   - 根因：`Logs.tsx` 中 `backends.find((b) => b.id === selectedBackends[0])` 使用严格相等 `===`
+   - MUI Select multiple 模式下 `e.target.value` 实际返回 `string[]`，导致比较失败
+   - 修复：改为松散比较 `==`
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+

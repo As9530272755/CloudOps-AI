@@ -9,6 +9,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   Paper,
   IconButton,
   Chip,
@@ -33,12 +34,14 @@ import {
   Grid,
   Autocomplete,
   CircularProgress,
+  InputAdornment,
 } from '@mui/material'
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   Lock as LockIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
@@ -89,6 +92,13 @@ interface Cluster {
   display_name?: string
 }
 
+interface UsersResponse {
+  list: User[]
+  total: number
+  page: number
+  page_size: number
+}
+
 // ============ 功能模块定义 ============
 
 const moduleGroups = [
@@ -137,6 +147,17 @@ export default function Users() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
 
+  // 分页 & 搜索
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
+  const [keyword, setKeyword] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+
+  // 重置密码弹窗
+  const [resetPwdOpen, setResetPwdOpen] = useState(false)
+  const [resetPwdUser, setResetPwdUser] = useState<User | null>(null)
+  const [resetPwdForm, setResetPwdForm] = useState({ password: '', confirm: '' })
+
   // 表单状态
   const [form, setForm] = useState({
     username: '',
@@ -167,11 +188,13 @@ export default function Users() {
   })
   const nsOptions = nsListData?.data || []
 
-  // 查询数据
-  const { data: usersData, isLoading: usersLoading } = useQuery<{ data: User[] }>({
-    queryKey: ['users'],
+  // 查询数据（分页）
+  const { data: usersResp, isLoading: usersLoading } = useQuery<{ data: UsersResponse }>({
+    queryKey: ['users', page + 1, pageSize, keyword],
     queryFn: async () => {
-      const res = await apiClient.get('/users')
+      const res = await apiClient.get('/users', {
+        params: { page: page + 1, page_size: pageSize, keyword },
+      })
       return res.data
     },
   })
@@ -203,7 +226,8 @@ export default function Users() {
   })
 
   const roles = rolesData?.data || []
-  const users = usersData?.data || []
+  const users = usersResp?.data?.list || []
+  const totalUsers = usersResp?.data?.total || 0
   const clusters = clustersData?.data || []
   const detail = userDetail?.data
 
@@ -242,6 +266,33 @@ export default function Users() {
     },
     onError: (err: any) => {
       setSnack({ open: true, message: err.response?.data?.error || '删除失败', severity: 'error' })
+    },
+  })
+
+  // 重置密码
+  const resetPwdMutation = useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      apiClient.put(`/users/${id}/password`, { password }),
+    onSuccess: () => {
+      setResetPwdOpen(false)
+      setResetPwdForm({ password: '', confirm: '' })
+      setSnack({ open: true, message: '密码重置成功', severity: 'success' })
+    },
+    onError: (err: any) => {
+      setSnack({ open: true, message: err.response?.data?.error || '重置失败', severity: 'error' })
+    },
+  })
+
+  // 切换用户状态
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
+      apiClient.patch(`/users/${id}/status`, { is_active }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setSnack({ open: true, message: '状态更新成功', severity: 'success' })
+    },
+    onError: (err: any) => {
+      setSnack({ open: true, message: err.response?.data?.error || '状态更新失败', severity: 'error' })
     },
   })
 
@@ -353,6 +404,33 @@ export default function Users() {
     }
   }
 
+  const openResetPassword = (user: User) => {
+    setResetPwdUser(user)
+    setResetPwdForm({ password: '', confirm: '' })
+    setResetPwdOpen(true)
+  }
+
+  const handleResetPassword = () => {
+    if (!resetPwdUser) return
+    if (!resetPwdForm.password) {
+      setSnack({ open: true, message: '密码不能为空', severity: 'error' })
+      return
+    }
+    if (resetPwdForm.password.length < 6) {
+      setSnack({ open: true, message: '密码至少6位', severity: 'error' })
+      return
+    }
+    if (resetPwdForm.password !== resetPwdForm.confirm) {
+      setSnack({ open: true, message: '两次输入的密码不一致', severity: 'error' })
+      return
+    }
+    resetPwdMutation.mutate({ id: resetPwdUser.id, password: resetPwdForm.password })
+  }
+
+  const handleToggleStatus = (user: User) => {
+    toggleStatusMutation.mutate({ id: user.id, is_active: !user.is_active })
+  }
+
   const toggleModule = (key: string, enabled: boolean) => {
     if (enabled) {
       setForm(prev => ({
@@ -390,6 +468,16 @@ export default function Users() {
     return basePermissions.includes(key) || basePermissions.includes('*:*')
   }
 
+  const handleResetModules = () => {
+    setForm(prev => ({
+      ...prev,
+      enabled_modules: [],
+      disabled_modules: [],
+    }))
+  }
+
+  const hasModuleOverrides = form.enabled_modules.length > 0 || form.disabled_modules.length > 0
+
   const handleGrantNs = () => {
     if (!editingUser || !nsForm.cluster_id || !nsForm.namespace || !nsForm.role_id) {
       setSnack({ open: true, message: '请填写完整信息', severity: 'error' })
@@ -401,6 +489,17 @@ export default function Users() {
       namespace: nsForm.namespace,
       role_id: nsForm.role_id,
     })
+  }
+
+  const handleSearch = () => {
+    setPage(0)
+    setKeyword(searchInput)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch()
+    }
   }
 
   return (
@@ -419,6 +518,33 @@ export default function Users() {
         </Button>
       </Box>
 
+      {/* 搜索栏 */}
+      <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
+        <TextField
+          size="small"
+          placeholder="搜索用户名或邮箱..."
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          sx={{ width: 300 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
+        />
+        <Button variant="outlined" size="small" onClick={handleSearch}>
+          搜索
+        </Button>
+        {keyword && (
+          <Button variant="text" size="small" onClick={() => { setSearchInput(''); setKeyword(''); setPage(0); }}>
+            清除
+          </Button>
+        )}
+      </Box>
+
       <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
         <Table>
           <TableHead>
@@ -433,13 +559,13 @@ export default function Users() {
           <TableBody>
             {usersLoading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
-                  加载中...
+                <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                  <CircularProgress size={24} />
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                   暂无用户
                 </TableCell>
               </TableRow>
@@ -467,11 +593,14 @@ export default function Users() {
                     </Box>
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      size="small"
-                      label={user.is_active ? '启用' : '禁用'}
-                      color={user.is_active ? 'success' : 'default'}
-                    />
+                    <Tooltip title={user.is_active ? '点击禁用' : '点击启用'}>
+                      <Switch
+                        size="small"
+                        checked={user.is_active}
+                        onChange={() => handleToggleStatus(user)}
+                        disabled={toggleStatusMutation.isPending}
+                      />
+                    </Tooltip>
                   </TableCell>
                   <TableCell align="right">
                     <Tooltip title="编辑">
@@ -480,7 +609,7 @@ export default function Users() {
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="重置密码">
-                      <IconButton size="small" onClick={() => openEdit(user)}>
+                      <IconButton size="small" onClick={() => openResetPassword(user)}>
                         <LockIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
@@ -495,6 +624,20 @@ export default function Users() {
             )}
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={totalUsers}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={pageSize}
+          onRowsPerPageChange={(e) => {
+            setPageSize(parseInt(e.target.value, 10))
+            setPage(0)
+          }}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          labelRowsPerPage="每页"
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} 共 ${count} 条`}
+        />
       </TableContainer>
 
       {/* 添加/编辑弹窗 */}
@@ -564,9 +707,19 @@ export default function Users() {
 
           {activeTab === 1 && (
             <Box sx={{ pt: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                基于角色默认权限，可单独调整每个功能模块的访问权限
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  基于角色默认权限，可单独调整每个功能模块的访问权限
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleResetModules}
+                  disabled={!hasModuleOverrides}
+                >
+                  恢复角色默认
+                </Button>
+              </Box>
               {moduleGroups.map(group => (
                 <Box key={group.group} sx={{ mb: 2 }}>
                   <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
@@ -714,6 +867,34 @@ export default function Users() {
           <Button onClick={closeDialog}>取消</Button>
           <Button variant="contained" onClick={handleSave}>
             {editingUser ? '保存' : '创建'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 重置密码弹窗 */}
+      <Dialog open={resetPwdOpen} onClose={() => setResetPwdOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>重置密码: {resetPwdUser?.username}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <TextField
+            label="新密码"
+            type="password"
+            value={resetPwdForm.password}
+            onChange={e => setResetPwdForm(prev => ({ ...prev, password: e.target.value }))}
+            fullWidth
+            autoFocus
+          />
+          <TextField
+            label="确认密码"
+            type="password"
+            value={resetPwdForm.confirm}
+            onChange={e => setResetPwdForm(prev => ({ ...prev, confirm: e.target.value }))}
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResetPwdOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={handleResetPassword}>
+            确认重置
           </Button>
         </DialogActions>
       </Dialog>

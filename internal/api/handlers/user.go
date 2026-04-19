@@ -30,7 +30,7 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 	}
 }
 
-// ListUsers 列出用户（支持租户过滤）
+// ListUsers 列出用户（支持租户过滤、分页、搜索）
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	query := h.db.Model(&model.User{})
 
@@ -40,13 +40,41 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		query = query.Where("tenant_id = ?", tenantID)
 	}
 
+	// 搜索
+	keyword := c.Query("keyword")
+	if keyword != "" {
+		query = query.Where("username ILIKE ? OR email ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	// 分页
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	var total int64
+	query.Count(&total)
+
 	var users []model.User
-	if err := query.Preload("Roles").Find(&users).Error; err != nil {
+	offset := (page - 1) * pageSize
+	if err := query.Preload("Roles").Order("id DESC").Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": users})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"list":      users,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+		},
+	})
 }
 
 // GetUser 获取用户详情
@@ -227,6 +255,69 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": user})
+}
+
+// ResetPasswordRequest 重置密码请求
+type ResetPasswordRequest struct {
+	Password string `json:"password" binding:"required,min=6"`
+}
+
+// ResetPassword 重置用户密码
+func (h *UserHandler) ResetPassword(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+
+	var user model.User
+	query := h.db
+	if !c.GetBool("is_superuser") {
+		tenantID := c.GetUint("tenant_id")
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if err := query.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "用户不存在"})
+		return
+	}
+
+	var req ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": translateValidationError(err)})
+		return
+	}
+
+	h.db.Model(&user).Update("password_hash", database.HashPassword(req.Password))
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "密码重置成功"})
+}
+
+// ToggleUserStatus 快速切换用户启用/禁用状态
+func (h *UserHandler) ToggleUserStatus(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+
+	// 不能禁用自己
+	if uint(id) == c.GetUint("user_id") {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "不能禁用自己"})
+		return
+	}
+
+	var user model.User
+	query := h.db
+	if !c.GetBool("is_superuser") {
+		tenantID := c.GetUint("tenant_id")
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if err := query.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "用户不存在"})
+		return
+	}
+
+	var req struct {
+		IsActive bool `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	h.db.Model(&user).Update("is_active", req.IsActive)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"is_active": req.IsActive}})
 }
 
 // DeleteUser 删除用户
