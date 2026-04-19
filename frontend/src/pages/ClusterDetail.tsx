@@ -48,6 +48,7 @@ import {
   Extension as ExtensionIcon,
   Search as SearchIcon,
   ContentCopy as CopyIcon,
+  Sync as SyncIcon,
 } from '@mui/icons-material'
 import Editor from '@monaco-editor/react'
 import { k8sAPI, resourceCategories, resourceLabels, ClusterStats } from '../lib/k8s-api'
@@ -135,6 +136,7 @@ export default function ClusterDetail() {
   const [yamlLoading, setYamlLoading] = useState(false)
   const [nsError, setNsError] = useState('')
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+  const [syncing, setSyncing] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<any>(null)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -230,9 +232,13 @@ export default function ClusterDetail() {
   }
 
   // 加载资源列表
-  const loadResources = async (kind: string, currentPage = page, search = keyword) => {
+  const loadResources = async (kind: string, currentPage = page, search = keyword, silent = false) => {
     if (!kind) return
-    setLoading(true)
+    if (silent) {
+      setSyncing(true)
+    } else {
+      setLoading(true)
+    }
     setError('')
     try {
       const ns = namespacedResources.has(kind) ? selectedNamespace : ''
@@ -242,7 +248,7 @@ export default function ClusterDetail() {
         setTotal(result.data.total)
       } else {
         setError(result.error || '加载失败')
-        setItems([])
+        if (!silent) setItems([])
       }
     } catch (err: any) {
       const status = err.response?.status
@@ -252,9 +258,13 @@ export default function ClusterDetail() {
       } else {
         setError(backendError || err.message || '加载失败')
       }
-      setItems([])
+      if (!silent) setItems([])
     } finally {
-      setLoading(false)
+      if (silent) {
+        setSyncing(false)
+      } else {
+        setLoading(false)
+      }
     }
   }
 
@@ -437,7 +447,7 @@ export default function ClusterDetail() {
   useEffect(() => {
     if (activeCategory === 'overview' || !activeResource || loading) return
     const interval = setInterval(() => {
-      loadResources(activeResource, page, keyword)
+      loadResources(activeResource, page, keyword, true)
     }, 5000)
     return () => clearInterval(interval)
   }, [activeCategory, activeResource, page, keyword, loading])
@@ -657,9 +667,44 @@ export default function ClusterDetail() {
                   }}
                   sx={{ minWidth: 240 }}
                 />
-                <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
-                  共 {total} 条
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
+                  {syncing && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <SyncIcon
+                        sx={{
+                          fontSize: 14,
+                          color: 'info.main',
+                          animation: 'spin 1s linear infinite',
+                          '@keyframes spin': {
+                            '0%': { transform: 'rotate(0deg)' },
+                            '100%': { transform: 'rotate(360deg)' },
+                          },
+                        }}
+                      />
+                      <Typography variant="caption" color="info.main" sx={{ fontSize: 12 }}>
+                        同步中
+                      </Typography>
+                    </Box>
+                  )}
+                  {!syncing && items.length > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box
+                        sx={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          bgcolor: 'success.main',
+                        }}
+                      />
+                      <Typography variant="caption" color="success.main" sx={{ fontSize: 12 }}>
+                        已同步
+                      </Typography>
+                    </Box>
+                  )}
+                  <Typography variant="body2" color="text.secondary">
+                    共 {total} 条
+                  </Typography>
+                </Box>
               </Box>
 
               {/* 表格 */}

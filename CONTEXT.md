@@ -1264,6 +1264,50 @@ useEffect(() => {
 
 ---
 
+## 2026-04-19 修复页面闪烁：静默轮询 + 同步状态指示器
+
+### 问题
+每 5 秒轮询时，表格显示 `CircularProgress` 加载动画，导致页面频繁闪烁，体验很差。
+
+### 修复
+
+`frontend/src/pages/ClusterDetail.tsx`：
+
+#### 1. 区分 loading 和 syncing 状态
+- `loading`：首次加载/切换资源时显示，表格显示 `CircularProgress`
+- `syncing`：轮询刷新时使用，表格保持原有内容，不显示 loading overlay
+
+#### 2. `loadResources` 添加 `silent` 参数
+```tsx
+const loadResources = async (kind, page, search, silent = false) => {
+  if (silent) setSyncing(true)
+  else setLoading(true)
+  // ... API 调用
+  if (silent) setSyncing(false)
+  else setLoading(false)
+}
+```
+
+#### 3. 同步状态指示器
+在表格上方「共 X 条」旁边添加：
+- **同步中**：旋转的 `SyncIcon` + "同步中" 文字（info 蓝色）
+- **已同步**：绿色小圆点 + "已同步" 文字（success 绿色）
+
+#### 4. 轮询改为静默模式
+```tsx
+setInterval(() => loadResources(activeResource, page, keyword, true), 5000)
+```
+
+### 效果
+- 轮询时表格不闪烁，数据静默更新
+- 用户通过同步指示器感知刷新状态
+- 首次加载/切换资源时仍显示 loading 动画
+
+### 编译状态
+- 前端 `npm run build` ✅
+
+---
+
 ## 2026-04-19 修复 Terminating 状态 + 切换集群不刷新
 
 ### Bug 1: Pod Terminating 状态显示错误
