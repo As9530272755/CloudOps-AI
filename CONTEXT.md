@@ -1114,3 +1114,25 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 前端 `npm run build` ✅
 - 后端已重启 ✅
 
+
+## 2026-04-19 续：后端重启脚本
+
+### 根因
+Go 后端 (`cloudops-backend`) 启动时会 `exec.CommandContext` fork 一个 **Node.js 子进程** 运行 agent-runtime（监听 `127.0.0.1:19000`）。
+
+当用 `pkill ./cloudops-backend` 杀死 Go 父进程时，**Node.js 子进程变成孤儿进程继续运行**，导致新后端启动时 19000 端口冲突 → 启动失败。
+
+### 解决
+新增 `restart-backend.sh`：
+1. 先杀 Go 后端主进程
+2. 再杀残留的 agent-runtime (Node.js)
+3. 等待 19000 端口释放
+4. 启动新后端
+
+### 使用方式
+```bash
+./restart-backend.sh
+```
+
+**以后所有后端重启都必须使用此脚本，禁止直接用 `pkill + nohup`。**
+
