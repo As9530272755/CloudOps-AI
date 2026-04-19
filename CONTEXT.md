@@ -751,3 +751,53 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 ---
 
 *最后更新：2026-04-19*
+
+---
+
+## 十六、用户管理模块设计方案（2026-04-19）
+
+### 16.1 背景
+
+平台当前对接 20+ 集群、10000+ Pod，需要支持多用户使用。现有用户管理仅有基础模型（User/Role/Permission/Tenant），无法满足多租户、细粒度授权、审计追溯等需求。
+
+### 16.2 参考开源项目
+
+- **Rancher**：三层 RBAC（Global/Cluster/Project）、RoleTemplate 继承、外部认证
+- **KubeSphere**：Workspace 企业空间、四层权限、邀请制成员管理
+- **Kubernetes RBAC**：Resource + Verb 矩阵、Role + RoleBinding 复用
+
+### 16.3 方案核心
+
+采用 **"三层 + 一扩展"** 权限模型：
+- **Platform Layer**：全局管理员、平台设置、租户管理
+- **Cluster Layer**：集群管理员、集群观察者、集群运维
+- **Resource Layer**：命名空间管理员、只读用户、自定义角色
+- **Extension Layer**（后续）：部门/用户组、审批流、审计日志
+
+### 16.4 关键设计
+
+| 设计项 | 内容 |
+|--------|------|
+| 角色模板（RoleTemplate） | 支持自定义 + 继承，内置 8 个系统角色 |
+| 权限矩阵 | Resource（cluster/pod/deployment...）× Verb（read/write/delete/execute/admin） |
+| 集群授权（ClusterGrant） | 用户 ↔ 集群 ↔ 角色模板，支持 NamespaceScope 细粒度控制 |
+| 审计日志（AuditLog） | 全量操作追踪 + Before/After JSON diff + 按天分片 |
+| 密码策略 | 最小长度/复杂度/有效期/连续失败锁定/历史密码检查 |
+| K8s RBAC 同步 | Phase 3 评估，前期仅在 CloudOps 层控制 |
+
+### 16.5 实施阶段
+
+| 阶段 | 周期 | 内容 |
+|------|------|------|
+| Phase 1 | 2 周 | 用户 CRUD、角色管理、密码策略、前端按钮级权限 |
+| Phase 2 | 2 周 | 集群授权、权限校验中间件、审计日志 |
+| Phase 3 | 2 周 | LDAP/OIDC、用户组、K8s RBAC 同步（可选） |
+
+### 16.6 文档
+
+- 完整方案：`docs/user-management-proposal.md`（632 行）
+- 包含：数据模型、API 设计、前端交互、数据库变更脚本、风险应对
+
+---
+
+*最后更新：2026-04-19*
