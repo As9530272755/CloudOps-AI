@@ -597,7 +597,7 @@ export default function Clusters() {
                     {isPlatformAdmin && <TableCell>API Server</TableCell>}
                     <TableCell>版本</TableCell>
                     <TableCell>状态</TableCell>
-                    <TableCell>节点/Pod</TableCell>
+                    {isPlatformAdmin && <TableCell>节点/Pod</TableCell>}
                     <TableCell align="right">操作</TableCell>
                   </TableRow>
                 </TableHead>
@@ -636,12 +636,14 @@ export default function Clusters() {
                           sx={{ borderRadius: '6px' }}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {cluster.metadata?.node_count !== undefined ? `${cluster.metadata.node_count} 节点` : '-'}
-                          {cluster.metadata?.pod_count !== undefined && ` / ${cluster.metadata.pod_count} Pod`}
-                        </Typography>
-                      </TableCell>
+                      {isPlatformAdmin && (
+                        <TableCell>
+                          <Typography variant="body2">
+                            {cluster.metadata?.node_count !== undefined ? `${cluster.metadata.node_count} 节点` : '-'}
+                            {cluster.metadata?.pod_count !== undefined && ` / ${cluster.metadata.pod_count} Pod`}
+                          </Typography>
+                        </TableCell>
+                      )}
                       <TableCell align="right">
                         <Tooltip title="进入集群">
                           <IconButton
