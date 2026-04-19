@@ -447,8 +447,13 @@ export default function ClusterDetail() {
   // WebSocket 推送：收到资源变化推送时自动刷新
   useEffect(() => {
     const unsubscribe = wsManager.onMessage((msg) => {
-      if (msg.cluster_id === id && msg.kind === activeResource) {
-        loadResources(activeResource, page, keyword, true)
+      // 显式转字符串比较，消除类型隐患
+      if (String(msg.cluster_id) === String(id) && msg.kind === activeResource) {
+        console.log('[WS] resource_change received:', msg.kind, msg.name, msg.action)
+        // 延迟 500ms 刷新，给后端 syncObjectToStore 完成留时间
+        setTimeout(() => {
+          loadResources(activeResource, page, keyword, true)
+        }, 500)
       }
     })
     return unsubscribe

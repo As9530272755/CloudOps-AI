@@ -901,11 +901,21 @@ func (s *K8sResourceService) syncObjectToStore(ctx context.Context, clusterID ui
 			Version:  gvk.Version,
 			Resource: kind,
 		}
+		// K8s API 有最终一致性：Create 返回 200 后，Get 可能短暂返回 NotFound。
+		// 使用指数退避重试，最多 5 次（总等待约 3 秒）。
 		var obj *unstructured.Unstructured
-		if clusterLevelKinds[kind] {
-			obj, err = client.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
-		} else {
-			obj, err = client.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		for attempt := 0; attempt < 5; attempt++ {
+			if clusterLevelKinds[kind] {
+				obj, err = client.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+			} else {
+				obj, err = client.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+			}
+			if err == nil {
+				break
+			}
+			if attempt < 4 {
+				time.Sleep(time.Duration(200*(1<<attempt)) * time.Millisecond)
+			}
 		}
 		if err != nil {
 			return
