@@ -122,6 +122,9 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			protected.GET("/clusters/:id/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.ListResources)
 			protected.GET("/clusters/:id/resources/:kind/:name/yaml", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResourceYAML)
 			protected.GET("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResource)
+				protected.POST("/clusters/:id/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.CreateResource)
+				protected.PUT("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.UpdateResource)
+				protected.DELETE("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.DeleteResource)
 
 			// 数据源管理
 			ds := protected.Group("/datasources")

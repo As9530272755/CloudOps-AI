@@ -100,6 +100,7 @@ type Cluster struct {
 	ClusterLabelValue string         `gorm:"size:128" json:"cluster_label_value"`
 	IsActive          bool           `gorm:"default:true" json:"is_active"`
 	Priority          int            `gorm:"default:0" json:"priority"`
+	PermissionScope   string         `gorm:"size:20;default:'unknown'" json:"permission_scope"` // read-only | read-write | admin | unknown
 	CreatedAt         time.Time      `json:"created_at"`
 	UpdatedAt         time.Time      `json:"updated_at"`
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`

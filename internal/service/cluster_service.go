@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -117,7 +118,7 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 		return nil, fmt.Errorf("create metadata failed: %w", err)
 	}
 
-	// 6. 异步测试连接
+	// 6. 异步测试连接并探测权限
 	go s.testClusterConnection(cluster.ID)
 
 	// 7. 记录审计日志
@@ -280,6 +281,10 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 
 	s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Updates(metadata)
 
+	// 探测 kubeconfig 权限范围
+	scope := s.probePermissionScope(ctx, client)
+	s.db.Model(&model.Cluster{}).Where("id = ?", clusterID).Update("permission_scope", scope)
+
 	// 启动 Informer
 	go s.k8sManager.StartCluster(context.Background(), clusterID)
 
@@ -291,6 +296,45 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 // updateClusterHealth 更新集群健康状态
 func (s *ClusterService) updateClusterHealth(clusterID uint, status string, errorMsg string) {
 	s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Update("health_status", status)
+}
+
+// probePermissionScope 探测 kubeconfig 的权限范围
+func (s *ClusterService) probePermissionScope(ctx context.Context, client *kubernetes.Clientset) string {
+	review := &authorizationv1.SelfSubjectRulesReview{
+		Spec: authorizationv1.SelfSubjectRulesReviewSpec{
+			Namespace: "default",
+		},
+	}
+
+	result, err := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, review, metav1.CreateOptions{})
+	if err != nil {
+		return "unknown"
+	}
+
+	hasWrite := false
+	hasDelete := false
+
+	for _, rule := range result.Status.ResourceRules {
+		for _, verb := range rule.Verbs {
+			if verb == "*" {
+				return "admin"
+			}
+			if verb == "create" || verb == "update" || verb == "patch" {
+				hasWrite = true
+			}
+			if verb == "delete" {
+				hasDelete = true
+			}
+		}
+	}
+
+	if hasWrite && hasDelete {
+		return "admin"
+	}
+	if hasWrite {
+		return "read-write"
+	}
+	return "read-only"
 }
 
 // StartHealthMonitor 启动集群健康检查（每 30 秒一次）

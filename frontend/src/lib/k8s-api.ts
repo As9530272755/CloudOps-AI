@@ -141,6 +141,21 @@ export const k8sAPI = {
     const response = await api.get(`/clusters/${clusterId}/resources/${kind}/${name}/yaml?${params.toString()}`)
     return response.data
   },
+
+  // 删除资源
+  deleteResource: async (
+    clusterId: number,
+    kind: string,
+    name: string,
+    namespace: string = ''
+  ) => {
+    const params = new URLSearchParams()
+    if (namespace && namespace !== 'all') {
+      params.set('namespace', namespace)
+    }
+    const response = await api.delete(`/clusters/${clusterId}/resources/${kind}/${name}?${params.toString()}`)
+    return response.data
+  },
 }
 
 // 资源类型定义

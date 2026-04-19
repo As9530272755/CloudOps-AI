@@ -9,6 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// WriteResourceRequest 写操作请求体
+type WriteResourceRequest struct {
+	Manifest  map[string]interface{} `json:"manifest" binding:"required"`
+	Namespace string                 `json:"namespace"`
+}
+
 // K8sHandler K8s资源处理器
 type K8sHandler struct {
 	k8sService  *service.K8sResourceService
@@ -303,5 +309,88 @@ func (h *K8sHandler) GetClusterStats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    stats,
+	})
+}
+
+
+// CreateResource 创建 K8s 资源
+// POST /api/v1/clusters/:id/resources/:kind
+func (h *K8sHandler) CreateResource(c *gin.Context) {
+	clusterID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid cluster id"})
+		return
+	}
+
+	kind := c.Param("kind")
+	var req WriteResourceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	result, err := h.k8sService.CreateResource(c.Request.Context(), uint(clusterID), kind, req.Namespace, req.Manifest)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// UpdateResource 更新 K8s 资源
+// PUT /api/v1/clusters/:id/resources/:kind/:name
+func (h *K8sHandler) UpdateResource(c *gin.Context) {
+	clusterID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid cluster id"})
+		return
+	}
+
+	kind := c.Param("kind")
+	name := c.Param("name")
+	namespace := c.Query("namespace")
+	var req WriteResourceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	result, err := h.k8sService.UpdateResource(c.Request.Context(), uint(clusterID), kind, namespace, name, req.Manifest)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// DeleteResource 删除 K8s 资源
+// DELETE /api/v1/clusters/:id/resources/:kind/:name
+func (h *K8sHandler) DeleteResource(c *gin.Context) {
+	clusterID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid cluster id"})
+		return
+	}
+
+	kind := c.Param("kind")
+	name := c.Param("name")
+	namespace := c.Query("namespace")
+
+	if err := h.k8sService.DeleteResource(c.Request.Context(), uint(clusterID), kind, namespace, name); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "删除成功",
 	})
 }

@@ -16,6 +16,7 @@ export interface Cluster {
   server?: string
   cluster_label_name?: string
   cluster_label_value?: string
+  permission_scope?: 'read-only' | 'read-write' | 'admin' | 'unknown'
   metadata?: ClusterMetadata
 }
 

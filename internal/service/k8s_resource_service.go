@@ -21,7 +21,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/dynamic"
+	authorizationv1 "k8s.io/api/authorization/v1"
 )
 
 // K8sResourceService K8s资源服务
@@ -621,4 +624,149 @@ func pvClaim(pv *corev1.PersistentVolume) string {
 		return pv.Spec.ClaimRef.Namespace + "/" + pv.Spec.ClaimRef.Name
 	}
 	return ""
+}
+
+
+// clusterLevelKinds cluster-level 资源（不需要 namespace）
+var clusterLevelKinds = map[string]bool{
+	"nodes": true, "persistentvolumes": true, "storageclasses": true,
+	"clusterroles": true, "clusterrolebindings": true,
+	"customresourcedefinitions": true, "namespaces": true,
+}
+
+// getDynamicClient 获取指定集群的 dynamic client
+func (s *K8sResourceService) getDynamicClient(clusterID uint) (dynamic.Interface, error) {
+	cc := s.k8sManager.GetClusterClient(clusterID)
+	if cc == nil {
+		return nil, fmt.Errorf("集群缓存正在重建，请 5-10 秒后重试")
+	}
+	return dynamic.NewForConfig(cc.Config)
+}
+
+// canPerformAction 通过 SelfSubjectAccessReview 校验 kubeconfig 实际权限（兜底）
+func (s *K8sResourceService) canPerformAction(ctx context.Context, clusterID uint, verb, kind, namespace string) (bool, error) {
+	cc := s.k8sManager.GetClusterClient(clusterID)
+	if cc == nil {
+		return false, fmt.Errorf("k8s client not available")
+	}
+
+	gvk := kindToGVK(kind)
+	sar := &authorizationv1.SelfSubjectAccessReview{
+		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Verb:      verb,
+				Group:     gvk.Group,
+				Resource:  kind,
+				Namespace: namespace,
+			},
+		},
+	}
+
+	result, err := cc.Client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+	if err != nil {
+		return false, err
+	}
+	return result.Status.Allowed, nil
+}
+
+// CreateResource 创建 K8s 资源（含权限兜底校验）
+func (s *K8sResourceService) CreateResource(ctx context.Context, clusterID uint, kind, namespace string, manifest map[string]interface{}) (map[string]interface{}, error) {
+	// 兜底权限校验
+	allowed, err := s.canPerformAction(ctx, clusterID, "create", kind, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("权限校验失败: %w", err)
+	}
+	if !allowed {
+		return nil, fmt.Errorf("权限不足: 无法创建 %s", kind)
+	}
+
+	client, err := s.getDynamicClient(clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	gvk := kindToGVK(kind)
+	gvr := schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: kind,
+	}
+
+	obj := &unstructured.Unstructured{Object: manifest}
+	var result *unstructured.Unstructured
+	if clusterLevelKinds[kind] {
+		result, err = client.Resource(gvr).Create(ctx, obj, metav1.CreateOptions{})
+	} else {
+		result, err = client.Resource(gvr).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	}
+	if err != nil {
+		return nil, err
+	}
+	return result.Object, nil
+}
+
+// UpdateResource 更新 K8s 资源（含权限兜底校验）
+func (s *K8sResourceService) UpdateResource(ctx context.Context, clusterID uint, kind, namespace, name string, manifest map[string]interface{}) (map[string]interface{}, error) {
+	allowed, err := s.canPerformAction(ctx, clusterID, "update", kind, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("权限校验失败: %w", err)
+	}
+	if !allowed {
+		return nil, fmt.Errorf("权限不足: 无法更新 %s", kind)
+	}
+
+	client, err := s.getDynamicClient(clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	gvk := kindToGVK(kind)
+	gvr := schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: kind,
+	}
+
+	obj := &unstructured.Unstructured{Object: manifest}
+	obj.SetName(name)
+	var result *unstructured.Unstructured
+	if clusterLevelKinds[kind] {
+		result, err = client.Resource(gvr).Update(ctx, obj, metav1.UpdateOptions{})
+	} else {
+		result, err = client.Resource(gvr).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	}
+	if err != nil {
+		return nil, err
+	}
+	return result.Object, nil
+}
+
+// DeleteResource 删除 K8s 资源（含权限兜底校验）
+func (s *K8sResourceService) DeleteResource(ctx context.Context, clusterID uint, kind, namespace, name string) error {
+	allowed, err := s.canPerformAction(ctx, clusterID, "delete", kind, namespace)
+	if err != nil {
+		return fmt.Errorf("权限校验失败: %w", err)
+	}
+	if !allowed {
+		return fmt.Errorf("权限不足: 无法删除 %s", kind)
+	}
+
+	client, err := s.getDynamicClient(clusterID)
+	if err != nil {
+		return err
+	}
+
+	gvk := kindToGVK(kind)
+	gvr := schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: kind,
+	}
+
+	if clusterLevelKinds[kind] {
+		err = client.Resource(gvr).Delete(ctx, name, metav1.DeleteOptions{})
+	} else {
+		err = client.Resource(gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}
+	return err
 }

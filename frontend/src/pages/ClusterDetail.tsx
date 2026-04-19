@@ -135,6 +135,8 @@ export default function ClusterDetail() {
   const [yamlLoading, setYamlLoading] = useState(false)
   const [nsError, setNsError] = useState('')
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<any>(null)
   const preRef = useRef<HTMLPreElement>(null)
 
   // 权限数据
@@ -250,6 +252,26 @@ export default function ClusterDetail() {
       setItems([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 删除资源
+  const handleDeleteResource = async () => {
+    if (!deleteTarget) return
+    try {
+      const ns = namespacedResources.has(activeResource) ? deleteTarget.namespace : ''
+      const result = await k8sAPI.deleteResource(id, activeResource, deleteTarget.name, ns)
+      if (result.success) {
+        setSnackbar({ open: true, message: '删除成功', severity: 'success' })
+        loadResources(activeResource, page)
+      } else {
+        setSnackbar({ open: true, message: result.error || '删除失败', severity: 'error' })
+      }
+    } catch (err: any) {
+      setSnackbar({ open: true, message: err.response?.data?.error || '删除失败', severity: 'error' })
+    } finally {
+      setDeleteConfirmOpen(false)
+      setDeleteTarget(null)
     }
   }
 
@@ -587,6 +609,9 @@ export default function ClusterDetail() {
                         {getColumns(activeResource).map(col => (
                           <TableCell key={col.key} sx={{ fontWeight: 600 }}>{col.label}</TableCell>
                         ))}
+                        {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') && (
+                          <TableCell sx={{ fontWeight: 600 }} align="right">操作</TableCell>
+                        )}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -595,6 +620,20 @@ export default function ClusterDetail() {
                           {getColumns(activeResource).map(col => (
                             <TableCell key={col.key}>{renderCell(item, col.key)}</TableCell>
                           ))}
+                          {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') && (
+                            <TableCell align="right">
+                              <Button
+                                size="small"
+                                color="error"
+                                onClick={() => {
+                                  setDeleteTarget(item)
+                                  setDeleteConfirmOpen(true)
+                                }}
+                              >
+                                删除
+                              </Button>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                       {items.length === 0 && (
@@ -735,6 +774,22 @@ export default function ClusterDetail() {
             </Button>
           )}
           <Button onClick={() => setDetailOpen(false)} sx={{ textTransform: 'none' }}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 删除确认弹窗 */}
+      <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>确认删除</DialogTitle>
+        <DialogContent>
+          <Typography>
+            确定要删除 <strong>{deleteTarget?.name}</strong> 吗？此操作不可恢复。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)} sx={{ textTransform: 'none' }}>取消</Button>
+          <Button variant="contained" color="error" onClick={handleDeleteResource} sx={{ textTransform: 'none' }}>
+            确认删除
+          </Button>
         </DialogActions>
       </Dialog>
 
