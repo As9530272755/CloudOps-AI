@@ -31,6 +31,8 @@ import {
   Tooltip,
   Divider,
   Grid,
+  Autocomplete,
+  CircularProgress,
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -153,6 +155,17 @@ export default function Users() {
     namespace: '',
     role_id: 0,
   })
+
+  // 根据集群获取命名空间列表
+  const { data: nsListData, isLoading: nsLoading } = useQuery<{ data: string[] }>({
+    queryKey: ['cluster-namespaces', nsForm.cluster_id],
+    queryFn: async () => {
+      const res = await apiClient.get(`/clusters/${nsForm.cluster_id}/namespaces`)
+      return res.data
+    },
+    enabled: !!nsForm.cluster_id,
+  })
+  const nsOptions = nsListData?.data || []
 
   // 查询数据
   const { data: usersData, isLoading: usersLoading } = useQuery<{ data: User[] }>({
@@ -611,11 +624,28 @@ export default function Users() {
                     ))}
                   </Select>
                 </FormControl>
-                <TextField
-                  label="命名空间"
-                  value={nsForm.namespace}
-                  onChange={e => setNsForm(prev => ({ ...prev, namespace: e.target.value }))}
-                  sx={{ minWidth: 150 }}
+                <Autocomplete
+                  options={nsOptions}
+                  loading={nsLoading}
+                  disabled={!nsForm.cluster_id}
+                  value={nsForm.namespace || null}
+                  onChange={(_, value) => setNsForm(prev => ({ ...prev, namespace: value || '' }))}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label={nsForm.cluster_id ? '命名空间' : '请先选择集群'}
+                      sx={{ minWidth: 180 }}
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            {nsLoading ? <CircularProgress color="inherit" size={16} /> : null}
+                            {params.InputProps.endAdornment}
+                          </>
+                        ),
+                      }}
+                    />
+                  )}
                 />
                 <FormControl sx={{ minWidth: 150 }}>
                   <InputLabel>角色</InputLabel>

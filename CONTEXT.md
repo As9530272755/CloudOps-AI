@@ -981,3 +981,20 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 后端 `go build` ✅
 - 前端 `npm run build` ✅
 
+
+## 2026-04-19 续：NS 授权下拉框优化
+
+### 完成内容
+
+1. **NS 授权 Tab 下拉框改造** (`frontend/src/pages/Users.tsx`)
+   - **集群选择**：保持 Select 下拉，已正确加载 `/clusters` 列表
+   - **命名空间**：从 TextField 改为 `Autocomplete` 下拉选择，支持模糊搜索
+     - 选择集群后自动调用 `GET /clusters/:id/namespaces` 获取该集群 NS 列表
+     - 未选集群时禁用，提示"请先选择集群"
+     - 加载中显示 CircularProgress
+   - **角色选择**：保持 Select 下拉，过滤 `scope === 'namespace'` 的角色
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+
