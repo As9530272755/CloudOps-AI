@@ -46,6 +46,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { USER_PERMISSIONS_KEY, USER_MENUS_KEY } from '../hooks/usePermission'
 
 // ============ 类型定义 ============
 
@@ -248,6 +249,8 @@ export default function Users() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: USER_PERMISSIONS_KEY })
+      queryClient.invalidateQueries({ queryKey: USER_MENUS_KEY })
       closeDialog()
       setNsForm({ cluster_id: 0, namespace: '', role_id: 0 })
       setSnack({ open: true, message: '用户创建成功', severity: 'success' })
@@ -262,6 +265,8 @@ export default function Users() {
     mutationFn: ({ id, data }: { id: number; data: any }) => apiClient.put(`/users/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: USER_PERMISSIONS_KEY })
+      queryClient.invalidateQueries({ queryKey: USER_MENUS_KEY })
       closeDialog()
       setSnack({ open: true, message: '用户更新成功', severity: 'success' })
     },
@@ -275,6 +280,8 @@ export default function Users() {
     mutationFn: (id: number) => apiClient.delete(`/users/${id}`),
     onSuccess: async () => {
       await queryClient.refetchQueries({ queryKey: ['users'], type: 'active' })
+      queryClient.invalidateQueries({ queryKey: USER_PERMISSIONS_KEY })
+      queryClient.invalidateQueries({ queryKey: USER_MENUS_KEY })
       setSnack({ open: true, message: '用户删除成功', severity: 'success' })
     },
     onError: (err: any) => {
@@ -302,6 +309,8 @@ export default function Users() {
       apiClient.patch(`/users/${id}/status`, { is_active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: USER_PERMISSIONS_KEY })
+      queryClient.invalidateQueries({ queryKey: USER_MENUS_KEY })
       setSnack({ open: true, message: '状态更新成功', severity: 'success' })
     },
     onError: (err: any) => {
@@ -314,6 +323,8 @@ export default function Users() {
     mutationFn: (data: any) => apiClient.post('/namespace-grants', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-detail', editingUser?.id] })
+      queryClient.invalidateQueries({ queryKey: USER_PERMISSIONS_KEY })
+      queryClient.invalidateQueries({ queryKey: USER_MENUS_KEY })
       setNsForm({ cluster_id: 0, namespace: '', role_id: 0 })
       setSnack({ open: true, message: '授权成功', severity: 'success' })
     },
@@ -326,6 +337,8 @@ export default function Users() {
     mutationFn: (grantId: number) => apiClient.delete(`/namespace-grants/${grantId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-detail', editingUser?.id] })
+      queryClient.invalidateQueries({ queryKey: USER_PERMISSIONS_KEY })
+      queryClient.invalidateQueries({ queryKey: USER_MENUS_KEY })
       setSnack({ open: true, message: '撤销授权成功', severity: 'success' })
     },
   })

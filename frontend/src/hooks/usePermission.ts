@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 
+// QueryKey 常量，供外部刷新权限缓存时使用
+export const USER_MENUS_KEY = ['user-menus'] as const
+export const USER_PERMISSIONS_KEY = ['user-permissions'] as const
+
 export interface MenuItem {
   path: string
   label: string
@@ -19,7 +23,7 @@ export function usePermission() {
       const res = await apiClient.get('/users/me/menus')
       return res.data
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   })
 
   const { data: permData, isLoading: permsLoading } = useQuery<{ data: { permissions: string[]; modules: string[]; ai: string[] } }>({
@@ -28,7 +32,7 @@ export function usePermission() {
       const res = await apiClient.get('/users/me/permissions')
       return res.data
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   })
 
   const menus = menuData?.data || []
