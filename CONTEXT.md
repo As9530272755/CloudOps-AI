@@ -1136,3 +1136,22 @@ Go 后端 (`cloudops-backend`) 启动时会 `exec.CommandContext` fork 一个 **
 
 **以后所有后端重启都必须使用此脚本，禁止直接用 `pkill + nohup`。**
 
+
+## 2026-04-19 续：禁用 Agent Runtime
+
+### 背景
+Agent Runtime（Node.js 子进程，监听 19000）功能暂未使用，但导致后端重启时端口冲突。
+
+### 改动
+- `cmd/server/main.go`：注释掉启动 Agent Runtime 的代码
+- 移除了未使用的 `context`、`os/exec`、`path/filepath` import
+
+### 影响
+- 后端启动时不再 fork Node.js 子进程
+- `/ai/agent/chat/stream` 接口暂时不可用（功能未启用，无影响）
+- 重启后端不再需要清理残留的 agent-runtime 进程
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+

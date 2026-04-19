@@ -1,12 +1,9 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -143,7 +140,9 @@ func main() {
 	agentService := service.NewAgentService(aiPlatformService, aiChatSessionService, logService, k8sService, db)
 	log.Println("✅ Agent 服务初始化完成")
 
-	// 启动 Node.js Agent Runtime
+	// Agent Runtime 已禁用（功能暂未使用，避免 19000 端口冲突）
+	// 如需启用，取消下面代码的注释：
+	/*
 	execPath, _ := os.Executable()
 	execDir := filepath.Dir(execPath)
 	agentRuntime := exec.CommandContext(context.Background(), "node", "agent-runtime/dist/server.js", "--port", "19000")
@@ -154,9 +153,9 @@ func main() {
 		log.Printf("⚠️ Agent Runtime 启动失败: %v", err)
 	} else {
 		log.Println("✅ Agent Runtime (Node.js) 启动在 http://127.0.0.1:19000")
-		// 简单等待服务就绪
 		time.Sleep(1 * time.Second)
 	}
+	*/
 
 	// 创建 Agent Runtime 代理
 	agentRuntimeProxy := service.NewAgentRuntimeProxy(aiPlatformService)
