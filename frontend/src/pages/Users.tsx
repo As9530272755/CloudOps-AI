@@ -507,7 +507,7 @@ export default function Users() {
                 fullWidth
               />
               <TextField
-                label="邮箱"
+                label="邮箱（选填）"
                 value={form.email}
                 onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
                 fullWidth

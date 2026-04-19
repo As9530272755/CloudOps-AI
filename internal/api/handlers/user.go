@@ -2,14 +2,17 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/database"
 	"github.com/cloudops/platform/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"gorm.io/gorm"
 )
 
@@ -84,7 +87,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 // CreateUserRequest 创建用户请求
 type CreateUserRequest struct {
 	Username        string   `json:"username" binding:"required"`
-	Email           string   `json:"email" binding:"required,email"`
+	Email           string   `json:"email" binding:"omitempty,email"`
 	Password        string   `json:"password" binding:"required,min=6"`
 	TenantID        uint     `json:"tenant_id"`
 	RoleIDs         []uint   `json:"role_ids"`
@@ -97,7 +100,7 @@ type CreateUserRequest struct {
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": translateValidationError(err)})
 		return
 	}
 
@@ -144,7 +147,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 
 // UpdateUserRequest 更新用户请求
 type UpdateUserRequest struct {
-	Email           string   `json:"email"`
+	Email           string   `json:"email" binding:"omitempty,email"`
 	Password        string   `json:"password"`
 	RoleIDs         []uint   `json:"role_ids"`
 	IsActive        *bool    `json:"is_active"`
@@ -169,7 +172,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": translateValidationError(err)})
 		return
 	}
 
@@ -434,4 +437,43 @@ func (h *UserHandler) GetMyNamespaces(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": allowed})
+}
+
+// translateValidationError 将 gin 验证错误翻译为中文
+func translateValidationError(err error) string {
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		var msgs []string
+		for _, fe := range ve {
+			field := fe.Field()
+			tag := fe.Tag()
+			switch tag {
+			case "required":
+				msgs = append(msgs, fmt.Sprintf("%s 不能为空", fieldToChinese(field)))
+			case "email":
+				msgs = append(msgs, fmt.Sprintf("%s 格式不正确", fieldToChinese(field)))
+			case "min":
+				msgs = append(msgs, fmt.Sprintf("%s 长度不能少于 %s 个字符", fieldToChinese(field), fe.Param()))
+			default:
+				msgs = append(msgs, fmt.Sprintf("%s 验证失败: %s", fieldToChinese(field), tag))
+			}
+		}
+		return strings.Join(msgs, "；")
+	}
+	return err.Error()
+}
+
+func fieldToChinese(field string) string {
+	m := map[string]string{
+		"Username":  "用户名",
+		"Email":     "邮箱",
+		"Password":  "密码",
+		"UserID":    "用户ID",
+		"ClusterID": "集群ID",
+		"Namespace": "命名空间",
+		"RoleID":    "角色ID",
+	}
+	if v, ok := m[field]; ok {
+		return v
+	}
+	return field
 }
