@@ -267,6 +267,8 @@ export default function ClusterDetail() {
       if (result.success) {
         setSnackbar({ open: true, message: '删除成功', severity: 'success' })
         loadResources(activeResource, page)
+        // 延迟 2 秒再刷新一次，等待后端缓存同步完成
+        setTimeout(() => loadResources(activeResource, page), 2000)
       } else {
         setSnackbar({ open: true, message: result.error || '删除失败', severity: 'error' })
       }
@@ -289,6 +291,8 @@ export default function ClusterDetail() {
           setEditorOpen(false)
           setEditorYaml('')
           loadResources(activeResource, page)
+          // 延迟 2 秒再刷新一次，等待后端缓存同步完成
+          setTimeout(() => loadResources(activeResource, page), 2000)
         } else {
           setSnackbar({ open: true, message: result.error || '创建失败', severity: 'error' })
         }
@@ -300,6 +304,8 @@ export default function ClusterDetail() {
           setEditorOpen(false)
           setEditorYaml('')
           loadResources(activeResource, page)
+          // 延迟 2 秒再刷新一次，等待后端缓存同步完成
+          setTimeout(() => loadResources(activeResource, page), 2000)
         } else {
           setSnackbar({ open: true, message: result.error || '更新失败', severity: 'error' })
         }
@@ -426,6 +432,15 @@ export default function ClusterDetail() {
     }, 300)
     return () => clearTimeout(timer)
   }, [keyword])
+
+  // 自动轮询刷新（每 5 秒），解决 informer 缓存延迟导致的数据不同步问题
+  useEffect(() => {
+    if (activeCategory === 'overview' || !activeResource || loading) return
+    const interval = setInterval(() => {
+      loadResources(activeResource, page, keyword)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [activeCategory, activeResource, page, keyword, loading])
 
   const category = filteredCategories.find(c => c.key === activeCategory)
 
