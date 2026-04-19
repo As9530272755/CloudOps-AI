@@ -87,7 +87,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 // CreateUserRequest 创建用户请求
 type CreateUserRequest struct {
 	Username        string   `json:"username" binding:"required"`
-	Email           string   `json:"email" binding:"omitempty,email"`
+	Email           string   `json:"email" binding:"required,email"`
 	Password        string   `json:"password" binding:"required,min=6"`
 	TenantID        uint     `json:"tenant_id"`
 	RoleIDs         []uint   `json:"role_ids"`
@@ -245,7 +245,10 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	h.db.Delete(&user)
+	// 物理删除用户（包括关联数据）
+	h.db.Unscoped().Where("user_id = ?", user.ID).Delete(&model.NamespaceGrant{})
+	h.db.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserModuleOverride{})
+	h.db.Unscoped().Delete(&user)
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 

@@ -499,24 +499,27 @@ export default function Users() {
           {activeTab === 0 && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
               <TextField
-                label="用户名"
+                label="用户名 *"
                 value={form.username}
                 onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))}
                 disabled={!!editingUser}
                 fullWidth
+                required
               />
               <TextField
-                label="邮箱（选填）"
+                label="邮箱 *"
                 value={form.email}
                 onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
                 fullWidth
+                required
               />
               <TextField
-                label={editingUser ? '密码 (留空则不修改)' : '密码'}
+                label={editingUser ? '密码 (留空则不修改)' : '密码 *'}
                 type="password"
                 value={form.password}
                 onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
                 fullWidth
+                required={!editingUser}
               />
               <FormControl fullWidth>
                 <InputLabel>角色</InputLabel>
