@@ -37,6 +37,7 @@ import {
   Menu as MenuIcon,
   MenuOpen as MenuOpenIcon,
   DeviceHub as NetworkTraceIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material'
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
@@ -262,6 +263,19 @@ export default function MainLayout() {
               {user?.is_superuser ? '系统管理员' : '用户'}
             </Typography>
           </Box>
+          <Tooltip title="退出登录">
+            <IconButton
+              size="small"
+              onClick={() => {
+                localStorage.removeItem('access_token')
+                localStorage.removeItem('refresh_token')
+                window.location.href = '/login'
+              }}
+              sx={{ color: 'text.secondary' }}
+            >
+              <LogoutIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
     </Box>

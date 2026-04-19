@@ -446,14 +446,13 @@ export default function Users() {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                      {user.roles?.map(role => (
+                      {user.roles?.[0] ? (
                         <Chip
-                          key={role.id}
                           size="small"
-                          label={role.display_name}
-                          color={role.scope === 'platform' ? 'error' : role.scope === 'cluster' ? 'warning' : 'default'}
+                          label={user.roles[0].display_name}
+                          color={user.roles[0].scope === 'platform' ? 'error' : user.roles[0].scope === 'cluster' ? 'warning' : 'default'}
                         />
-                      )) || '-'}
+                      ) : '-'}
                     </Box>
                   </TableCell>
                   <TableCell>
@@ -522,21 +521,17 @@ export default function Users() {
               <FormControl fullWidth>
                 <InputLabel>角色</InputLabel>
                 <Select
-                  multiple
-                  value={form.role_ids}
-                  onChange={e => setForm(prev => ({ ...prev, role_ids: e.target.value as number[] }))}
-                  renderValue={selected => (
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                      {(selected as number[]).map(id => {
-                        const role = roles.find(r => r.id === id)
-                        return <Chip key={id} size="small" label={role?.display_name || id} />
-                      })}
-                    </Box>
-                  )}
+                  value={form.role_ids[0] || ''}
+                  onChange={e => setForm(prev => ({ ...prev, role_ids: e.target.value ? [e.target.value as number] : [] }))}
                 >
                   {roles.map(role => (
                     <MenuItem key={role.id} value={role.id}>
-                      {role.display_name} ({role.scope} / level {role.level})
+                      <Box>
+                        <Typography variant="body2">{role.display_name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {role.scope === 'platform' ? '平台级' : role.scope === 'cluster' ? '集群级' : '命名空间级'} · 权限等级 {role.level}
+                        </Typography>
+                      </Box>
                     </MenuItem>
                   ))}
                 </Select>
