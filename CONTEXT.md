@@ -1050,3 +1050,16 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 ### 编译状态
 - 后端 `go build` ✅
 
+
+## 2026-04-19 续：创建用户时支持NS授权
+
+### 完成内容
+- `frontend/src/pages/Users.tsx`
+  - 添加用户弹窗也显示「命名空间授权」Tab
+  - 创建用户时，如果填写了 NS 授权配置，创建用户成功后自动调用 `/namespace-grants` 授权
+  - 编辑用户的 NS 授权行为保持不变
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+

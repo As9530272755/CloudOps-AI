@@ -231,12 +231,25 @@ export default function Users() {
   const clusters = clustersData?.data || []
   const detail = userDetail?.data
 
-  // 创建用户
+  // 创建用户（含NS授权）
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiClient.post('/users', data),
+    mutationFn: async (data: { userData: any; nsData: typeof nsForm }) => {
+      const userRes = await apiClient.post('/users', data.userData)
+      const userId = userRes.data?.data?.id
+      if (userId && data.nsData.cluster_id && data.nsData.namespace && data.nsData.role_id) {
+        await apiClient.post('/namespace-grants', {
+          user_id: userId,
+          cluster_id: data.nsData.cluster_id,
+          namespace: data.nsData.namespace,
+          role_id: data.nsData.role_id,
+        })
+      }
+      return userRes
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       closeDialog()
+      setNsForm({ cluster_id: 0, namespace: '', role_id: 0 })
       setSnack({ open: true, message: '用户创建成功', severity: 'success' })
     },
     onError: (err: any) => {
@@ -383,7 +396,7 @@ export default function Users() {
         setSnack({ open: true, message: '密码不能为空', severity: 'error' })
         return
       }
-      createMutation.mutate({ ...data, password: form.password })
+      createMutation.mutate({ userData: { ...data, password: form.password }, nsData: nsForm })
     } else {
       const updateData: any = { ...data }
       if (form.password) updateData.password = form.password
@@ -647,7 +660,7 @@ export default function Users() {
           <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ mb: 2 }}>
             <Tab label="基本信息" />
             <Tab label="功能模块权限" />
-            {editingUser && <Tab label="命名空间授权" />}
+            <Tab label="命名空间授权" />
           </Tabs>
 
           {activeTab === 0 && (
@@ -760,7 +773,7 @@ export default function Users() {
             </Box>
           )}
 
-          {activeTab === 2 && editingUser && (
+          {activeTab === 2 && (
             <Box sx={{ pt: 1 }}>
               <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
                 添加命名空间授权
