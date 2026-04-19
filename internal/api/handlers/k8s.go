@@ -256,7 +256,20 @@ func (h *K8sHandler) GetClusterStats(c *gin.Context) {
 		return
 	}
 
-	stats, err := h.k8sService.GetClusterStats(c.Request.Context(), uint(clusterID))
+	// 根据用户权限范围获取统计
+	userID := c.GetUint("user_id")
+	allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
+
+	var allowedNS []string
+	if len(allowed) > 0 && allowed[0].Namespace != "*" {
+		for _, a := range allowed {
+			allowedNS = append(allowedNS, a.Namespace)
+		}
+	} else {
+		allowedNS = []string{"*"}
+	}
+
+	stats, err := h.k8sService.GetClusterStats(c.Request.Context(), uint(clusterID), allowedNS)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return

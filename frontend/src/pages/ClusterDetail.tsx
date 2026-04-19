@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box,
@@ -53,6 +53,7 @@ import Editor from '@monaco-editor/react'
 
 import { k8sAPI, resourceCategories, resourceLabels, ClusterStats } from '../lib/k8s-api'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
+import { usePermission } from '../hooks/usePermission'
 
 const iconMap: Record<string, any> = {
   Dashboard: DashboardIcon,
@@ -65,6 +66,27 @@ const iconMap: Record<string, any> = {
   Folder: FolderIcon,
   EventNote: EventIcon,
   Extension: ExtensionIcon,
+}
+
+// 复数资源名 -> 单数权限标识
+const singularMap: Record<string, string> = {
+  pods: 'pod', deployments: 'deployment', services: 'service',
+  configmaps: 'configmap', secrets: 'secret', events: 'event',
+  nodes: 'node', namespaces: 'namespace', statefulsets: 'statefulset',
+  daemonsets: 'daemonset', replicasets: 'replicaset', jobs: 'job',
+  cronjobs: 'cronjob', ingresses: 'ingress', endpoints: 'endpoint',
+  persistentvolumes: 'persistentvolume', persistentvolumeclaims: 'persistentvolumeclaim',
+  storageclasses: 'storageclass', serviceaccounts: 'serviceaccount',
+  roles: 'role', rolebindings: 'rolebinding',
+  clusterroles: 'clusterrole', clusterrolebindings: 'clusterrolebinding',
+  customresourcedefinitions: 'customresourcedefinition',
+}
+
+function hasResourcePermission(resource: string, permissions: string[]): boolean {
+  if (permissions.length === 0) return true // 权限未加载，默认显示
+  if (permissions.includes('*:*')) return true
+  const s = singularMap[resource] || resource
+  return permissions.includes(`${s}:*`) || permissions.includes(`${s}:read`)
 }
 
 // 需要命名空间过滤的资源
@@ -113,6 +135,39 @@ export default function ClusterDetail() {
   const [nsError, setNsError] = useState('')
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' })
   const preRef = useRef<HTMLPreElement>(null)
+
+  // 权限数据
+  const { permissions } = usePermission()
+
+  // 根据权限过滤资源类别
+  const filteredCategories = useMemo(() => {
+    return resourceCategories.filter(cat => {
+      if (cat.key === 'overview') return true
+      if (cat.resources.length === 0) return true
+      return cat.resources.some(r => hasResourcePermission(r, permissions))
+    })
+  }, [permissions])
+
+  // 根据权限过滤概览统计
+  const filteredStats = useMemo(() => {
+    if (!stats) return null
+    const result: Record<string, number> = {}
+    for (const [key, value] of Object.entries(stats)) {
+      if (hasResourcePermission(key, permissions)) {
+        result[key] = value
+      }
+    }
+    return result
+  }, [stats, permissions])
+
+  // 如果当前激活的类别被过滤掉了，自动切换到概览
+  useEffect(() => {
+    const validKeys = new Set(filteredCategories.map(c => c.key))
+    if (!validKeys.has(activeCategory)) {
+      setActiveCategory('overview')
+      setActiveResource('')
+    }
+  }, [filteredCategories, activeCategory])
 
   // 加载集群基本信息
   const loadCluster = async () => {
@@ -259,15 +314,18 @@ export default function ClusterDetail() {
       loadStats()
       return
     }
-    const category = resourceCategories.find(c => c.key === activeCategory)
+    const category = filteredCategories.find(c => c.key === activeCategory)
     if (category && category.resources.length > 0) {
-      const targetResource = category.resources.includes(activeResource) ? activeResource : category.resources[0]
+      const visibleResources = category.resources.filter(r => hasResourcePermission(r, permissions))
+      const targetResource = visibleResources.includes(activeResource) ? activeResource : (visibleResources[0] || '')
       setActiveResource(targetResource)
       setPage(1)
       setKeyword('')
-      loadResources(targetResource, 1, '')
+      if (targetResource) {
+        loadResources(targetResource, 1, '')
+      }
     }
-  }, [activeCategory, selectedNamespace, limit])
+  }, [activeCategory, selectedNamespace, limit, filteredCategories, permissions])
 
   // 资源列表加载后，自动打开指定资源的详情弹窗
   useEffect(() => {
@@ -297,7 +355,7 @@ export default function ClusterDetail() {
     return () => clearTimeout(timer)
   }, [keyword])
 
-  const category = resourceCategories.find(c => c.key === activeCategory)
+  const category = filteredCategories.find(c => c.key === activeCategory)
 
   // 获取表格列
   const getColumns = (kind: string) => {
@@ -416,7 +474,7 @@ export default function ClusterDetail() {
           onChange={(_, v) => setActiveCategory(v)}
           sx={{ borderRight: 1, borderColor: 'divider', minWidth: 180, bgcolor: 'rgba(0,0,0,0.02)' }}
         >
-          {resourceCategories.map(cat => {
+          {filteredCategories.map(cat => {
             const Icon = iconMap[cat.icon]
             return <Tab key={cat.key} value={cat.key} label={cat.label} icon={Icon ? <Icon /> : undefined} iconPosition="start" sx={{ justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none' }} />
           })}
@@ -427,7 +485,7 @@ export default function ClusterDetail() {
             <Box>
               <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>集群概览</Typography>
               <Grid container spacing={3}>
-                {stats && Object.entries(stats).map(([key, value]) => (
+                {filteredStats && Object.entries(filteredStats).map(([key, value]) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={key}>
                     <Card sx={{ textAlign: 'center', p: 2 }}>
                       <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>{value}</Typography>
@@ -435,7 +493,7 @@ export default function ClusterDetail() {
                     </Card>
                   </Grid>
                 ))}
-                {!stats && <Typography color="text.secondary">暂无统计数据</Typography>}
+                {!filteredStats && <Typography color="text.secondary">暂无统计数据</Typography>}
               </Grid>
             </Box>
           )}
@@ -445,7 +503,7 @@ export default function ClusterDetail() {
               {/* 子资源 Tabs */}
               {category.resources.length > 1 && (
                 <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
-                  {category.resources.map(r => (
+                  {category.resources.filter(r => hasResourcePermission(r, permissions)).map(r => (
                     <Tab key={r} value={r} label={resourceLabels[r] || r} sx={{ textTransform: 'none' }} />
                   ))}
                 </Tabs>

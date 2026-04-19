@@ -237,21 +237,43 @@ func extractResourceAction(c *gin.Context) (resource, action string) {
 		// 其他资源路径模式
 		if part == "pods" || part == "deployments" || part == "services" ||
 			part == "configmaps" || part == "secrets" || part == "events" ||
-			part == "nodes" || part == "namespaces" {
+			part == "nodes" || part == "namespaces" || part == "clusterroles" ||
+			part == "roles" || part == "clusterrolebindings" || part == "rolebindings" ||
+			part == "persistentvolumes" || part == "persistentvolumeclaims" ||
+			part == "storageclasses" || part == "statefulsets" || part == "daemonsets" ||
+			part == "replicasets" || part == "jobs" || part == "cronjobs" ||
+			part == "ingresses" || part == "endpoints" || part == "serviceaccounts" ||
+			part == "customresourcedefinitions" {
 			resource = part
 		}
 	}
 
 	// URL 资源名（复数）→ 权限标识（单数）
 	resourceMap := map[string]string{
-		"pods":         "pod",
-		"deployments":  "deployment",
-		"services":     "service",
-		"configmaps":   "configmap",
-		"secrets":      "secret",
-		"events":       "event",
-		"nodes":        "node",
-		"namespaces":   "namespace",
+		"pods":                      "pod",
+		"deployments":               "deployment",
+		"services":                  "service",
+		"configmaps":                "configmap",
+		"secrets":                   "secret",
+		"events":                    "event",
+		"nodes":                     "node",
+		"namespaces":                "namespace",
+		"clusterroles":              "clusterrole",
+		"roles":                     "role",
+		"clusterrolebindings":       "clusterrolebinding",
+		"rolebindings":              "rolebinding",
+		"persistentvolumes":         "persistentvolume",
+		"persistentvolumeclaims":    "persistentvolumeclaim",
+		"storageclasses":            "storageclass",
+		"statefulsets":              "statefulset",
+		"daemonsets":                "daemonset",
+		"replicasets":               "replicaset",
+		"jobs":                      "job",
+		"cronjobs":                  "cronjob",
+		"ingresses":                 "ingress",
+		"endpoints":                 "endpoint",
+		"serviceaccounts":           "serviceaccount",
+		"customresourcedefinitions": "customresourcedefinition",
 	}
 	if mapped, ok := resourceMap[resource]; ok {
 		resource = mapped

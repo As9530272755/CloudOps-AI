@@ -20,6 +20,8 @@ import (
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // K8sResourceService K8s资源服务
@@ -222,8 +224,21 @@ func (s *K8sResourceService) RefreshCluster(ctx context.Context, clusterID uint)
 	return nil
 }
 
-// GetClusterStats 获取集群统计
-func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint) (map[string]interface{}, error) {
+// countStoreByNamespaces 按授权命名空间统计 store 中的对象数量
+func countStoreByNamespaces(store cache.Store, allowedNS map[string]bool) int {
+	count := 0
+	for _, obj := range store.List() {
+		if accessor, ok := obj.(metav1.Object); ok {
+			if allowedNS[accessor.GetNamespace()] {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// GetClusterStats 获取集群统计（支持 namespace 级权限过滤）
+func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint, allowedNamespaces []string) (map[string]interface{}, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil {
 		go s.k8sManager.StartCluster(context.Background(), clusterID)
@@ -237,22 +252,46 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 		return nil, fmt.Errorf("集群缓存正在同步，请稍后重试")
 	}
 
+	// 平台/集群级用户：返回全部统计
+	if len(allowedNamespaces) == 0 || allowedNamespaces[0] == "*" {
+		return map[string]interface{}{
+			"nodes":                     len(cc.NodeStore.List()),
+			"namespaces":                len(cc.NamespaceStore.List()),
+			"pods":                      len(cc.PodStore.List()),
+			"deployments":               len(cc.DeploymentStore.List()),
+			"statefulsets":              len(cc.StatefulSetStore.List()),
+			"daemonsets":                len(cc.DaemonSetStore.List()),
+			"services":                  len(cc.ServiceStore.List()),
+			"ingresses":                 len(cc.IngressStore.List()),
+			"jobs":                      len(cc.JobStore.List()),
+			"cronjobs":                  len(cc.CronJobStore.List()),
+			"persistentvolumes":         len(cc.PersistentVolumeStore.List()),
+			"configmaps":                len(cc.ConfigMapStore.List()),
+			"secrets":                   len(cc.SecretStore.List()),
+			"events":                    len(cc.EventStore.List()),
+			"customresourcedefinitions": len(cc.CRDStore.List()),
+		}, nil
+	}
+
+	// namespace 级用户：只统计授权命名空间中的资源
+	allowedSet := make(map[string]bool)
+	for _, ns := range allowedNamespaces {
+		allowedSet[ns] = true
+	}
+
 	return map[string]interface{}{
-		"nodes":            len(cc.NodeStore.List()),
-		"namespaces":       len(cc.NamespaceStore.List()),
-		"pods":             len(cc.PodStore.List()),
-		"deployments":      len(cc.DeploymentStore.List()),
-		"statefulsets":     len(cc.StatefulSetStore.List()),
-		"daemonsets":       len(cc.DaemonSetStore.List()),
-		"services":         len(cc.ServiceStore.List()),
-		"ingresses":        len(cc.IngressStore.List()),
-		"jobs":             len(cc.JobStore.List()),
-		"cronjobs":         len(cc.CronJobStore.List()),
-		"persistentvolumes": len(cc.PersistentVolumeStore.List()),
-		"configmaps":       len(cc.ConfigMapStore.List()),
-		"secrets":          len(cc.SecretStore.List()),
-		"events":           len(cc.EventStore.List()),
-		"customresourcedefinitions": len(cc.CRDStore.List()),
+		"namespaces":       len(allowedNamespaces),
+		"pods":             countStoreByNamespaces(cc.PodStore, allowedSet),
+		"deployments":      countStoreByNamespaces(cc.DeploymentStore, allowedSet),
+		"statefulsets":     countStoreByNamespaces(cc.StatefulSetStore, allowedSet),
+		"daemonsets":       countStoreByNamespaces(cc.DaemonSetStore, allowedSet),
+		"services":         countStoreByNamespaces(cc.ServiceStore, allowedSet),
+		"ingresses":        countStoreByNamespaces(cc.IngressStore, allowedSet),
+		"jobs":             countStoreByNamespaces(cc.JobStore, allowedSet),
+		"cronjobs":         countStoreByNamespaces(cc.CronJobStore, allowedSet),
+		"configmaps":       countStoreByNamespaces(cc.ConfigMapStore, allowedSet),
+		"secrets":          countStoreByNamespaces(cc.SecretStore, allowedSet),
+		"events":           countStoreByNamespaces(cc.EventStore, allowedSet),
 	}, nil
 }
 

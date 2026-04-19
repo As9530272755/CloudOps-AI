@@ -269,7 +269,7 @@ func (s *AgentService) execTool(ctx context.Context, tc ai.ToolCall) (string, er
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
 			return "", fmt.Errorf("参数解析失败: %w", err)
 		}
-		stats, err := s.k8sSvc.GetClusterStats(ctx, a.ClusterID)
+		stats, err := s.k8sSvc.GetClusterStats(ctx, a.ClusterID, []string{"*"})
 		if err != nil {
 			return "", err
 		}
