@@ -48,6 +48,7 @@ import {
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest, UpdateClusterRequest, TestAndProbeResult } from '../lib/cluster-api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
+import { usePermission } from '../hooks/usePermission'
 
 // 状态颜色映射
 const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -99,6 +100,8 @@ const SearchListbox = React.forwardRef<HTMLUListElement, React.HTMLAttributes<HT
 
 export default function Clusters() {
   const navigate = useNavigate()
+  const { permissions, modules } = usePermission()
+  const isPlatformAdmin = permissions.includes('*:*') || modules.includes('*:*')
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [loading, setLoading] = useState(false)
   const [openDialog, setOpenDialog] = useState(false)
@@ -376,9 +379,11 @@ export default function Clusters() {
             >
               刷新
             </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-              添加集群
-            </Button>
+            {isPlatformAdmin && (
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+                添加集群
+              </Button>
+            )}
           </Box>
         </CardContent>
         </Card>
@@ -570,7 +575,7 @@ export default function Clusters() {
                 暂无集群
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                点击右上角"添加集群"按钮添加您的第一个 Kubernetes 集群
+                {isPlatformAdmin ? '点击右上角"添加集群"按钮添加您的第一个 Kubernetes 集群' : '请联系管理员添加集群'}
               </Typography>
             </Box>
           ) : filteredClusters.length === 0 ? (
