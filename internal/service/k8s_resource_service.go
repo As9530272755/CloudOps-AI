@@ -748,6 +748,8 @@ func (s *K8sResourceService) CreateResource(ctx context.Context, clusterID uint,
 	if err != nil {
 		return nil, err
 	}
+	// 主动同步缓存，确保前端立即看到最新状态
+	go s.syncStoreAfterWrite(context.Background(), clusterID, kind, namespace)
 	return result.Object, nil
 }
 
@@ -784,6 +786,8 @@ func (s *K8sResourceService) UpdateResource(ctx context.Context, clusterID uint,
 	if err != nil {
 		return nil, err
 	}
+	// 主动同步缓存，确保前端立即看到最新状态
+	go s.syncStoreAfterWrite(context.Background(), clusterID, kind, namespace)
 	return result.Object, nil
 }
 
@@ -814,5 +818,148 @@ func (s *K8sResourceService) DeleteResource(ctx context.Context, clusterID uint,
 	} else {
 		err = client.Resource(gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// 主动同步缓存，确保前端立即看到最新状态
+	go s.syncStoreAfterWrite(context.Background(), clusterID, kind, namespace)
+	return nil
+}
+
+
+// syncStoreAfterWrite 写操作后主动从 API Server 重新 list 资源并替换 informer store，
+// 解决 informer watch 延迟导致前端数据不实时的问题。
+func (s *K8sResourceService) syncStoreAfterWrite(ctx context.Context, clusterID uint, kind, namespace string) {
+	cc := s.k8sManager.GetClusterClient(clusterID)
+	if cc == nil {
+		return
+	}
+
+	store := getStoreByKind(cc, kind)
+	if store == nil {
+		return
+	}
+
+	client, err := s.getDynamicClient(clusterID)
+	if err != nil {
+		return
+	}
+
+	gvk := kindToGVK(kind)
+	gvr := schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: kind,
+	}
+
+	var list *unstructured.UnstructuredList
+	if clusterLevelKinds[kind] {
+		list, err = client.Resource(gvr).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = client.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return
+	}
+
+	// 将 unstructured list 转换为 typed objects，以便与 informer store 兼容
+	typedObjects := make([]interface{}, 0, len(list.Items))
+	for i := range list.Items {
+		typedObj, convErr := convertUnstructuredToTyped(&list.Items[i])
+		if convErr != nil {
+			// 转换失败时回退：直接使用 unstructured（可能后续读取时类型断言失败，
+			// 但比完全丢失数据好）
+			typedObjects = append(typedObjects, &list.Items[i])
+			continue
+		}
+		typedObjects = append(typedObjects, typedObj)
+	}
+
+	_ = store.Replace(typedObjects, list.GetResourceVersion())
+}
+
+// getStoreByKind 根据资源类型获取对应的 informer store
+func getStoreByKind(cc *ClusterClient, kind string) cache.Store {
+	switch kind {
+	case "nodes":
+		return cc.NodeStore
+	case "namespaces":
+		return cc.NamespaceStore
+	case "pods":
+		return cc.PodStore
+	case "deployments":
+		return cc.DeploymentStore
+	case "statefulsets":
+		return cc.StatefulSetStore
+	case "daemonsets":
+		return cc.DaemonSetStore
+	case "replicasets":
+		return cc.ReplicaSetStore
+	case "jobs":
+		return cc.JobStore
+	case "cronjobs":
+		return cc.CronJobStore
+	case "services":
+		return cc.ServiceStore
+	case "ingresses":
+		return cc.IngressStore
+	case "endpoints":
+		return cc.EndpointStore
+	case "persistentvolumes":
+		return cc.PersistentVolumeStore
+	case "persistentvolumeclaims":
+		return cc.PersistentVolumeClaimStore
+	case "storageclasses":
+		return cc.StorageClassStore
+	case "configmaps":
+		return cc.ConfigMapStore
+	case "secrets":
+		return cc.SecretStore
+	case "serviceaccounts":
+		return cc.ServiceAccountStore
+	case "roles":
+		return cc.RoleStore
+	case "rolebindings":
+		return cc.RoleBindingStore
+	case "clusterroles":
+		return cc.ClusterRoleStore
+	case "clusterrolebindings":
+		return cc.ClusterRoleBindingStore
+	case "events":
+		return cc.EventStore
+	case "customresourcedefinitions":
+		return cc.CRDStore
+	default:
+		return nil
+	}
+}
+
+// convertUnstructuredToTyped 将 unstructured.Unstructured 转换为 scheme 中注册的 typed object
+func convertUnstructuredToTyped(obj *unstructured.Unstructured) (interface{}, error) {
+	gvk := obj.GroupVersionKind()
+	if gvk.Empty() {
+		// 如果 unstructured 没有 GVK，尝试从 Object 的 apiVersion/kind 字段推断
+		apiVersion, _, _ := unstructured.NestedString(obj.Object, "apiVersion")
+		kind, _, _ := unstructured.NestedString(obj.Object, "kind")
+		if apiVersion != "" && kind != "" {
+			gv, err := schema.ParseGroupVersion(apiVersion)
+			if err == nil {
+				gvk = gv.WithKind(kind)
+			}
+		}
+	}
+	if gvk.Empty() {
+		return nil, fmt.Errorf("无法解析 GVK")
+	}
+
+	typedObj, err := scheme.Scheme.New(gvk)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, typedObj); err != nil {
+		return nil, err
+	}
+
+	return typedObj, nil
 }

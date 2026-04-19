@@ -449,8 +449,8 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	}
 
 	stopCh := make(chan struct{})
-	factory := informers.NewSharedInformerFactory(client, 10*time.Minute)
-	apiextFactory := apiextensionsinformers.NewSharedInformerFactory(apiextClient, 10*time.Minute)
+	factory := informers.NewSharedInformerFactory(client, 60*time.Second)
+	apiextFactory := apiextensionsinformers.NewSharedInformerFactory(apiextClient, 60*time.Second)
 
 	cc := &ClusterClient{
 		Client:         client,
