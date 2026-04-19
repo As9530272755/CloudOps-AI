@@ -709,6 +709,18 @@ var clusterLevelKinds = map[string]bool{
 	"customresourcedefinitions": true, "namespaces": true,
 }
 
+// invalidateListCache 清除指定集群+资源类型的列表缓存，确保写操作后前端立即看到最新数据
+func invalidateListCache(ctx context.Context, clusterID uint, kind string) {
+	if redis.Client == nil {
+		return
+	}
+	pattern := fmt.Sprintf("k8s:list:%d:%s:*", clusterID, kind)
+	iter := redis.Client.Scan(ctx, 0, pattern, 0).Iterator()
+	for iter.Next(ctx) {
+		_ = redis.Client.Del(ctx, iter.Val())
+	}
+}
+
 // getDynamicClient 获取指定集群的 dynamic client
 func (s *K8sResourceService) getDynamicClient(clusterID uint) (dynamic.Interface, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
@@ -782,6 +794,8 @@ func (s *K8sResourceService) CreateResource(ctx context.Context, clusterID uint,
 	}
 	// 主动同步缓存：增量更新单个对象，避免 Replace 整个 store 导致其他 namespace 数据丢失
 	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, result.GetName(), "update")
+	// 清除 Redis 列表缓存，确保前端立即看到新数据
+	invalidateListCache(context.Background(), clusterID, kind)
 	return result.Object, nil
 }
 
@@ -820,6 +834,8 @@ func (s *K8sResourceService) UpdateResource(ctx context.Context, clusterID uint,
 	}
 	// 主动同步缓存：增量更新单个对象
 	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "update")
+	// 清除 Redis 列表缓存
+	invalidateListCache(context.Background(), clusterID, kind)
 	return result.Object, nil
 }
 
@@ -855,6 +871,8 @@ func (s *K8sResourceService) DeleteResource(ctx context.Context, clusterID uint,
 	}
 	// 主动同步缓存：从 store 中删除单个对象
 	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "delete")
+	// 清除 Redis 列表缓存
+	invalidateListCache(context.Background(), clusterID, kind)
 	return nil
 }
 
@@ -908,6 +926,9 @@ func (s *K8sResourceService) syncObjectToStore(ctx context.Context, clusterID ui
 		}
 		_ = store.Delete(oldObj)
 	}
+
+	// 异步兜底：再次清除 Redis 缓存（防止主流程清除失败）
+	invalidateListCache(context.Background(), clusterID, kind)
 
 	// 广播 WebSocket 推送，前端收到后自动刷新
 	ws.Broadcast(ws.ResourceChangeMessage{
