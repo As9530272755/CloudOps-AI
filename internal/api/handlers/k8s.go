@@ -49,30 +49,43 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 
 	// namespace 级用户权限校验
 	userID := c.GetUint("user_id")
+	role, _ := h.rbacService.GetUserEffectiveRole(c.Request.Context(), userID)
+	isNsScoped := role != nil && role.Scope == "namespace"
+
 	allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
-	isNsScoped := len(allowed) > 0 && allowed[0].Namespace != "*"
+	allowedSet := make(map[string]bool)
+	for _, a := range allowed {
+		allowedSet[a.Namespace] = true
+	}
 
 	if isNsScoped {
-		allowedSet := make(map[string]bool)
-		for _, a := range allowed {
-			allowedSet[a.Namespace] = true
-		}
-
-		// namespaced 资源：校验 namespace 参数
+		// cluster-level 资源：直接拒绝
 		clusterKinds := map[string]bool{
 			"nodes": true, "namespaces": true, "persistentvolumes": true,
 			"storageclasses": true, "clusterroles": true, "clusterrolebindings": true,
 			"customresourcedefinitions": true,
 		}
-		if !clusterKinds[kind] {
-			if namespace != "" && namespace != "all" && !allowedSet[namespace] {
-				c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "无权限访问该命名空间"})
-				return
-			}
-			if namespace == "" || namespace == "all" {
-				// 未指定 namespace 时，默认用第一个授权 NS
-				namespace = allowed[0].Namespace
-			}
+		if clusterKinds[kind] {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "权限不足"})
+			return
+		}
+
+		// 没有任何 NS 授权：返回空结果
+		if len(allowed) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data": gin.H{"items": []interface{}{}, "total": 0, "page": page, "limit": limit},
+			})
+			return
+		}
+
+		// namespaced 资源：校验 namespace 参数
+		if namespace != "" && namespace != "all" && !allowedSet[namespace] {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "无权限访问该命名空间"})
+			return
+		}
+		if namespace == "" || namespace == "all" {
+			namespace = allowed[0].Namespace
 		}
 	}
 
@@ -84,10 +97,6 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 
 	// namespace 级用户查询 namespaces 资源时，过滤结果
 	if isNsScoped && kind == "namespaces" {
-		allowedSet := make(map[string]bool)
-		for _, a := range allowed {
-			allowedSet[a.Namespace] = true
-		}
 		var filtered []map[string]interface{}
 		for _, item := range items {
 			if name, ok := item["name"].(string); ok && allowedSet[name] {
@@ -206,8 +215,11 @@ func (h *K8sHandler) GetNamespaces(c *gin.Context) {
 
 	// 数据权限过滤
 	userID := c.GetUint("user_id")
-	allowed, err := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
-	if err == nil && len(allowed) > 0 && allowed[0].Namespace != "*" {
+	role, _ := h.rbacService.GetUserEffectiveRole(c.Request.Context(), userID)
+	isNsScoped := role != nil && role.Scope == "namespace"
+
+	if isNsScoped {
+		allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
 		allowedSet := make(map[string]bool)
 		for _, a := range allowed {
 			allowedSet[a.Namespace] = true
@@ -258,10 +270,19 @@ func (h *K8sHandler) GetClusterStats(c *gin.Context) {
 
 	// 根据用户权限范围获取统计
 	userID := c.GetUint("user_id")
-	allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
+	role, _ := h.rbacService.GetUserEffectiveRole(c.Request.Context(), userID)
+	isNsScoped := role != nil && role.Scope == "namespace"
 
 	var allowedNS []string
-	if len(allowed) > 0 && allowed[0].Namespace != "*" {
+	if isNsScoped {
+		allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
+		if len(allowed) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    map[string]interface{}{},
+			})
+			return
+		}
 		for _, a := range allowed {
 			allowedNS = append(allowedNS, a.Namespace)
 		}
