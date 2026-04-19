@@ -499,14 +499,30 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		factory.Apps().V1().Deployments().Informer().HasSynced,
 		factory.Apps().V1().StatefulSets().Informer().HasSynced,
 		factory.Apps().V1().DaemonSets().Informer().HasSynced,
+		factory.Apps().V1().ReplicaSets().Informer().HasSynced,
+		factory.Batch().V1().Jobs().Informer().HasSynced,
+		factory.Batch().V1().CronJobs().Informer().HasSynced,
 		factory.Core().V1().Services().Informer().HasSynced,
+		factory.Networking().V1().Ingresses().Informer().HasSynced,
+		factory.Core().V1().Endpoints().Informer().HasSynced,
+		factory.Core().V1().PersistentVolumes().Informer().HasSynced,
+		factory.Core().V1().PersistentVolumeClaims().Informer().HasSynced,
+		factory.Storage().V1().StorageClasses().Informer().HasSynced,
+		factory.Core().V1().ConfigMaps().Informer().HasSynced,
+		factory.Core().V1().Secrets().Informer().HasSynced,
+		factory.Core().V1().ServiceAccounts().Informer().HasSynced,
+		factory.Rbac().V1().Roles().Informer().HasSynced,
+		factory.Rbac().V1().RoleBindings().Informer().HasSynced,
+		factory.Rbac().V1().ClusterRoles().Informer().HasSynced,
+		factory.Rbac().V1().ClusterRoleBindings().Informer().HasSynced,
+		factory.Core().V1().Events().Informer().HasSynced,
 		apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced,
 	}
 
-	ctxSync, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctxSync, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	if !cache.WaitForCacheSync(ctxSync.Done(), synced...) {
-		// 部分 sync 失败不阻塞
+		// 部分 sync 超时，但 reflector 会继续后台重试，先标记 ready 避免阻塞
 	}
 
 	cc.SyncMu.Lock()

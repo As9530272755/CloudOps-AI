@@ -748,8 +748,8 @@ func (s *K8sResourceService) CreateResource(ctx context.Context, clusterID uint,
 	if err != nil {
 		return nil, err
 	}
-	// 主动同步缓存，确保前端立即看到最新状态
-	go s.syncStoreAfterWrite(context.Background(), clusterID, kind, namespace)
+	// 主动同步缓存：增量更新单个对象，避免 Replace 整个 store 导致其他 namespace 数据丢失
+	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, result.GetName(), "update")
 	return result.Object, nil
 }
 
@@ -786,8 +786,8 @@ func (s *K8sResourceService) UpdateResource(ctx context.Context, clusterID uint,
 	if err != nil {
 		return nil, err
 	}
-	// 主动同步缓存，确保前端立即看到最新状态
-	go s.syncStoreAfterWrite(context.Background(), clusterID, kind, namespace)
+	// 主动同步缓存：增量更新单个对象
+	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "update")
 	return result.Object, nil
 }
 
@@ -821,15 +821,14 @@ func (s *K8sResourceService) DeleteResource(ctx context.Context, clusterID uint,
 	if err != nil {
 		return err
 	}
-	// 主动同步缓存，确保前端立即看到最新状态
-	go s.syncStoreAfterWrite(context.Background(), clusterID, kind, namespace)
+	// 主动同步缓存：从 store 中删除单个对象
+	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "delete")
 	return nil
 }
 
-
-// syncStoreAfterWrite 写操作后主动从 API Server 重新 list 资源并替换 informer store，
-// 解决 informer watch 延迟导致前端数据不实时的问题。
-func (s *K8sResourceService) syncStoreAfterWrite(ctx context.Context, clusterID uint, kind, namespace string) {
+// syncObjectToStore 写操作后增量同步单个对象到 informer store，
+// 避免 Replace 整个 store 导致其他 namespace 数据丢失。
+func (s *K8sResourceService) syncObjectToStore(ctx context.Context, clusterID uint, kind, namespace, name, operation string) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil {
 		return
@@ -840,42 +839,43 @@ func (s *K8sResourceService) syncStoreAfterWrite(ctx context.Context, clusterID 
 		return
 	}
 
-	client, err := s.getDynamicClient(clusterID)
-	if err != nil {
-		return
-	}
-
-	gvk := kindToGVK(kind)
-	gvr := schema.GroupVersionResource{
-		Group:    gvk.Group,
-		Version:  gvk.Version,
-		Resource: kind,
-	}
-
-	var list *unstructured.UnstructuredList
-	if clusterLevelKinds[kind] {
-		list, err = client.Resource(gvr).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = client.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	}
-	if err != nil {
-		return
-	}
-
-	// 将 unstructured list 转换为 typed objects，以便与 informer store 兼容
-	typedObjects := make([]interface{}, 0, len(list.Items))
-	for i := range list.Items {
-		typedObj, convErr := convertUnstructuredToTyped(&list.Items[i])
-		if convErr != nil {
-			// 转换失败时回退：直接使用 unstructured（可能后续读取时类型断言失败，
-			// 但比完全丢失数据好）
-			typedObjects = append(typedObjects, &list.Items[i])
-			continue
+	switch operation {
+	case "create", "update":
+		client, err := s.getDynamicClient(clusterID)
+		if err != nil {
+			return
 		}
-		typedObjects = append(typedObjects, typedObj)
+		gvk := kindToGVK(kind)
+		gvr := schema.GroupVersionResource{
+			Group:    gvk.Group,
+			Version:  gvk.Version,
+			Resource: kind,
+		}
+		var obj *unstructured.Unstructured
+		if clusterLevelKinds[kind] {
+			obj, err = client.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+		} else {
+			obj, err = client.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		}
+		if err != nil {
+			return
+		}
+		typedObj, convErr := convertUnstructuredToTyped(obj)
+		if convErr != nil {
+			return
+		}
+		_ = store.Update(typedObj)
+	case "delete":
+		key := name
+		if !clusterLevelKinds[kind] && namespace != "" {
+			key = namespace + "/" + name
+		}
+		oldObj, exists, err := store.GetByKey(key)
+		if err != nil || !exists {
+			return
+		}
+		_ = store.Delete(oldObj)
 	}
-
-	_ = store.Replace(typedObjects, list.GetResourceVersion())
 }
 
 // getStoreByKind 根据资源类型获取对应的 informer store

@@ -1860,3 +1860,56 @@ Deployment 滚动更新后，旧 Pod 已删除、新 Pod 已 Running，但前端
 - 后端 `go build` ✅
 - 前端 `npm run build` ✅
 - 后端已重启 ✅
+
+
+---
+
+## 2026-04-19 修复切换 namespace 后资源显示为空 + 初始同步超时
+
+### 问题
+1. 用户反馈：切换到 `kubesphere-system` namespace 后，Pod 等资源显示 "暂无数据"（共 0 条）
+2. 点击"刷新缓存"后数据正常显示
+3. admin 权限下，所有 namespaced 资源切换 namespace 后都显示为空
+
+### 根因分析
+
+**Bug 1: `syncStoreAfterWrite` 用 `Replace` 覆盖整个 store，导致其他 namespace 数据丢失**
+
+`internal/service/k8s_resource_service.go` 中的 `syncStoreAfterWrite`：
+```go
+// 错误的：只 list 当前 namespace 的资源，然后 Replace 整个 store
+list, err = client.Resource(gvr).Namespace(namespace).List(...)
+store.Replace(typedObjects, list.GetResourceVersion())
+```
+
+当用户在 `default` namespace 创建/删除 Pod 时，`syncStoreAfterWrite` 只 list 了 `default` namespace 的 Pod，然后 `Replace` 了整个 PodStore。这导致 PodStore 中其他 namespace（如 `kubesphere-system`）的 Pod 全部被清除。
+
+**Bug 2: `WaitForCacheSync` 超时时间过短，且只等待了 8 个 informer**
+
+`internal/service/k8s_manager.go`：
+- 超时时间只有 30 秒，对于资源较多的集群可能不够
+- 只等待了 8 个 informer，但实际注册了 24 个
+
+### 修复
+
+#### 1. 增量同步单个对象（替代 Replace 整个 store）
+`internal/service/k8s_resource_service.go`：
+- 删除 `syncStoreAfterWrite` 函数
+- 新增 `syncObjectToStore` 函数：
+  - `create`/`update`：通过 dynamic client `Get` 最新对象，转换为 typed object，调用 `store.Update()`（不会清除其他对象）
+  - `delete`：通过 `store.GetByKey(key)` 获取旧对象，调用 `store.Delete()`
+- `CreateResource` / `UpdateResource` / `DeleteResource` 成功后调用 `syncObjectToStore`
+
+#### 2. 增加初始同步超时和 informer 覆盖
+`internal/service/k8s_manager.go`：
+- `WaitForCacheSync` 超时从 30 秒 → 120 秒
+- `synced` 列表从 8 个 informer 增加到 24 个（覆盖所有注册的资源类型）
+
+### 效果
+- 在 `default` namespace 操作资源后，切换到 `kubesphere-system` 等 namespace 数据仍然完整
+- 所有 namespaced 资源（Pod、Deployment、Service、ConfigMap 等）切换 namespace 后正常显示
+- 初始同步更可靠，减少缓存不完整的情况
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
