@@ -200,7 +200,13 @@ export default function ClusterDetail() {
         setNamespaces([])
       }
     } catch (err: any) {
-      setNsError(err.message || '命名空间加载失败')
+      const status = err.response?.status
+      const backendError = err.response?.data?.error
+      if (status === 403) {
+        setNsError(typeof backendError === 'string' ? backendError : '权限不足')
+      } else {
+        setNsError(backendError || err.message || '命名空间加载失败')
+      }
       setNamespaces([])
     }
   }
@@ -231,7 +237,13 @@ export default function ClusterDetail() {
         setItems([])
       }
     } catch (err: any) {
-      setError(err.message || '加载失败')
+      const status = err.response?.status
+      const backendError = err.response?.data?.error
+      if (status === 403) {
+        setError(typeof backendError === 'string' ? backendError : '权限不足')
+      } else {
+        setError(backendError || err.message || '加载失败')
+      }
       setItems([])
     } finally {
       setLoading(false)
