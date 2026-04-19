@@ -1033,3 +1033,20 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 后端 `go build` ✅
 - 前端 `npm run build` ✅
 
+
+## 2026-04-19 续：禁用用户后 token 仍可用 bugfix
+
+### 问题
+- 禁用用户后，已登录用户的 token 仍然有效，可以继续访问系统
+
+### 根因
+- `UserExistMiddleware` 只检查了用户是否存在于数据库，未检查 `is_active` 状态
+
+### 修复
+- `internal/api/middleware/user_exist.go`：查询用户时同时检查 `is_active`
+- 被禁用用户 → 返回 403 `USER_DISABLED`「用户已被禁用，请联系管理员」
+- 用户不存在 → 返回 401 `USER_NOT_FOUND`
+
+### 编译状态
+- 后端 `go build` ✅
+
