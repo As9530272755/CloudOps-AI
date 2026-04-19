@@ -170,6 +170,59 @@ func (s *RBACService) GetAllowedNamespaces(ctx context.Context, userID, clusterI
 	return result, nil
 }
 
+// GetDataScope 获取用户的数据权限范围
+// 返回：scope (platform/cluster/namespace), 允许的NS列表, 允许的集群ID列表
+// platform/cluster 级返回 allowedNS=["*"], allowedClusters=nil（表示不过滤集群）
+// namespace 级返回具体的 namespace 列表和 cluster_id 列表
+func (s *RBACService) GetDataScope(ctx context.Context, userID uint) (string, []string, []uint, error) {
+	role, err := s.GetUserEffectiveRole(ctx, userID)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	// platform 级：全部放行
+	if role.Scope == "platform" {
+		return "platform", []string{"*"}, nil, nil
+	}
+
+	// cluster 级：全部集群，全部 NS
+	if role.Scope == "cluster" {
+		return "cluster", []string{"*"}, nil, nil
+	}
+
+	// namespace 级：查询所有授权记录
+	var grants []model.NamespaceGrant
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Find(&grants).Error; err != nil {
+		return "", nil, nil, err
+	}
+
+	nsSet := make(map[string]bool)
+	clusterSet := make(map[uint]bool)
+	now := time.Now()
+
+	for _, g := range grants {
+		if g.ExpiresAt != nil && g.ExpiresAt.Before(now) {
+			continue
+		}
+		nsSet[g.Namespace] = true
+		clusterSet[g.ClusterID] = true
+	}
+
+	var allowedNS []string
+	for ns := range nsSet {
+		allowedNS = append(allowedNS, ns)
+	}
+
+	var allowedClusters []uint
+	for cid := range clusterSet {
+		allowedClusters = append(allowedClusters, cid)
+	}
+
+	return "namespace", allowedNS, allowedClusters, nil
+}
+
 // ============================================
 // 权限检查
 // ============================================

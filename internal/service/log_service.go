@@ -61,7 +61,7 @@ func validateQuery(req log.QueryRequest, backendCount int) error {
 
 // ====== 日志后端 CRUD ======
 
-func (s *LogService) ListLogBackends(clusterID uint, tenantID uint) ([]model.ClusterLogBackend, error) {
+func (s *LogService) ListLogBackends(clusterID uint, tenantID uint, userID uint) ([]model.ClusterLogBackend, error) {
 	var list []model.ClusterLogBackend
 	query := s.db.Order("id ASC")
 	if clusterID > 0 {
@@ -70,6 +70,16 @@ func (s *LogService) ListLogBackends(clusterID uint, tenantID uint) ([]model.Clu
 	if tenantID > 0 {
 		query = query.Where("cluster_id IN (?)", s.db.Model(&model.Cluster{}).Where("tenant_id = ?", tenantID).Select("id"))
 	}
+
+	// namespace 级角色：只返回授权集群的日志后端
+	if userID > 0 {
+		rbacSvc := NewRBACService(s.db)
+		scope, _, allowedClusters, _ := rbacSvc.GetDataScope(context.Background(), userID)
+		if scope == "namespace" && len(allowedClusters) > 0 {
+			query = query.Where("cluster_id IN ?", allowedClusters)
+		}
+	}
+
 	err := query.Find(&list).Error
 	return list, err
 }
@@ -219,10 +229,30 @@ func (s *LogService) queryByBackend(ctx context.Context, backend model.ClusterLo
 	return result, nil
 }
 
-// QueryLogsMultiBackend 按 backend_id 并发查询
-func (s *LogService) QueryLogsMultiBackend(ctx context.Context, backendIDs []uint, req log.QueryRequest) ([]log.QueryResult, error) {
+// QueryLogsMultiBackend 按 backend_id 并发查询（含权限过滤）
+func (s *LogService) QueryLogsMultiBackend(ctx context.Context, backendIDs []uint, req log.QueryRequest, userID uint) ([]log.QueryResult, error) {
 	if err := validateQuery(req, len(backendIDs)); err != nil {
 		return nil, err
+	}
+
+	// namespace 级角色：过滤 backend_ids 为授权集群
+	if userID > 0 {
+		rbacSvc := NewRBACService(s.db)
+		scope, _, allowedClusters, _ := rbacSvc.GetDataScope(ctx, userID)
+		if scope == "namespace" && len(allowedClusters) > 0 {
+			allowedSet := make(map[uint]bool)
+			for _, cid := range allowedClusters {
+				allowedSet[cid] = true
+			}
+			var filtered []uint
+			for _, bid := range backendIDs {
+				var b model.ClusterLogBackend
+				if err := s.db.Select("cluster_id").First(&b, bid).Error; err == nil && allowedSet[b.ClusterID] {
+					filtered = append(filtered, bid)
+				}
+			}
+			backendIDs = filtered
+		}
 	}
 
 	var backends []model.ClusterLogBackend

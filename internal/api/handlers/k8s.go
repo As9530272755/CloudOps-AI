@@ -6,21 +6,24 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/cloudops/platform/internal/service"
+	"gorm.io/gorm"
 )
 
 // K8sHandler K8s资源处理器
 type K8sHandler struct {
-	k8sService *service.K8sResourceService
+	k8sService  *service.K8sResourceService
+	rbacService *service.RBACService
 }
 
 // NewK8sHandler 创建K8s处理器
-func NewK8sHandler(k8sService *service.K8sResourceService) *K8sHandler {
+func NewK8sHandler(k8sService *service.K8sResourceService, db *gorm.DB) *K8sHandler {
 	return &K8sHandler{
-		k8sService: k8sService,
+		k8sService:  k8sService,
+		rbacService: service.NewRBACService(db),
 	}
 }
 
-// ListResources 统一资源列表接口
+// ListResources 统一资源列表接口（含权限过滤）
 // GET /api/v1/clusters/:id/resources/:kind
 func (h *K8sHandler) ListResources(c *gin.Context) {
 	clusterID, err := strconv.Atoi(c.Param("id"))
@@ -44,10 +47,55 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 		limit = 500
 	}
 
+	// namespace 级用户权限校验
+	userID := c.GetUint("user_id")
+	allowed, _ := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
+	isNsScoped := len(allowed) > 0 && allowed[0].Namespace != "*"
+
+	if isNsScoped {
+		allowedSet := make(map[string]bool)
+		for _, a := range allowed {
+			allowedSet[a.Namespace] = true
+		}
+
+		// namespaced 资源：校验 namespace 参数
+		clusterKinds := map[string]bool{
+			"nodes": true, "namespaces": true, "persistentvolumes": true,
+			"storageclasses": true, "clusterroles": true, "clusterrolebindings": true,
+			"customresourcedefinitions": true,
+		}
+		if !clusterKinds[kind] {
+			if namespace != "" && !allowedSet[namespace] {
+				c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "无权限访问该命名空间"})
+				return
+			}
+			if namespace == "" {
+				// 未指定 namespace 时，默认用第一个授权 NS
+				namespace = allowed[0].Namespace
+			}
+		}
+	}
+
 	items, total, err := h.k8sService.ListResources(c.Request.Context(), uint(clusterID), kind, namespace, keyword, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
+	}
+
+	// namespace 级用户查询 namespaces 资源时，过滤结果
+	if isNsScoped && kind == "namespaces" {
+		allowedSet := make(map[string]bool)
+		for _, a := range allowed {
+			allowedSet[a.Namespace] = true
+		}
+		var filtered []map[string]interface{}
+		for _, item := range items {
+			if name, ok := item["name"].(string); ok && allowedSet[name] {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+		total = len(filtered)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -141,7 +189,7 @@ func (h *K8sHandler) GetResource(c *gin.Context) {
 	})
 }
 
-// GetNamespaces 获取命名空间列表
+// GetNamespaces 获取命名空间列表（按权限过滤）
 // GET /api/v1/clusters/:id/namespaces
 func (h *K8sHandler) GetNamespaces(c *gin.Context) {
 	clusterID, err := strconv.Atoi(c.Param("id"))
@@ -154,6 +202,23 @@ func (h *K8sHandler) GetNamespaces(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
+	}
+
+	// 数据权限过滤
+	userID := c.GetUint("user_id")
+	allowed, err := h.rbacService.GetAllowedNamespaces(c.Request.Context(), userID, uint(clusterID))
+	if err == nil && len(allowed) > 0 && allowed[0].Namespace != "*" {
+		allowedSet := make(map[string]bool)
+		for _, a := range allowed {
+			allowedSet[a.Namespace] = true
+		}
+		var filtered []string
+		for _, ns := range items {
+			if allowedSet[ns] {
+				filtered = append(filtered, ns)
+			}
+		}
+		items = filtered
 	}
 
 	c.JSON(http.StatusOK, gin.H{

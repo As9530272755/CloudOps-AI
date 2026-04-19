@@ -42,7 +42,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		userHandler:          handlers.NewUserHandler(db),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
-		k8sHandler:           handlers.NewK8sHandler(k8sService),
+		k8sHandler:           handlers.NewK8sHandler(k8sService, db),
 		dsHandler:            handlers.NewDatasourceHandler(dsService),
 		dashboardHandler:     handlers.NewDashboardHandler(dashboardService),
 		inspectionHandler:    handlers.NewInspectionHandler(inspectionService),

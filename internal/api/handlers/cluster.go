@@ -45,7 +45,7 @@ func (h *ClusterHandler) CreateCluster(c *gin.Context) {
 	})
 }
 
-// ListClusters 集群列表
+// ListClusters 集群列表（含数据权限过滤）
 func (h *ClusterHandler) ListClusters(c *gin.Context) {
 	var tenantID uint
 	if !c.GetBool("is_superuser") {
@@ -55,8 +55,9 @@ func (h *ClusterHandler) ListClusters(c *gin.Context) {
 	keyword := c.Query("keyword")
 	status := c.Query("status")
 	authType := c.Query("auth_type")
+	userID := c.GetUint("user_id")
 
-	clusters, err := h.clusterService.ListClusters(c.Request.Context(), tenantID, keyword, status, authType)
+	clusters, err := h.clusterService.ListClusters(c.Request.Context(), userID, tenantID, keyword, status, authType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

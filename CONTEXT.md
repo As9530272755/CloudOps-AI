@@ -1063,3 +1063,36 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 后端 `go build` ✅
 - 前端 `npm run build` ✅
 
+
+## 2026-04-19 续：Phase 2 Batch 1 — 核心数据权限过滤
+
+### 完成内容
+
+1. **RBAC Service 新增 `GetDataScope`**
+   - 返回用户的权限范围（platform/cluster/namespace）
+   - namespace 级返回授权的 cluster_id 列表和 namespace 列表
+
+2. **ClusterService.ListClusters + handler**
+   - namespace 级用户：只返回有 NS 授权记录的集群
+   - platform/cluster 级：保持原有 tenant 过滤不变
+
+3. **K8sHandler.GetNamespaces**
+   - namespace 级用户：过滤返回的 NS 列表，只保留授权 NS
+   - platform/cluster 级：返回全部 NS
+
+4. **LogService.ListLogBackends + handler**
+   - namespace 级用户：只返回授权集群的日志后端
+
+5. **LogService.QueryLogsMultiBackend + handler**
+   - namespace 级用户：过滤 backend_ids，只保留授权集群的 backend
+   - AgentService 传入 0（AI 工具链不受用户 NS 权限限制）
+
+6. **K8sHandler.ListResources**
+   - namespace 级用户查询 namespaced 资源：校验 namespace 参数是否在授权列表
+   - 未指定 namespace 时默认用第一个授权 NS
+   - 查询 namespaces 资源时过滤结果
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+

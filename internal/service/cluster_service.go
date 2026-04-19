@@ -127,8 +127,8 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 	return cluster, nil
 }
 
-// ListClusters 获取集群列表（支持筛选）
-func (s *ClusterService) ListClusters(ctx context.Context, tenantID uint, keyword, status, authType string) ([]model.Cluster, error) {
+// ListClusters 获取集群列表（支持筛选 + 数据权限）
+func (s *ClusterService) ListClusters(ctx context.Context, userID, tenantID uint, keyword, status, authType string) ([]model.Cluster, error) {
 	var clusters []model.Cluster
 	db := s.db.Preload("Metadata")
 	if tenantID > 0 {
@@ -150,6 +150,15 @@ func (s *ClusterService) ListClusters(ctx context.Context, tenantID uint, keywor
 			s.db.Select("1").Table("cluster_metadata").
 				Where("cluster_metadata.cluster_id = clusters.id").
 				Where("cluster_metadata.health_status = ?", status))
+	}
+
+	// namespace 级角色：只返回有授权记录的集群
+	if userID > 0 {
+		rbacSvc := NewRBACService(s.db)
+		scope, _, allowedClusters, _ := rbacSvc.GetDataScope(ctx, userID)
+		if scope == "namespace" && len(allowedClusters) > 0 {
+			db = db.Where("id IN ?", allowedClusters)
+		}
 	}
 
 	if err := db.Find(&clusters).Error; err != nil {

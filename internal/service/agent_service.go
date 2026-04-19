@@ -346,7 +346,7 @@ func (s *AgentService) execTool(ctx context.Context, tc ai.ToolCall) (string, er
 		if a.Keyword != "" {
 			req.Filters["keyword"] = a.Keyword
 		}
-		results, err := s.logSvc.QueryLogsMultiBackend(ctx, backendIDs, req)
+		results, err := s.logSvc.QueryLogsMultiBackend(ctx, backendIDs, req, 0)
 		if err != nil {
 			return "", err
 		}

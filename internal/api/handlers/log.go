@@ -62,7 +62,8 @@ func (h *LogHandler) QueryLogs(c *gin.Context) {
 	qReq.TimeRange.From = req.TimeRange.From
 	qReq.TimeRange.To = req.TimeRange.To
 
-	results, err := h.logService.QueryLogsMultiBackend(c.Request.Context(), req.BackendIDs, qReq)
+	userID := c.GetUint("user_id")
+	results, err := h.logService.QueryLogsMultiBackend(c.Request.Context(), req.BackendIDs, qReq, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
@@ -151,7 +152,8 @@ func (h *LogHandler) AnalyzeLogs(c *gin.Context) {
 	qReq.TimeRange.From = req.TimeRange.From
 	qReq.TimeRange.To = req.TimeRange.To
 
-	results, err := h.logService.QueryLogsMultiBackend(c.Request.Context(), req.BackendIDs, qReq)
+	userID := c.GetUint("user_id")
+	results, err := h.logService.QueryLogsMultiBackend(c.Request.Context(), req.BackendIDs, qReq, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
@@ -243,7 +245,8 @@ func (h *LogHandler) ListLogBackends(c *gin.Context) {
 	if !c.GetBool("is_superuser") {
 		tenantID = c.GetUint("tenant_id")
 	}
-	list, err := h.logService.ListLogBackends(uint(clusterID), tenantID)
+	userID := c.GetUint("user_id")
+	list, err := h.logService.ListLogBackends(uint(clusterID), tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
