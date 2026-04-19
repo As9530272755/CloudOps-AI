@@ -117,8 +117,7 @@ type ClusterSecret struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
 	ClusterID     uint      `gorm:"index;not null" json:"cluster_id"`
 	SecretType    string    `gorm:"size:50;not null" json:"secret_type"` // kubeconfig/token/password/certificate
-	EncryptedData string    `gorm:"type:text;not null" json:"-"`         // AES-256 加密
-	EncryptionKeyID string  `gorm:"size:50" json:"encryption_key_id"`
+	EncryptedData string    `gorm:"type:text;not null" json:"-"`         // 明文存储集群凭证
 	ExpiresAt     *time.Time `json:"expires_at"`
 	CreatedAt     time.Time `json:"created_at"`
 }

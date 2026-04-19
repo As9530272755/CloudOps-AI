@@ -41,7 +41,7 @@ type ProviderInfo struct {
 func SupportedProviders() []ProviderInfo {
 	return []ProviderInfo{
 		{Type: "openclaw", Name: "OpenClaw", Description: "OpenClaw / OpenAI 兼容 API"},
-		{Type: "openai", Name: "OpenAI", Description: "OpenAI 兼容 API（通用）"},
+		{Type: "openai", Name: "Hermes", Description: "Hermes / OpenAI 兼容 API"},
 		{Type: "ollama", Name: "Ollama", Description: "本地 Ollama 服务"},
 	}
 }

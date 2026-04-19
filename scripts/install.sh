@@ -18,7 +18,6 @@ DB_PASSWORD=""
 REDIS_HOST="127.0.0.1"
 REDIS_PORT="6379"
 JWT_SECRET=""
-ENCRYPTION_KEY=""
 RUN_USER="cloudops"
 FRONTEND_PORT="18000"
 BACKEND_PORT="9000"
@@ -57,7 +56,6 @@ Options:
     --redis-host <host>       Redis 地址 (默认: 127.0.0.1)
     --redis-port <port>       Redis 端口 (默认: 6379)
     --jwt-secret <secret>     JWT 密钥 (默认: 自动生成)
-    --encryption-key <key>    加密密钥 (默认: 自动生成)
     --frontend-port <port>    前端端口 (默认: 18000)
     --backend-port <port>     后端端口 (默认: 9000)
     --agent-port <port>       Agent Runtime 端口 (默认: 19000)
@@ -114,10 +112,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --jwt-secret)
             JWT_SECRET="$2"
-            shift 2
-            ;;
-        --encryption-key)
-            ENCRYPTION_KEY="$2"
             shift 2
             ;;
         --frontend-port)
@@ -223,10 +217,6 @@ generate_secret() {
 if [[ -z "$JWT_SECRET" ]]; then
     JWT_SECRET=$(generate_secret)
     log_info "自动生成 JWT_SECRET"
-fi
-if [[ -z "$ENCRYPTION_KEY" ]]; then
-    ENCRYPTION_KEY=$(generate_secret)
-    log_info "自动生成 ENCRYPTION_KEY"
 fi
 if [[ -z "$DB_PASSWORD" && "$MODE" == "full" ]]; then
     DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 16)
@@ -496,11 +486,6 @@ security:
     access_expire: 1h
     refresh_expire: 24h
 
-  encryption:
-    algorithm: "AES-256-GCM"
-    key_id: "default"
-    key: "${ENCRYPTION_KEY}"
-
   rate_limit:
     enabled: true
     requests_per_minute: 100
@@ -543,7 +528,6 @@ cat > "$ENV_FILE" <<EOF
 # 此文件仅供参考，实际配置在 config.yaml 中
 CONFIG_PATH=${INSTALL_DIR}/config/config.yaml
 JWT_SECRET=${JWT_SECRET}
-ENCRYPTION_KEY=${ENCRYPTION_KEY}
 EOF
 if [[ "$MODE" == "full" ]]; then
     echo "DB_PASSWORD=${DB_PASSWORD}" >> "$ENV_FILE"
@@ -583,7 +567,6 @@ RestartSec=5
 Environment="CONFIG_PATH=${INSTALL_DIR}/config/config.yaml"
 Environment="GIN_MODE=release"
 Environment="JWT_SECRET=${JWT_SECRET}"
-Environment="ENCRYPTION_KEY=${ENCRYPTION_KEY}"
 
 [Install]
 WantedBy=multi-user.target

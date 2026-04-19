@@ -15,7 +15,6 @@ import (
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/auth"
 	"github.com/cloudops/platform/internal/pkg/config"
-	"github.com/cloudops/platform/internal/pkg/crypto"
 	"github.com/cloudops/platform/internal/pkg/database"
 	appredis "github.com/cloudops/platform/internal/pkg/redis"
 	"github.com/cloudops/platform/internal/service"
@@ -59,16 +58,13 @@ func main() {
 	// 创建 JWT 管理器
 	jwtManager := auth.NewJWTManager(&cfg.Security)
 
-	// 创建加密器
-	encryptor := crypto.NewAES256Encrypt(cfg.Security.JWT.Secret)
-
 	// 创建 K8s 管理器并初始化所有活跃集群的 Informer
-	k8sManager := service.NewK8sManager(db, encryptor)
+	k8sManager := service.NewK8sManager(db)
 	go k8sManager.InitClusters()
 	log.Println("✅ K8s 管理器初始化完成，正在启动集群 Informer...")
 
 	// 创建集群服务
-	clusterService := service.NewClusterService(db, encryptor, k8sManager)
+	clusterService := service.NewClusterService(db, k8sManager)
 	log.Println("✅ 集群服务初始化完成")
 
 	// 创建 K8s 资源服务
@@ -92,7 +88,7 @@ func main() {
 	}
 
 	// 创建 AI 平台服务（多平台资源池）
-	aiPlatformService := service.NewAIPlatformService(db, cfg.Security.JWT.Secret)
+	aiPlatformService := service.NewAIPlatformService(db)
 	log.Println("✅ AI 平台服务初始化完成")
 
 	// 创建 AI 会话服务

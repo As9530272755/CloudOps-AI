@@ -43,14 +43,8 @@ func (h *AIPlatformHandler) GetPlatform(c *gin.Context) {
 		return
 	}
 
-	decrypted, err := h.svc.DecryptConfig(p.ConfigJSON)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": true, "data": p})
-		return
-	}
-
 	var configMap map[string]interface{}
-	_ = json.Unmarshal([]byte(decrypted), &configMap)
+	_ = json.Unmarshal([]byte(p.ConfigJSON), &configMap)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

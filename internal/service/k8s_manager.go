@@ -24,7 +24,6 @@ import (
 	apiextensionsinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 
 	"github.com/cloudops/platform/internal/model"
-	"github.com/cloudops/platform/internal/pkg/crypto"
 	"gorm.io/gorm"
 )
 
@@ -71,18 +70,16 @@ type ClusterClient struct {
 
 // K8sManager K8s客户端与Informer管理器
 type K8sManager struct {
-	clients   map[uint]*ClusterClient
-	mu        sync.RWMutex
-	db        *gorm.DB
-	encryptor *crypto.AES256Encrypt
+	clients map[uint]*ClusterClient
+	mu      sync.RWMutex
+	db      *gorm.DB
 }
 
 // NewK8sManager 创建管理器
-func NewK8sManager(db *gorm.DB, encryptor *crypto.AES256Encrypt) *K8sManager {
+func NewK8sManager(db *gorm.DB) *K8sManager {
 	m := &K8sManager{
-		clients:   make(map[uint]*ClusterClient),
-		db:        db,
-		encryptor: encryptor,
+		clients: make(map[uint]*ClusterClient),
+		db:      db,
 	}
 	return m
 }
@@ -357,13 +354,8 @@ func (km *K8sManager) GetClusterKubeconfigContent(clusterID uint) ([]byte, error
 		return nil, fmt.Errorf("cluster secret not found")
 	}
 
-	decryptedData, err := km.encryptor.Decrypt(secret.EncryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt failed: %w", err)
-	}
-
 	if secret.SecretType == "kubeconfig" {
-		return []byte(decryptedData), nil
+		return []byte(secret.EncryptedData), nil
 	}
 
 	if secret.SecretType == "token" {
@@ -388,7 +380,7 @@ users:
 - name: user
   user:
     token: %s
-`, cluster.Server, decryptedData)
+`, cluster.Server, secret.EncryptedData)
 		return []byte(kubeconfig), nil
 	}
 
@@ -413,14 +405,10 @@ func (km *K8sManager) buildConfig(clusterID uint) (*rest.Config, error) {
 		return nil, fmt.Errorf("cluster secret not found")
 	}
 
-	decryptedData, err := km.encryptor.Decrypt(secret.EncryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt failed: %w", err)
-	}
-
 	var config *rest.Config
+	var err error
 	if secret.SecretType == "kubeconfig" {
-		config, err = clientcmd.RESTConfigFromKubeConfig([]byte(decryptedData))
+		config, err = clientcmd.RESTConfigFromKubeConfig([]byte(secret.EncryptedData))
 		if err != nil {
 			return nil, fmt.Errorf("parse kubeconfig failed: %w", err)
 		}
@@ -429,7 +417,7 @@ func (km *K8sManager) buildConfig(clusterID uint) (*rest.Config, error) {
 		km.db.First(&cluster, clusterID)
 		config = &rest.Config{
 			Host:        cluster.Server,
-			BearerToken: decryptedData,
+			BearerToken: secret.EncryptedData,
 			TLSClientConfig: rest.TLSClientConfig{
 				Insecure: true,
 			},

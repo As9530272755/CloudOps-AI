@@ -48,15 +48,10 @@ func (p *AgentRuntimeProxy) resolveModelConfig(platformID string) (*ModelConfig,
 		return nil, fmt.Errorf("平台不存在: %w", err)
 	}
 
-	decrypted, err := p.platformSvc.DecryptConfig(platform.ConfigJSON)
-	if err != nil {
-		return nil, fmt.Errorf("解密配置失败: %w", err)
-	}
-
 	switch platform.ProviderType {
 	case "ollama":
 		var detail ai.OllamaDetail
-		if err := json.Unmarshal([]byte(decrypted), &detail); err != nil {
+		if err := json.Unmarshal([]byte(platform.ConfigJSON), &detail); err != nil {
 			return nil, fmt.Errorf("解析配置失败: %w", err)
 		}
 		ctxWindow := detail.MaxContextLength
@@ -72,7 +67,7 @@ func (p *AgentRuntimeProxy) resolveModelConfig(platformID string) (*ModelConfig,
 		}, nil
 	case "openclaw", "openai":
 		var detail ai.OpenClawDetail
-		if err := json.Unmarshal([]byte(decrypted), &detail); err != nil {
+		if err := json.Unmarshal([]byte(platform.ConfigJSON), &detail); err != nil {
 			return nil, fmt.Errorf("解析配置失败: %w", err)
 		}
 		return &ModelConfig{

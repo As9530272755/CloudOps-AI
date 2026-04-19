@@ -1,6 +1,8 @@
 # CloudOps AI 集成项目上下文
 
 > 本文件用于在全新 AI 会话中快速恢复项目上下文。下次启动时，将本文件内容粘贴给 AI 助手即可。
+>
+> ⚠️ **开发规范：每次进行任何模块开发后，必须将本次开发记录追加写入本文件末尾（按日期编号），确保项目上下文持续同步。**
 
 ---
 
@@ -495,4 +497,203 @@ git push origin main
 
 ---
 
-*最后更新：2026-04-17*
+---
+
+## 十一、2026-04-18 开发记录
+
+### 11.1 OpenClaw AI 对接报错修复
+- **现象**：系统设置 → AI 平台中"默认 OpenClaw"状态为"离线"，连通性测试报错 `invalid character '<' looking for beginning of value`
+- **根因 1**：OpenClaw Gateway 默认不启用 OpenAI 兼容 REST API（`POST /v1/chat/completions`、`GET /v1/models`），请求返回 HTML 页面导致 JSON 解析失败
+- **根因 2**：CloudOps `data/ai_platform_config.json` 中存储的 token 与 OpenClaw 实际 token 不一致
+- **修复**：
+  - 修改 `/root/.openclaw/openclaw.json`，在 `gateway` 中增加 `http.endpoints.chatCompletions.enabled: true`
+  - 将 CloudOps AI 配置中的 token 更新为 OpenClaw 实际 token
+  - 重启 OpenClaw Gateway 和 CloudOps 后端
+- **验证**：`curl /v1/models` 和 `curl /v1/chat/completions` 均返回正确 JSON；CloudOps `/api/v1/settings/ai/test` 返回"AI 平台连接成功"
+
+### 11.2 废弃旧 AI 配置系统（JSON 文件模式）
+- **背景**：CloudOps 同时存在两套 AI 配置机制：
+  - **旧系统**：`AIConfigService` + `data/ai_platform_config.json`（文件存储，启动时加载一次）
+  - **新系统**：`AIPlatformService` + `ai_platforms` 表（数据库存储，实时读取，支持多平台）
+- **问题**：双轨并存导致配置不同步，旧系统已成为 stale 数据且存在 0644 权限泄露风险
+- **清理内容**：
+  - 删除 `internal/service/ai_config_service.go`
+  - 删除 `internal/api/handlers/ai_config.go`
+  - 删除 `data/ai_platform_config.json`
+  - 删除旧路由 `/api/v1/settings/ai/*`（`GET/PUT/POST`）
+  - 删除 `AIService` 中对 `AIConfigService` 的依赖
+  - 删除 `AIPlatformService` 中的 `MigrateFromLegacyConfig()` 和 `fixDoubleEncryptedTokens()` 方法
+- **修改文件**：
+  - `cmd/server/main.go`：移除 `aiConfigService` 初始化与注入
+  - `internal/service/ai_service.go`：移除 `configSvc` 字段和参数
+  - `internal/api/routes.go`：移除 `aiConfigHandler` 及相关路由
+  - `internal/service/ai_platform_service.go`：清理 imports，移除旧迁移/修复逻辑
+- **结果**：所有 AI 配置统一走数据库 `ai_platforms` 表，前端修改 token 即时生效，无需重启后端
+
+### 11.3 第三方系统 30s 周期性健康检查
+- **背景**：数据源、AI 平台、日志后端等第三方对接系统仅在用户点击"测试连接"时才更新状态，无法反映真实运行中的故障（如截图中 Prometheus 已 `no route to host` 但状态仍显示"有效"）
+- **实现**：为所有第三方对接系统统一添加 `StartHealthMonitor()` 方法，后端启动后每 **30 秒**自动巡检一次
+  - **数据源**（`DatasourceService`）：遍历 `data_sources`，调用 `TestConnection` 更新 `is_active`
+  - **AI 平台**（`AIPlatformService`）：遍历 `ai_platforms`，调用 `TestConnection` 更新 `status` + `last_checked_at`
+  - **日志后端**（`LogService`）：遍历 `cluster_log_backends`，调用 `TestConnection` 更新 `status` + `last_checked_at`（新增字段）
+  - **K8s 集群**（`ClusterService`）：遍历 `clusters`，通过 `GetK8sClient` + `ServerVersion()` 探测，更新 `cluster_metadata.health_status`
+- **数据库变更**：`cluster_log_backends` 新增 `status`（`size:32;default:'unknown'`）和 `last_checked_at` 字段，Gorm AutoMigrate 自动生效
+- **验证**：
+  - `data_sources.KS-VM.is_active` 由 `true` 自动变为 `false`
+  - `ai_platforms.default.status` 保持 `online`
+  - `cluster_log_backends` 状态正常更新
+
+### 11.4 全站原生 `alert()` 弹窗替换为 MUI Snackbar
+- **背景**：`Settings.tsx` 数据源测试连接仍使用浏览器原生 `alert()`，样式与全站 iOS 扁平化设计严重不符
+- **修复**：
+  - `Settings.tsx`：数据源 `handleTest` 由 `alert()` 改为 `showSnack()`（Snackbar + Alert），与日志后端测试保持一致
+  - `AI.tsx`：新增 Snackbar state，替换"重命名失败"和"删除失败"的 `alert()`
+  - `Dashboard.tsx`：新增 Snackbar state，替换"创建/删除/复制失败"的 `alert()`
+  - `ClusterDetail.tsx`：利用已有 Snackbar，替换"缓存刷新任务已启动"的 `alert()`
+  - `NetworkTrace.tsx`：利用已有 Snackbar（扩展 `severity` 支持 `info`），替换"导出功能开发中"的 `alert()`
+- **关键文件**：`frontend/src/pages/Settings.tsx`、`AI.tsx`、`Dashboard.tsx`、`ClusterDetail.tsx`、`NetworkTrace.tsx`
+
+### 11.5 数据源状态文案修正
+- **问题**：`is_active = false` 时前端显示"禁用"，容易误导为用户手动禁用，实际是连接失败
+- **修复**：`Settings.tsx` 数据源状态 Chip 文案由 `"禁用"` 改为 `"无效"`，颜色保持 `default`（灰色）
+- **关键文件**：`frontend/src/pages/Settings.tsx`
+
+### 11.6 日志后端列表增加状态栏
+- **问题**：日志后端（ES/OS/Loki）表格缺少"状态"列，用户无法直观判断后端连通性
+- **修复**：
+  - `frontend/src/lib/log-backend-api.ts`：`LogBackend` 接口新增 `status` 和 `last_checked_at` 字段
+  - `frontend/src/pages/Settings.tsx`：日志后端表格新增"状态"列，用 Chip 展示：
+    - `online` → **有效**（绿色 `success`）
+    - `offline` → **无效**（红色 `error`）
+    - 其他 → **未知**（灰色 `default`）
+  - 同步更新 loading/空状态占位符的 `colSpan`（5 → 6）
+- **关键文件**：`frontend/src/lib/log-backend-api.ts`、`frontend/src/pages/Settings.tsx`
+
+---
+
+*最后更新：2026-04-18*
+
+## 十二、安装脚本更新（2026-04-18）
+
+### 12.1 背景
+- 今天的代码变更移除了旧版 `AIConfigService`，AI 平台配置完全走数据库
+- `Agent Runtime` 改为由后端进程（`main.go`）内置启动，不再需要单独的 systemd 服务
+- `ai_service` 从可选功能升级为核心功能
+
+### 12.2 主要变更
+
+#### `scripts/install.sh`
+1. **启用 AI 服务**：`config.yaml` 生成时 `ai_service.enabled` 由 `false` 改为 `true`
+2. **移除旧版 AI 配置**：删除 `ai.openclaw` 配置段（已废弃）
+3. **移除 `cloudops-agent.service`**：Agent Runtime 由后端内置启动，无需独立 systemd 服务
+   - 删除 `cloudops-agent.service` 的创建逻辑
+   - `systemctl enable/start` 中移除 `cloudops-agent`
+   - 安装完成报告中移除 agent 服务相关命令
+4. **保留 `--agent-port` 参数**：供后续版本通过配置文件控制 Agent Runtime 端口（当前后端仍硬编码 19000）
+
+#### `scripts/uninstall.sh`
+1. **同步移除 agent 服务清理**：`systemctl stop/disable` 和 `rm -f` 中移除 `cloudops-agent`
+
+#### `cmd/server/main.go`
+1. **修复 Agent Runtime 硬编码路径**：`agentRuntime.Dir` 从 `/data/projects/cloudops-v2`（开发环境绝对路径）改为 `filepath.Dir(os.Executable())`（自动跟随二进制所在目录）
+   - 新增 `path/filepath` import
+   - 生产环境（`/opt/cloudops`）下不再因路径错误导致 Agent Runtime 启动失败
+
+### 12.3 验证
+```bash
+# 检查脚本语法
+bash -n scripts/install.sh    # OK
+bash -n scripts/uninstall.sh  # OK
+
+# 编译测试
+go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
+```
+
+---
+
+*最后更新：2026-04-18*
+
+
+---
+
+## 十三、环境配置规范与数据库声明（2026-04-19）
+
+### 13.1 数据库声明：本项目仅使用 PostgreSQL
+
+> **开发规范：本项目所有数据持久化均走 PostgreSQL，禁止在任何开发对话或文档中提及/推荐使用 SQLite 作为生产或开发数据库。**
+
+- 后端启动时如果 `config.yaml` 中 `database.postgres.host` 为模板占位符（`{{DB_HOST}}`），会导致启动失败
+- 当前启动方式：直接修改 `config/config.yaml` 填入真实值后启动（见下方环境信息）
+- `cloudops.db` SQLite 文件为历史遗留，与本项目当前运行无关
+
+### 13.2 环境信息（必须记录）
+
+| 组件 | 地址 | 账号/密钥 |
+|------|------|----------|
+| **PostgreSQL** | `127.0.0.1:5432/cloudops` | 用户名 `cloudops` / 密码 `cloudops123` |
+| **Redis** | `127.0.0.1:6379` | 无密码 |
+| **后端** | `http://0.0.0.0:9000` | — |
+| **前端** | `http://0.0.0.0:18000` | — |
+| **JWT Secret** | — | `dev-jwt-secret-key-2024cloudops` |
+| **AES Encryption Key** | — | `0123456789abcdef0123456789abcdef` |
+
+### 13.3 已知问题记录
+
+1. **AI 平台配置解密失败**
+   - 现象：Settings → AI 平台 中点击"测试连接"报错 `cipher: message authentication failed`
+   - 根因：数据库中 `ai_platforms.ConfigJSON` 是用**旧加密密钥**加密的，当前启动使用的 `ENCRYPTION_KEY` 已变更
+   - 解决：需在每个 AI 平台编辑页面重新保存配置，让后端用当前密钥重新加密
+   - 代码隐患：`TestConnection` 解密失败时直接 `return err`，未更新 `status` 字段；`StartHealthMonitor` 用 `_` 忽略错误，导致状态永远停留在旧值
+
+2. **日志后端数据丢失**
+   - 现象：Settings → 日志后端 列表为空
+   - 根因：`cluster_log_backends` 表数据在 2026-04-15 至 2026-04-19 之间被清空（具体原因未查明，无备份）
+   - 解决：需手动重新添加日志后端配置
+
+### 13.4 安全提醒
+
+`config/config.yaml` 当前已填入真实数据库密码和加密密钥，**请勿将该文件提交到 Git 仓库**。后续建议改为通过环境变量注入敏感配置。
+
+---
+
+*最后更新：2026-04-19*
+
+
+---
+
+## 十四、去掉 AES-256 字段级加密（2026-04-19）
+
+### 14.1 背景
+
+私有化部署场景下，加密密钥与数据库放在同一台服务器，安全收益有限，但运维复杂度极高。`start-backend.sh` 每次启动随机生成密钥，导致历史加密数据频繁"丢失"，严重影响使用。
+
+### 14.2 决策
+
+**彻底去掉应用层字段级加密**，敏感数据改为明文存储在 PostgreSQL 中，依赖数据库访问控制和服务器权限保护。
+
+### 14.3 修改范围
+
+| 文件 | 修改内容 |
+|------|----------|
+| `internal/service/ai_platform_service.go` | `ConfigJSON` 不再加密，直接存 JSON 字符串；`NewAIPlatformService` 移除 `secretKey` 参数 |
+| `internal/service/cluster_service.go` | `EncryptedData` 不再加密，直接存明文 kubeconfig/token；`NewClusterService` 移除 `encryptor` 参数 |
+| `internal/service/k8s_manager.go` | 移除 `encryptor`，`buildConfig` / `GetClusterKubeconfigContent` 直接使用明文 |
+| `internal/api/handlers/ai_platform.go` | `GetPlatform` 直接解析 `p.ConfigJSON` 为 JSON，不再调用 `DecryptConfig` |
+| `internal/service/agent_runtime_proxy.go` | `resolveModelConfig` 直接解析 `platform.ConfigJSON` |
+| `cmd/server/main.go` | 移除 `encryptor` 创建与注入 |
+| `internal/model/models.go` | `ClusterSecret` 注释更新为"明文存储集群凭证"，移除 `EncryptionKeyID` 字段说明 |
+
+### 14.4 影响
+
+- **新保存的 AI 平台 / 集群凭证**：明文存储，重启后不再丢失
+- **旧数据（已加密的记录）**：仍存在于数据库中，但无法被正常解析，需**手动删除后重新配置**
+- `config.yaml` 中的 `security.encryption` 配置段仍保留（不影响运行），但不再被业务代码使用
+
+### 14.5 待清理
+
+- `internal/pkg/crypto/aes.go` 可保留作为工具库，但当前已无业务引用
+- `cluster_log_backends` 表数据仍为空，需重新添加日志后端配置
+
+---
+
+*最后更新：2026-04-19*

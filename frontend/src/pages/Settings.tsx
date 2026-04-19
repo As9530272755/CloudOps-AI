@@ -318,7 +318,7 @@ function AISettings() {
   }>({
     name: '',
     provider_type: '',
-    config: { url: '', token: '', model: '', timeout: 300, max_context_length: 4096, max_history_messages: 10 },
+    config: { url: '', token: '', model: 'Hermes', timeout: 300, max_context_length: 4096, max_history_messages: 10 },
   })
   const [error, setError] = useState('')
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -374,19 +374,19 @@ function AISettings() {
           setForm({
             name: p.name,
             provider_type: p.provider_type as any,
-            config: { url: '', token: '', model: '', timeout: p.provider_type === 'ollama' ? 600 : 300, max_context_length: p.provider_type === 'ollama' ? 4096 : undefined, max_history_messages: 10 },
+            config: { url: '', token: '', model: p.provider_type === 'ollama' ? 'llama3' : (p.provider_type === 'openclaw' ? 'openclaw' : ''), timeout: p.provider_type === 'ollama' ? 600 : 300, max_context_length: p.provider_type === 'ollama' ? 4096 : undefined, max_history_messages: 10 },
           })
         }
       } catch {
         setForm({
           name: p.name,
           provider_type: p.provider_type as any,
-          config: { url: '', token: '', model: '', timeout: p.provider_type === 'ollama' ? 600 : 300 },
+          config: { url: '', token: '', model: p.provider_type === 'ollama' ? 'llama3' : (p.provider_type === 'openclaw' ? 'openclaw' : ''), timeout: p.provider_type === 'ollama' ? 600 : 300 },
         })
       }
     } else {
       setEditingId(null)
-      setForm({ name: '', provider_type: '', config: { url: '', token: '', model: '', timeout: 300, max_history_messages: 10 } })
+      setForm({ name: '', provider_type: '', config: { url: '', token: '', model: 'Hermes', timeout: 300, max_history_messages: 10 } })
     }
     setDialogOpen(true)
     setTestingDialog(false)
@@ -566,6 +566,11 @@ function AISettings() {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
+            {message && dialogOpen && (
+              <Alert severity={message.severity} sx={{ mb: 0 }}>
+                {message.text}
+              </Alert>
+            )}
             <TextField
               label="平台名称"
               value={form.name}
@@ -585,7 +590,7 @@ function AISettings() {
                     provider_type: pt,
                     config: {
                       ...form.config,
-                      model: pt === 'ollama' ? 'llama3' : '',
+                      model: pt === 'ollama' ? 'llama3' : (pt === 'openclaw' ? 'openclaw' : 'Hermes'),
                       timeout: pt === 'ollama' ? 600 : 300,
                       max_context_length: pt === 'ollama' ? 4096 : undefined,
                       max_history_messages: form.config.max_history_messages || 10,
@@ -660,30 +665,47 @@ function AISettings() {
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button onClick={() => { setDialogOpen(false); setTestingDialog(false) }}>取消</Button>
-          {editingId && (
-            <Button
-              variant="outlined"
-              onClick={async () => {
-                setTestingDialog(true)
-                try {
-                  const res = await aiPlatformAPI.test(editingId)
-                  if (res.success) {
-                    setMessage({ text: `连通成功: ${res.message}`, severity: 'success' })
-                  } else {
-                    setMessage({ text: `连通失败: ${res.error}`, severity: 'error' })
+          <Button
+            variant="outlined"
+            onClick={async () => {
+              if (!form.name || !form.provider_type || !form.config.url) {
+                setError('请填写名称、平台类型和服务地址后再测试')
+                return
+              }
+              setTestingDialog(true)
+              setError('')
+              try {
+                let testId = editingId
+                if (!testId) {
+                  const createRes = await aiPlatformAPI.create({
+                    name: form.name,
+                    provider_type: form.provider_type,
+                    config: form.config,
+                  })
+                  if (!createRes.success || !createRes.data?.id) {
+                    setMessage({ text: createRes.error || '创建失败，无法测试', severity: 'error' })
+                    return
                   }
-                } catch (err: any) {
-                  setMessage({ text: err.message || '测试失败', severity: 'error' })
-                } finally {
-                  setTestingDialog(false)
+                  testId = createRes.data.id
+                  setEditingId(testId)
                 }
-              }}
-              disabled={testingDialog}
-              sx={{ mr: 'auto' }}
-            >
-              {testingDialog ? <CircularProgress size={18} /> : '测试连接'}
-            </Button>
-          )}
+                const res = await aiPlatformAPI.test(testId!)
+                if (res.success) {
+                  setMessage({ text: `连通成功: ${res.message}`, severity: 'success' })
+                } else {
+                  setMessage({ text: `连通失败: ${res.error}`, severity: 'error' })
+                }
+              } catch (err: any) {
+                setMessage({ text: err.message || '测试失败', severity: 'error' })
+              } finally {
+                setTestingDialog(false)
+              }
+            }}
+            disabled={testingDialog}
+            sx={{ mr: 'auto' }}
+          >
+            {testingDialog ? <CircularProgress size={18} /> : '测试连接'}
+          </Button>
           <Button variant="contained" onClick={handleSave} disabled={saving}>
             {saving ? <CircularProgress size={20} sx={{ color: 'inherit' }} /> : '保存'}
           </Button>

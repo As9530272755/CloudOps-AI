@@ -18,21 +18,18 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/cloudops/platform/internal/model"
-	"github.com/cloudops/platform/internal/pkg/crypto"
 )
 
 // ClusterService 集群管理服务
 type ClusterService struct {
-	db        *gorm.DB
-	encryptor *crypto.AES256Encrypt
+	db         *gorm.DB
 	k8sManager *K8sManager
 }
 
 // NewClusterService 创建集群服务
-func NewClusterService(db *gorm.DB, encryptor *crypto.AES256Encrypt, k8sManager *K8sManager) *ClusterService {
+func NewClusterService(db *gorm.DB, k8sManager *K8sManager) *ClusterService {
 	return &ClusterService{
 		db:         db,
-		encryptor:  encryptor,
 		k8sManager: k8sManager,
 	}
 }
@@ -61,7 +58,6 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 	// 2. 解析kubeconfig获取server地址
 	var server string
 	var encryptedData string
-	var err error
 
 	if req.AuthType == "kubeconfig" {
 		// 解析kubeconfig
@@ -78,17 +74,10 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 			}
 		}
 		
-		// 加密kubeconfig
-		encryptedData, err = s.encryptor.Encrypt(req.KubeConfig)
-		if err != nil {
-			return nil, fmt.Errorf("encrypt kubeconfig failed: %w", err)
-		}
+		encryptedData = req.KubeConfig
 	} else if req.AuthType == "token" {
 		server = req.Server
-		encryptedData, err = s.encryptor.Encrypt(req.Token)
-		if err != nil {
-			return nil, fmt.Errorf("encrypt token failed: %w", err)
-		}
+		encryptedData = req.Token
 	}
 
 	// 3. 创建集群记录
@@ -113,7 +102,6 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 		ClusterID:     cluster.ID,
 		SecretType:    req.AuthType,
 		EncryptedData: encryptedData,
-		EncryptionKeyID: "default",
 	}
 
 	if err := s.db.Create(secret).Error; err != nil {
@@ -331,17 +319,12 @@ func (s *ClusterService) GetK8sClient(ctx context.Context, clusterID uint) (*kub
 		return nil, fmt.Errorf("cluster secret not found")
 	}
 
-	// 解密
-	decryptedData, err := s.encryptor.Decrypt(secret.EncryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt failed: %w", err)
-	}
-
 	var config *rest.Config
+	var err error
 
 	if secret.SecretType == "kubeconfig" {
 		// 从kubeconfig构建配置
-		config, err = clientcmd.RESTConfigFromKubeConfig([]byte(decryptedData))
+		config, err = clientcmd.RESTConfigFromKubeConfig([]byte(secret.EncryptedData))
 		if err != nil {
 			return nil, fmt.Errorf("parse kubeconfig failed: %w", err)
 		}
@@ -352,7 +335,7 @@ func (s *ClusterService) GetK8sClient(ctx context.Context, clusterID uint) (*kub
 		
 		config = &rest.Config{
 			Host:        cluster.Server,
-			BearerToken: decryptedData,
+			BearerToken: secret.EncryptedData,
 			TLSClientConfig: rest.TLSClientConfig{
 				Insecure: true, // 生产环境应该验证证书
 			},

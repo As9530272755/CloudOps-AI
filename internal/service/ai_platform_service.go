@@ -8,7 +8,6 @@ import (
 
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/ai"
-	"github.com/cloudops/platform/internal/pkg/crypto"
 	"gorm.io/gorm"
 )
 
@@ -24,15 +23,13 @@ type PlatformFormConfig struct {
 
 // AIPlatformService AI 平台管理服务（支持多平台资源池）
 type AIPlatformService struct {
-	db        *gorm.DB
-	encryptor *crypto.AES256Encrypt
+	db *gorm.DB
 }
 
 // NewAIPlatformService 创建 AI 平台服务
-func NewAIPlatformService(db *gorm.DB, secretKey string) *AIPlatformService {
+func NewAIPlatformService(db *gorm.DB) *AIPlatformService {
 	return &AIPlatformService{
-		db:        db,
-		encryptor: crypto.NewAES256Encrypt(secretKey),
+		db: db,
 	}
 }
 
@@ -78,16 +75,16 @@ func (s *AIPlatformService) GetPlatform(id string) (*model.AIPlatform, error) {
 
 // CreatePlatform 创建平台
 func (s *AIPlatformService) CreatePlatform(userID uint, name, providerType string, cfg PlatformFormConfig) (*model.AIPlatform, error) {
-	encryptedCfg, err := s.encryptConfig(providerType, cfg)
+	cfgJSON, err := s.buildConfigJSON(providerType, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("加密配置失败: %w", err)
+		return nil, fmt.Errorf("构建配置失败: %w", err)
 	}
 
 	p := model.AIPlatform{
 		ID:           generatePlatformID(),
 		Name:         name,
 		ProviderType: providerType,
-		ConfigJSON:   encryptedCfg,
+		ConfigJSON:   cfgJSON,
 		Status:       "unknown",
 		IsDefault:    false,
 		CreatedBy:    userID,
@@ -112,14 +109,14 @@ func (s *AIPlatformService) UpdatePlatform(id string, name string, cfg PlatformF
 		return err
 	}
 
-	encryptedCfg, err := s.encryptConfig(p.ProviderType, cfg)
+	cfgJSON, err := s.buildConfigJSON(p.ProviderType, cfg)
 	if err != nil {
-		return fmt.Errorf("加密配置失败: %w", err)
+		return fmt.Errorf("构建配置失败: %w", err)
 	}
 
 	return s.db.Model(&p).Updates(map[string]interface{}{
 		"name":        name,
-		"config_json": encryptedCfg,
+		"config_json": cfgJSON,
 	}).Error
 }
 
@@ -188,16 +185,11 @@ func (s *AIPlatformService) NewProviderByID(id string) (ai.Provider, error) {
 		return nil, fmt.Errorf("平台不存在: %w", err)
 	}
 
-	decrypted, err := s.encryptor.Decrypt(p.ConfigJSON)
-	if err != nil {
-		return nil, fmt.Errorf("解密配置失败: %w", err)
-	}
-
 	var timeout time.Duration
 	switch p.ProviderType {
 	case "ollama":
 		var detail ai.OllamaDetail
-		if err := json.Unmarshal([]byte(decrypted), &detail); err != nil {
+		if err := json.Unmarshal([]byte(p.ConfigJSON), &detail); err != nil {
 			return nil, fmt.Errorf("解析配置失败: %w", err)
 		}
 		timeout = time.Duration(detail.Timeout) * time.Second
@@ -210,7 +202,7 @@ func (s *AIPlatformService) NewProviderByID(id string) (ai.Provider, error) {
 		}, timeout)
 	case "openclaw", "openai":
 		var detail ai.OpenClawDetail
-		if err := json.Unmarshal([]byte(decrypted), &detail); err != nil {
+		if err := json.Unmarshal([]byte(p.ConfigJSON), &detail); err != nil {
 			return nil, fmt.Errorf("解析配置失败: %w", err)
 		}
 		timeout = time.Duration(detail.Timeout) * time.Second
@@ -226,9 +218,9 @@ func (s *AIPlatformService) NewProviderByID(id string) (ai.Provider, error) {
 	}
 }
 
-// DecryptConfig 解密配置字符串
-func (s *AIPlatformService) DecryptConfig(encrypted string) (string, error) {
-	return s.encryptor.Decrypt(encrypted)
+// DecryptConfig 直接返回配置字符串（已去掉加密）
+func (s *AIPlatformService) DecryptConfig(configJSON string) (string, error) {
+	return configJSON, nil
 }
 
 // GetDefaultPlatform 获取默认平台
@@ -240,8 +232,8 @@ func (s *AIPlatformService) GetDefaultPlatform() (*model.AIPlatform, error) {
 	return &p, nil
 }
 
-// 内部方法：根据 provider 类型加密配置
-func (s *AIPlatformService) encryptConfig(providerType string, cfg PlatformFormConfig) (string, error) {
+// 内部方法：根据 provider 类型构建配置 JSON
+func (s *AIPlatformService) buildConfigJSON(providerType string, cfg PlatformFormConfig) (string, error) {
 	var cfgJSON []byte
 	var err error
 
@@ -271,7 +263,7 @@ func (s *AIPlatformService) encryptConfig(providerType string, cfg PlatformFormC
 	if err != nil {
 		return "", err
 	}
-	return s.encryptor.Encrypt(string(cfgJSON))
+	return string(cfgJSON), nil
 }
 
 func generatePlatformID() string {

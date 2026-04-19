@@ -29,7 +29,7 @@ func NewOpenClawProvider(baseURL, apiKey, model string, timeout time.Duration, m
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if model == "" {
-		model = "default"
+		model = "openclaw"
 	}
 	if maxHistoryMessages <= 0 {
 		maxHistoryMessages = 10
@@ -136,7 +136,7 @@ func (p *OpenClawProvider) ChatCompletion(ctx context.Context, messages []Messag
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("OpenClaw API 返回状态码 %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body))
 	}
 
 	body, _ := io.ReadAll(resp.Body)
@@ -204,7 +204,7 @@ func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("OpenClaw API 返回状态码 %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body))
 	}
 
 	// 如果返回的不是 SSE，则按普通 JSON 一次性读取
@@ -303,7 +303,7 @@ func (p *OpenClawProvider) ListModels(ctx context.Context) ([]string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("OpenClaw API 返回状态码 %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {

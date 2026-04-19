@@ -6,7 +6,6 @@ cd "$SCRIPT_DIR"
 
 export CONFIG_PATH="$SCRIPT_DIR/config/config.yaml"
 export JWT_SECRET="${JWT_SECRET:-$(openssl rand -hex 32)}"
-export ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(openssl rand -hex 32)}"
 export GIN_MODE=release
 export GOTOOLCHAIN=auto
 
