@@ -65,11 +65,11 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 			"customresourcedefinitions": true,
 		}
 		if !clusterKinds[kind] {
-			if namespace != "" && !allowedSet[namespace] {
+			if namespace != "" && namespace != "all" && !allowedSet[namespace] {
 				c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "无权限访问该命名空间"})
 				return
 			}
-			if namespace == "" {
+			if namespace == "" || namespace == "all" {
 				// 未指定 namespace 时，默认用第一个授权 NS
 				namespace = allowed[0].Namespace
 			}

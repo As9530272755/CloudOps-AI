@@ -1096,3 +1096,21 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 后端 `go build` ✅
 - 后端已重启 ✅
 
+
+## 2026-04-19 续：namespace 级用户 NS 下拉框优化
+
+### 问题
+- namespace 级用户在工作负载页面看到"全部命名空间"选项，选择后查询返回 403
+
+### 修复
+- **前端 `ClusterDetail.tsx`**：
+  - 当 `namespaces` 数组只有一个元素时，自动选中该 NS，不显示"全部命名空间"选项
+  - 当 `namespaces.length > 1` 时才显示"全部命名空间"
+- **后端 `k8s.go` `ListResources`**：
+  - `namespace="all"` 也当成未指定 namespace 处理，默认用第一个授权 NS
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+- 后端已重启 ✅
+

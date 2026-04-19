@@ -132,7 +132,10 @@ export default function ClusterDetail() {
       const result = await k8sAPI.getNamespaces(id)
       if (result.success && result.data) {
         setNamespaces(result.data)
-        if (result.data.includes('default')) {
+        if (result.data.length === 1) {
+          // namespace 级用户只有一个授权 NS，直接选中
+          setSelectedNamespace(result.data[0])
+        } else if (result.data.includes('default')) {
           setSelectedNamespace('default')
         } else {
           setSelectedNamespace(result.data[0] || 'all')
@@ -454,7 +457,7 @@ export default function ClusterDetail() {
                   <FormControl size="small" sx={{ minWidth: 200 }} error={!!nsError}>
                     <InputLabel>命名空间</InputLabel>
                     <Select value={selectedNamespace} label="命名空间" onChange={(e) => setSelectedNamespace(e.target.value)}>
-                      <MenuItem value="all">全部命名空间</MenuItem>
+                      {namespaces.length > 1 && <MenuItem value="all">全部命名空间</MenuItem>}
                       {namespaces.map(ns => (
                         <MenuItem key={ns} value={ns}>{ns}</MenuItem>
                       ))}
