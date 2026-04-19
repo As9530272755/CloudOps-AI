@@ -1194,6 +1194,37 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 
 ---
 
+## 2026-04-19 修复 Pod 状态显示：从 Phase 改为容器级状态
+
+### 问题
+kubectl 显示 Pod 状态为 `ImagePullBackOff`，但前端显示为 `Pending`。原因是后端只使用了 `v.Status.Phase`，而 kubectl 的 STATUS 列优先显示容器级别的 `containerStatuses[].state.waiting.reason`。
+
+### 修复
+
+`internal/service/k8s_resource_service.go`：
+- 新增 `podStatus(pod *corev1.Pod) string` 函数，模拟 kubectl STATUS 列逻辑：
+  1. `PodSucceeded` → `"Completed"`
+  2. 遍历容器/初始化容器/Ephemeral 容器的 `Waiting.Reason` / `Terminated.Reason`，优先返回
+  3. fallback 到 `string(Phase)`
+- `convertToSummary` 中 Pod 的 `status` 字段从 `string(v.Status.Phase)` 改为 `podStatus(v)`
+
+`internal/service/k8s_manager.go`：
+- 全局搜索 Pod 状态同样从 `string(v.Status.Phase)` 改为 `podStatus(v)`
+
+### 效果
+| kubectl 状态 | 修复前前端 | 修复后前端 |
+|-------------|-----------|-----------|
+| ImagePullBackOff | Pending | ImagePullBackOff |
+| CrashLoopBackOff | Pending / Running | CrashLoopBackOff |
+| ContainerCreating | Pending | ContainerCreating |
+| Completed | Succeeded | Completed |
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+
+---
+
 ## 2026-04-19 写操作前端弹窗完善 + kindToGroupVersionResource 修复
 
 ### 问题

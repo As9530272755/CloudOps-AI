@@ -209,7 +209,7 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 		appendFromStore(cc, "pods", cc.PodStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Pod)
 			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "pods", Namespace: v.Namespace, Name: v.Name, Status: string(v.Status.Phase), Labels: copyLabels(v.Labels)}, true
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "pods", Namespace: v.Namespace, Name: v.Name, Status: podStatus(v), Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})

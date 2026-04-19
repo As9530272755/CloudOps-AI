@@ -344,7 +344,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		return map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
-			"status":            string(v.Status.Phase),
+			"status":            podStatus(v),
 			"restarts":          podRestarts(v),
 			"node":              v.Spec.NodeName,
 			"pod_ip":            v.Status.PodIP,
@@ -583,6 +583,47 @@ func nodeInternalIP(node *corev1.Node) string {
 		}
 	}
 	return ""
+}
+
+func podStatus(pod *corev1.Pod) string {
+	phase := pod.Status.Phase
+
+	// 已完成的 Pod
+	if phase == corev1.PodSucceeded {
+		return "Completed"
+	}
+
+	// 检查容器级别状态（模拟 kubectl 的 STATUS 列）
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			return cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+			return cs.State.Terminated.Reason
+		}
+	}
+
+	// 检查初始化容器状态
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			return cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+			return cs.State.Terminated.Reason
+		}
+	}
+
+	// Ephemeral 容器状态
+	for _, cs := range pod.Status.EphemeralContainerStatuses {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			return cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+			return cs.State.Terminated.Reason
+		}
+	}
+
+	return string(phase)
 }
 
 func podRestarts(pod *corev1.Pod) int32 {
