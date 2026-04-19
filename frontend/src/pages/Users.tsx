@@ -223,8 +223,8 @@ export default function Users() {
   // 删除用户
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiClient.delete(`/users/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ['users'], type: 'active' })
       setSnack({ open: true, message: '用户删除成功', severity: 'success' })
     },
     onError: (err: any) => {
@@ -410,7 +410,6 @@ export default function Users() {
         <Table>
           <TableHead>
             <TableRow sx={{ bgcolor: 'action.hover' }}>
-              <TableCell>ID</TableCell>
               <TableCell>用户名</TableCell>
               <TableCell>邮箱</TableCell>
               <TableCell>角色</TableCell>
@@ -434,7 +433,6 @@ export default function Users() {
             ) : (
               users.map(user => (
                 <TableRow key={user.id} hover>
-                  <TableCell>{user.id}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       {user.username}

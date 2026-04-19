@@ -77,6 +77,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 		// 需要认证的路由
 		protected := v1.Group("")
 		protected.Use(middleware.AuthMiddleware(r.jwtManager))
+		protected.Use(middleware.UserExistMiddleware(r.db))
 		protected.Use(middleware.TenantScopeMiddleware())
 		{
 			// 用户信息
