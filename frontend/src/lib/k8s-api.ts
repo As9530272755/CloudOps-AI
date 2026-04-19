@@ -156,6 +156,38 @@ export const k8sAPI = {
     const response = await api.delete(`/clusters/${clusterId}/resources/${kind}/${name}?${params.toString()}`)
     return response.data
   },
+
+  // 创建资源
+  createResource: async (
+    clusterId: number,
+    kind: string,
+    namespace: string,
+    manifest: Record<string, any>
+  ) => {
+    const response = await api.post(`/clusters/${clusterId}/resources/${kind}`, {
+      manifest,
+      namespace,
+    })
+    return response.data
+  },
+
+  // 更新资源
+  updateResource: async (
+    clusterId: number,
+    kind: string,
+    name: string,
+    namespace: string,
+    manifest: Record<string, any>
+  ) => {
+    const params = new URLSearchParams()
+    if (namespace && namespace !== 'all') {
+      params.set('namespace', namespace)
+    }
+    const response = await api.put(`/clusters/${clusterId}/resources/${kind}/${name}?${params.toString()}`, {
+      manifest,
+    })
+    return response.data
+  },
 }
 
 // 资源类型定义

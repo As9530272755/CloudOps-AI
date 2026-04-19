@@ -1114,6 +1114,47 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 - 前端 `npm run build` ✅
 - 后端已重启 ✅
 
+---
+
+## 2026-04-19 写操作前端弹窗完善 + kindToGroupVersionResource 修复
+
+### 问题
+- ClusterDetail 页面的编辑按钮点击后 YAML 编辑器能显示但保存逻辑不完整
+- `handleUpdateResource` / `handleCreateResource` 未接入后端 API
+- 详情弹窗「编辑」按钮未绑定编辑模式
+- `kindToGroupVersionResource` 中部分 resource 字段拼写错误（`namespaces` 等）
+
+### 修改内容
+
+#### 1. 前端编辑/创建弹窗完善
+`frontend/src/pages/ClusterDetail.tsx`：
+- `handleUpdateResource`：用 `js-yaml` 解析 YAML → 提取 `metadata.name`，确保与 URL 中的 name 一致 → 调用 `k8sAPI.updateResource`
+- `handleCreateResource`：用 `js-yaml` 解析 YAML → 提取 `metadata.name` 和 `metadata.namespace` → 确认或修正 `activeNamespace` → 调用 `k8sAPI.createResource`
+- 详情弹窗增加「编辑」按钮，点击切换编辑模式（加载 YAML）
+- 编辑弹窗保持 Monaco Editor +「保存」/「取消」按钮
+- 创建弹窗同样配置，提供默认 YAML 模板（带注释说明）
+- 新增 `isNamespaceResource` 辅助函数判断资源是否需要 namespace
+
+#### 2. 编辑弹窗状态管理优化
+- `editMode` / `editYaml` 控制编辑模式
+- `createDialogOpen` / `createYaml` 控制创建弹窗
+- `deleteConfirmOpen` / `deleteTarget` 控制删除确认
+
+#### 3. kindToGroupVersionResource 拼写修复
+`frontend/src/lib/k8s.ts`：
+- `Namespace`: `resource: 'namespaces'`（原拼写错误已确认，不影响创建/更新逻辑）
+- 所有 resource 字段统一复数形式
+
+#### 4. 安装 js-yaml
+`frontend/package.json`：
+- 新增 `js-yaml` 依赖
+- 新增 `@types/js-yaml` 开发依赖
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+- 后端已重启 ✅
+
 
 ## 2026-04-19 续：后端重启脚本
 
