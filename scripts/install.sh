@@ -9,7 +9,7 @@ set -e
 
 # 默认配置
 INSTALL_DIR="/opt/cloudops"
-MODE="full"          # full | lite
+MODE="full"  # 仅支持 PostgreSQL + Redis 部署模式
 DB_HOST="127.0.0.1"
 DB_PORT="5432"
 DB_NAME="cloudops"
@@ -44,9 +44,6 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-    --mode <full|lite>        部署模式 (默认: full)
-                              full:  PostgreSQL + Redis
-                              lite:  SQLite (无外部数据库依赖)
     --install-dir <dir>       安装目录 (默认: /opt/cloudops)
     --db-host <host>          PostgreSQL 地址 (默认: 127.0.0.1)
     --db-port <port>          PostgreSQL 端口 (默认: 5432)
@@ -64,7 +61,6 @@ Options:
 
 Examples:
     ./install.sh                          # 默认 full 模式，交互式确认
-    ./install.sh --mode lite              # 轻量模式（SQLite）
     ./install.sh --mode full --db-password MyPwd123 --yes
 EOF
     exit 0
@@ -74,10 +70,6 @@ EOF
 AUTO_CONFIRM=false
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --mode)
-            MODE="$2"
-            shift 2
-            ;;
         --install-dir)
             INSTALL_DIR="$2"
             shift 2
@@ -140,11 +132,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 校验模式
-if [[ "$MODE" != "full" && "$MODE" != "lite" ]]; then
-    log_error "模式必须是 full 或 lite"
-    exit 1
-fi
 
 # 检测 root
 if [[ $EUID -ne 0 ]]; then
@@ -184,18 +171,12 @@ fi
 log_info "================================================"
 log_info "CloudOps 离线安装程序"
 log_info "================================================"
-log_info "部署模式: ${MODE}"
 log_info "操作系统: ${OS_ID} ${OS_VERSION} (${OS_FAMILY})"
 log_info "安装目录: ${INSTALL_DIR}"
 log_info "前端端口: ${FRONTEND_PORT}"
 log_info "后端端口: ${BACKEND_PORT}"
-if [[ "$MODE" == "full" ]]; then
     log_info "数据库: PostgreSQL @ ${DB_HOST}:${DB_PORT}"
     log_info "缓存: Redis @ ${REDIS_HOST}:${REDIS_PORT}"
-else
-    log_info "数据库: SQLite (内置)"
-    log_info "缓存: 内存模式"
-fi
 log_info "================================================"
 
 if [[ "$AUTO_CONFIRM" != true ]]; then
@@ -218,7 +199,7 @@ if [[ -z "$JWT_SECRET" ]]; then
     JWT_SECRET=$(generate_secret)
     log_info "自动生成 JWT_SECRET"
 fi
-if [[ -z "$DB_PASSWORD" && "$MODE" == "full" ]]; then
+if [[ -z "$DB_PASSWORD" ]]; then
     DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 16)
     log_info "自动生成数据库密码: ${DB_PASSWORD}"
     log_warn "请记录此密码，如需查看可访问 ${INSTALL_DIR}/.env"
@@ -253,14 +234,9 @@ install_nodejs_binary() {
 
 if [[ "$OS_FAMILY" == "debian" ]]; then
     # Ubuntu/Debian
-    if [[ "$MODE" == "full" ]]; then
         log_info "安装 PostgreSQL 14..."
         if [[ -d "${DEPS_DIR}/postgresql-14" ]]; then
             dpkg -i "${DEPS_DIR}"/postgresql-14/*.deb 2>/dev/null || apt-get install -f -y
-        else
-            log_warn "未找到 PostgreSQL 离线包，尝试在线安装..."
-            apt-get update && apt-get install -y postgresql-14 postgresql-client-14
-        fi
 
         log_info "安装 Redis..."
         if [[ -d "${DEPS_DIR}/redis-server" ]]; then
@@ -275,13 +251,9 @@ if [[ "$OS_FAMILY" == "debian" ]]; then
 
 elif [[ "$OS_FAMILY" == "rhel" ]]; then
     # CentOS/RHEL
-    if [[ "$MODE" == "full" ]]; then
         log_info "安装 PostgreSQL 15..."
         if [[ -d "${DEPS_DIR}/postgresql15" ]]; then
             rpm -ivh "${DEPS_DIR}"/postgresql15/*.rpm --nodeps 2>/dev/null || true
-        else
-            log_warn "未找到 PostgreSQL 离线包"
-        fi
 
         log_info "安装 Redis..."
         if [[ -d "${DEPS_DIR}/redis" ]]; then
@@ -301,12 +273,10 @@ fi
 # =============================================================================
 log_step "2/8 初始化数据库..."
 
-if [[ "$MODE" == "full" ]]; then
     # 启动 PostgreSQL
     if command -v systemctl &> /dev/null; then
         systemctl enable postgresql || systemctl enable postgresql-14 || true
         systemctl start postgresql || systemctl start postgresql-14 || true
-    fi
 
     # 等待 PostgreSQL 就绪
     sleep 2
@@ -334,11 +304,6 @@ if [[ "$MODE" == "full" ]]; then
         systemctl start redis-server 2>/dev/null || systemctl start redis 2>/dev/null || true
         log_info "Redis 已启动"
     fi
-else
-    log_info "Lite 模式: 跳过 PostgreSQL/Redis 安装，使用内置 SQLite"
-    DB_HOST=""
-    REDIS_HOST=""
-fi
 
 # =============================================================================
 # STEP 3: 创建运行用户
@@ -411,7 +376,6 @@ CONFIG_FILE="${INSTALL_DIR}/config/config.yaml"
 cat > "$CONFIG_FILE" <<EOF
 # CloudOps Platform 配置文件
 # 生成时间: $(date -Iseconds)
-# 部署模式: ${MODE}
 
 server:
   backend:
@@ -434,7 +398,6 @@ server:
 database:
 EOF
 
-if [[ "$MODE" == "full" ]]; then
     cat >> "$CONFIG_FILE" <<EOF
   postgres:
     host: "${DB_HOST}"
@@ -452,15 +415,6 @@ if [[ "$MODE" == "full" ]]; then
     db: 0
     pool_size: 100
 EOF
-else
-    cat >> "$CONFIG_FILE" <<EOF
-  postgres:
-    host: ""       # 留空使用 SQLite
-
-  redis:
-    host: ""       # 留空禁用 Redis
-EOF
-fi
 
 cat >> "$CONFIG_FILE" <<EOF
 
@@ -529,9 +483,7 @@ cat > "$ENV_FILE" <<EOF
 CONFIG_PATH=${INSTALL_DIR}/config/config.yaml
 JWT_SECRET=${JWT_SECRET}
 EOF
-if [[ "$MODE" == "full" ]]; then
     echo "DB_PASSWORD=${DB_PASSWORD}" >> "$ENV_FILE"
-fi
 chmod 600 "$ENV_FILE"
 
 log_info "配置文件已生成: ${CONFIG_FILE}"
@@ -548,11 +500,9 @@ Description=CloudOps Backend
 After=network.target
 EOF
 
-if [[ "$MODE" == "full" ]]; then
     cat >> /etc/systemd/system/cloudops-backend.service <<EOF
 After=postgresql.service redis-server.service
 EOF
-fi
 
 cat >> /etc/systemd/system/cloudops-backend.service <<EOF
 
@@ -609,11 +559,9 @@ chmod +x "${INSTALL_DIR}/cloudops-backend"
 # =============================================================================
 log_step "8/8 启动服务..."
 
-if [[ "$MODE" == "full" ]]; then
     systemctl start postgresql 2>/dev/null || systemctl start postgresql-14 2>/dev/null || true
     systemctl start redis-server 2>/dev/null || systemctl start redis 2>/dev/null || true
     sleep 2
-fi
 
 systemctl start cloudops-backend
 sleep 3
@@ -645,14 +593,12 @@ echo -e "${GREEN}默认账号:${NC}"
 echo "  用户名: admin"
 echo "  密码:   admin"
 echo ""
-if [[ "$MODE" == "full" ]]; then
     echo -e "${GREEN}数据库信息:${NC}"
     echo "  地址: ${DB_HOST}:${DB_PORT}"
     echo "  数据库: ${DB_NAME}"
     echo "  用户: ${DB_USER}"
     echo "  密码: ${DB_PASSWORD}"
     echo ""
-fi
 echo -e "${GREEN}安装目录:${NC} ${INSTALL_DIR}"
 echo -e "${GREEN}配置文件:${NC} ${CONFIG_FILE}"
 echo -e "${GREEN}环境变量:${NC} ${ENV_FILE}"

@@ -9,7 +9,6 @@ import (
 	"github.com/cloudops/platform/internal/pkg/config"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -21,24 +20,20 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	var dsn string
 	var dialector gorm.Dialector
 
-	// 根据配置选择数据库
-	if cfg.Database.Postgres.Host != "" {
-		// PostgreSQL
-		dsn = fmt.Sprintf(
-			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			cfg.Database.Postgres.Host,
-			cfg.Database.Postgres.Port,
-			cfg.Database.Postgres.Username,
-			cfg.Database.Postgres.Password,
-			cfg.Database.Postgres.Database,
-			cfg.Database.Postgres.SSLMode,
-		)
-		dialector = postgres.Open(dsn)
-	} else {
-		// SQLite (开发模式)
-		dsn = "cloudops.db"
-		dialector = sqlite.Open(dsn)
+	// PostgreSQL
+	if cfg.Database.Postgres.Host == "" {
+		return nil, fmt.Errorf("数据库配置错误: postgres.host 不能为空")
 	}
+	dsn = fmt.Sprintf(
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		cfg.Database.Postgres.Host,
+		cfg.Database.Postgres.Port,
+		cfg.Database.Postgres.Username,
+		cfg.Database.Postgres.Password,
+		cfg.Database.Postgres.Database,
+		cfg.Database.Postgres.SSLMode,
+	)
+	dialector = postgres.Open(dsn)
 
 	// GORM 配置
 	gormConfig := &gorm.Config{}

@@ -44,7 +44,7 @@ CloudOps Platform v2.0 是一款面向多集群 Kubernetes 环境的云原生智
 |------|------|------|------|
 | 后端 | Go | 1.21+ | 项目 go.mod 声明 1.25，建议使用 1.23+ |
 | Web 框架 | Gin | v1.9.1 | HTTP API 服务 |
-| ORM | GORM | v2 | 支持 PostgreSQL / SQLite |
+| ORM | GORM | v2 | 支持 PostgreSQL |
 | 前端 | React + Vite + TypeScript | 18+ | 现代前端架构 |
 | UI 组件库 | Material-UI (MUI) | v5.x | 企业级组件 |
 | 终端 | xterm.js | v5.x | Web 终端渲染 |
@@ -60,8 +60,7 @@ CloudOps Platform v2.0 是一款面向多集群 Kubernetes 环境的云原生智
 | **Go** | 1.21+ | 编译后端 | 是（生产环境可只用编译好的二进制） |
 | **Node.js** | 18+ | 前端构建、Agent Runtime 运行 | 是 |
 | **npm** | 9+ | 前端和 Agent 依赖管理 | 是 |
-| **PostgreSQL** | 15+ | 主数据库 | **二选一** |
-| **SQLite** | 3.x | 轻量模式内置数据库 | **二选一** |
+| **PostgreSQL** | 15+ | 主数据库 | 是 |
 
 ### 2.3 可选依赖
 
@@ -97,7 +96,7 @@ CloudOps Platform v2.0 是一款面向多集群 Kubernetes 环境的云原生智
 执行 `go mod download` 会自动下载所有 Go 模块，主要包括：
 
 - `github.com/gin-gonic/gin` — Web 框架
-- `gorm.io/gorm` + `driver/postgres` + `driver/sqlite` — 数据库 ORM
+- `gorm.io/gorm` + `driver/postgres` — 数据库 ORM
 - `github.com/golang-jwt/jwt/v5` — JWT 认证
 - `github.com/redis/go-redis/v9` — Redis 客户端
 - `k8s.io/client-go` — Kubernetes 客户端
@@ -112,14 +111,11 @@ CloudOps Platform v2.0 是一款面向多集群 Kubernetes 环境的云原生智
 
 ### 3.1 支持的数据库
 
-CloudOps 支持两种数据库模式：
+CloudOps 使用 PostgreSQL 作为数据库：
 
 | 模式 | 数据库 | 适用场景 | 资源要求 |
 |------|--------|----------|----------|
 | **全功能模式** | PostgreSQL 15+ | 生产环境、多用户、高并发 | 4C8G+ |
-| **轻量模式** | SQLite（内置） | 开发测试、小团队、POC | 2C4G+ |
-
-> **生产环境强烈建议使用 PostgreSQL**。SQLite 虽然零配置，但并发性能和数据完整性不如 PostgreSQL。
 
 ### 3.2 数据库配置
 
@@ -130,7 +126,7 @@ CloudOps 支持两种数据库模式：
 ```yaml
 database:
   postgres:
-    host: "localhost"        # 数据库地址，留空则自动使用 SQLite
+    host: "localhost"        # 数据库地址
     port: 5432
     database: "cloudops"
     username: "cloudops"
@@ -140,23 +136,11 @@ database:
     max_idle: 10
 ```
 
-#### SQLite 配置（轻量模式）
-
-只需将 `database.postgres.host` 留空或删除整段：
-
-```yaml
-database:
-  postgres:
-    host: ""   # 留空自动回退到 SQLite
-```
-
-程序启动时会在当前目录创建 `cloudops.db` 文件。
-
 ### 3.3 数据库初始化流程
 
 **首次启动时，后端会自动完成以下初始化，无需手动执行 SQL 脚本：**
 
-1. **连接数据库**：根据配置选择 PostgreSQL 或 SQLite
+1. **连接数据库**：连接 PostgreSQL
 2. **自动迁移表结构**（GORM AutoMigrate），共创建以下表：
    - 租户：`tenants`
    - 用户与权限：`users`, `roles`, `permissions`, `cluster_permissions`
@@ -260,7 +244,7 @@ sudo useradd -r -s /bin/false -d /opt/cloudops -m cloudops
 # 安装 Node.js 18+（如未安装）
 # 参考 https://nodejs.org/
 
-# 安装 PostgreSQL 15+（可选，开发可用 SQLite）
+# 安装 PostgreSQL 15+
 # Ubuntu: sudo apt-get install postgresql-15
 # CentOS: sudo yum install postgresql15-server
 ```
@@ -648,19 +632,6 @@ sudo cp -r cloudops-offline-package/* /opt/cloudops/app/
 sudo systemctl start cloudops-backend
 ```
 
-### 8.3 轻量模式（无 PostgreSQL/Redis）
-
-如果环境资源紧张，可使用 SQLite 模式：
-
-```yaml
-# config/config.yaml
-database:
-  postgres:
-    host: ""   # 留空即使用 SQLite
-```
-
-此模式下只需运行后端二进制和前端静态文件即可。
-
 ---
 
 ## 九、Web 终端安全警告（必读）
@@ -821,13 +792,7 @@ server {
 - 确认目标服务器 Node.js 版本 ≥ 18
 - 手动执行 `cd agent-runtime && node dist/server.js --port 19000` 查看具体错误
 
-### Q5：SQLite 模式下数据丢失
-
-- SQLite 数据库文件 `cloudops.db` 默认生成在启动目录
-- 确保后端始终在固定目录启动，或配置绝对路径
-- 如需迁移到 PostgreSQL，可使用 `pgloader` 等工具
-
-### Q6：添加 K8s 集群后无法获取资源
+### Q5：添加 K8s 集群后无法获取资源
 
 - 确认 Kubeconfig 内容正确且未过期
 - 确认后端服务器能访问集群 API Server 地址

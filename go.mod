@@ -14,7 +14,6 @@ require (
 	golang.org/x/crypto v0.45.0
 	golang.org/x/sync v0.18.0
 	gorm.io/driver/postgres v1.5.7
-	gorm.io/driver/sqlite v1.5.5
 	gorm.io/gorm v1.25.7
 	k8s.io/api v0.35.3
 	k8s.io/apiextensions-apiserver v0.35.3
@@ -58,7 +57,6 @@ require (
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/mattn/go-sqlite3 v1.14.17 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect

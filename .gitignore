@@ -25,11 +25,10 @@ frontend/dist/
 frontend/.next/
 frontend/out/
 
-# Environment
-.env
-.env.local
-.env.*.local
-*.env
+# Environment (root only, keep frontend/.env for dev)
+/.env
+/.env.local
+/.env.*.local
 
 # IDE
 .idea/
@@ -46,10 +45,6 @@ Thumbs.db
 *.log
 logs/
 
-# Database
-*.db
-*.sqlite
-
 # Temp
 tmp/
 temp/
@@ -62,23 +57,19 @@ coverage/
 # Generated
 *.generated.go
 
-# Local
-.env.local
+# Local build artifacts
 cloudops-backend
 /server
-data/
-backend.log
-frontend.log
+
 # Debug/test artifacts
 debug_*.png
 test_ai_spinner.*
+
+# Large runtime binaries
+data/kubectl
 
 # Uploads
 uploads/
 
 # Dev context (internal only)
 CONTEXT.md
-
-# Sensitive config files (contain real passwords)
-config/config.yaml
-offline-package/config/config.yaml

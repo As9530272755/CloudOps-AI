@@ -43,7 +43,6 @@ ai:
     max_tokens: 4096
 ```
 
-> 如果没有 PostgreSQL，将 `postgres.host` 留空，系统会自动降级使用 SQLite（`cloudops.db`）。
 
 ## 第三步：编译并启动后端
 

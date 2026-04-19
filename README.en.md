@@ -44,7 +44,7 @@ CloudOps Platform is a cloud-native O&M management platform for multi-cluster Ku
 | UI Library | Material-UI (MUI) | 5.x |
 | State Management | TanStack Query | 5.x |
 | K8s Client | client-go / informer | latest |
-| Database | PostgreSQL / SQLite | 15+ |
+| Database | PostgreSQL | 15+ |
 | Cache | Redis | 7+ |
 | AI Platform | OpenClaw / Ollama | OpenAI-compatible |
 
@@ -91,7 +91,7 @@ cloudops-v2/
 
 - Go 1.21+
 - Node.js 18+
-- PostgreSQL 15+ (SQLite acceptable for development mode)
+- PostgreSQL 15+
 - Redis 7+ (optional; required for AI task polling)
 
 ### 2. Clone & Initialize

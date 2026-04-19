@@ -20,7 +20,6 @@
 | 模式 | 数据库 | 缓存 | 资源要求 | 适用场景 |
 |------|--------|------|----------|----------|
 | **full（默认）** | PostgreSQL 14+ | Redis 6+ | 4C8G+ | 生产环境 |
-| **lite** | SQLite（内置） | 内存 sync.Map | 2C4G+ | POC / 测试 / 小团队 |
 
 ---
 
@@ -28,11 +27,11 @@
 
 ### 2.1 硬件要求
 
-| 项目 | full 模式 | lite 模式 |
-|------|-----------|-----------|
-| CPU | x86_64，≥ 4 核 | x86_64，≥ 2 核 |
-| 内存 | ≥ 8GB | ≥ 4GB |
-| 磁盘 | ≥ 20GB 可用空间 | ≥ 10GB 可用空间 |
+| 项目 | 要求 |
+|------|------|
+| CPU | x86_64，≥ 4 核 |
+| 内存 | ≥ 8GB |
+| 磁盘 | ≥ 20GB 可用空间 |
 
 ### 2.2 操作系统支持
 
@@ -150,15 +149,14 @@ chmod +x scripts/*.sh
 # 或指定数据库密码
 ./scripts/install.sh --mode full --db-password MySecurePwd123 --yes
 
-# 轻量模式（零外部数据库依赖）
-./scripts/install.sh --mode lite --yes
+
 ```
 
 #### 安装参数说明
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--mode <full\|lite>` | 部署模式 | `full` |
+
 | `--install-dir <dir>` | 安装目录 | `/opt/cloudops` |
 | `--db-password <pwd>` | 数据库密码 | 自动生成（16位随机字符串） |
 | `--db-host <host>` | PostgreSQL 地址 | `127.0.0.1` |
@@ -292,16 +290,6 @@ systemctl enable cloudops-frontend
 | PostgreSQL | 5432 | 主数据库 |
 | Redis | 6379 | 缓存 |
 
-### 6.2 lite 模式（轻量快速）
-
-**架构**：SQLite（内置）+ CloudOps Backend + Agent Runtime + Frontend
-
-**特点**：
-- 零外部数据库依赖，无需安装 PostgreSQL/Redis
-- SQLite 数据库文件位于 `/opt/cloudops/cloudops.db`
-- AI 任务状态使用内存 `sync.Map`（重启后丢失未完成任务）
-- 适合快速体验、POC 验证、小团队（< 10人）
-
 **端口占用**：
 | 服务 | 端口 | 说明 |
 |------|------|------|
@@ -408,8 +396,7 @@ cat /opt/cloudops/.env
 3. **配置防火墙**：仅开放必要的端口（18000、9000）
 4. **生产环境配置 HTTPS**：可通过 Nginx 反向代理并配置 SSL 证书
 5. **定期备份**：
-   - full 模式：`pg_dump cloudops > backup-$(date +%F).sql`
-   - lite 模式：备份 `/opt/cloudops/cloudops.db` 文件
+   - `pg_dump cloudops > backup-$(date +%F).sql`
 
 ---
 

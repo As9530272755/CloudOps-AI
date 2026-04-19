@@ -35,9 +35,6 @@
 | 模式 | 数据库 | 缓存 | 适用场景 | 资源要求 |
 |---|---|---|---|---|
 | **全功能模式** | PostgreSQL 15+ | Redis 7+ | 生产环境、多用户、AI 任务轮询 | 4C8G+ |
-| **轻量模式** | SQLite（内置） | 无 | POC、测试、小团队 | 2C4G+ |
-
-> 建议生产环境使用 **全功能模式**。SQLite 模式在重启后数据仍保留，但并发性能和扩展性较弱。
 
 ---
 
@@ -209,12 +206,6 @@ security:
   encryption:
     key: "${ENCRYPTION_KEY}" # 32 字节 AES 密钥，必须通过环境变量注入
 ```
-
-### 轻量模式（SQLite 无 Redis）
-
-只需将 `config.yaml` 中 `database.postgres.host` 留空或删除 `postgres` 整段，程序启动时会自动回退到 SQLite（`cloudops.db` 文件）。
-
-Redis 不可用时，AI 任务状态会回退到内存 `sync.Map`，功能可用但重启后丢失未完成任务。
 
 ---
 
@@ -494,51 +485,11 @@ ai:
 - 确认 `agent-runtime/node_modules` 已完整复制到目标服务器
 - 确认目标服务器 Node.js 版本 ≥ 18
 
-### Q4：SQLite 模式下数据丢失
-- SQLite 数据库文件 `cloudops.db` 默认生成在启动目录。请确保后端始终在 `/opt/cloudops/app` 目录启动，或显式配置 `DATABASE_URL`。
-- 如需迁移到 PostgreSQL，可使用 `pgloader` 等工具。
-
-### Q5：如何升级到新版本？
+### Q4：如何升级到新版本？
 1. 停止所有服务
 2. 备份 `config.yaml` 和数据库
 3. 替换新的 `cloudops-backend`、`frontend/dist`、`agent-runtime/dist`
 4. 如数据库模型有变更，后端启动时会自动 `AutoMigrate`
 5. 重新启动服务
 
----
 
-## 十一、最小化快速部署（SQLite + 无 Redis + 无 Agent）
-
-如果用户只想快速体验核心功能，可进一步精简：
-
-```bash
-# 1. 只保留后端二进制和前端静态文件
-mkdir -p /opt/cloudops/minimal
-cp cloudops-backend /opt/cloudops/minimal/
-cp -r frontend/dist /opt/cloudops/minimal/
-
-# 2. 使用内置的最小化配置（自动回退 SQLite）
-cat > /opt/cloudops/minimal/config.yaml << 'EOF'
-server:
-  backend:
-    host: "0.0.0.0"
-    port: 9000
-    mode: "release"
-  frontend:
-    host: "0.0.0.0"
-    port: 18000
-security:
-  jwt:
-    secret: "demo-secret-change-in-production"
-    access_expire: 1h
-    refresh_expire: 24h
-  encryption:
-    key: "demo-encryption-key-must-be-32bytes"
-EOF
-
-# 3. 启动
-nohup ./cloudops-backend > backend.log 2>&1 &
-cd frontend/dist && nohup npx vite preview --port 18000 --host > frontend.log 2>&1 &
-```
-
-> 此模式下 AI 助手、Agent Runtime、日志高级分析等部分功能受限，但集群管理、资源查看、基础 AI 对话仍可正常运行。

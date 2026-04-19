@@ -26,7 +26,7 @@
 - RAM: ≥ 4GB（建议 8GB）
 - 磁盘: ≥ 20GB
 - 依赖:
-  - PostgreSQL 14+（或 SQLite 轻量模式）
+  - PostgreSQL 14+
   - Redis 6+（可选）
   - Node.js 18+（运行 Agent Runtime）
 
