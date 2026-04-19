@@ -586,6 +586,11 @@ func nodeInternalIP(node *corev1.Node) string {
 }
 
 func podStatus(pod *corev1.Pod) string {
+	// 正在删除的 Pod 优先显示 Terminating（与 kubectl 一致）
+	if pod.DeletionTimestamp != nil {
+		return "Terminating"
+	}
+
 	phase := pod.Status.Phase
 
 	// 已完成的 Pod

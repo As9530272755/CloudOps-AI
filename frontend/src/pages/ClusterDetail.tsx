@@ -397,7 +397,7 @@ export default function ClusterDetail() {
         loadResources(targetResource, 1, '')
       }
     }
-  }, [activeCategory, selectedNamespace, limit, filteredCategories, permissions])
+  }, [activeCategory, selectedNamespace, limit, filteredCategories, permissions, id])
 
   // 资源列表加载后，自动打开指定资源的详情弹窗
   useEffect(() => {
