@@ -115,6 +115,7 @@ export default function ClusterDetail() {
   const id = Number(clusterId)
 
   const [cluster, setCluster] = useState<Cluster | null>(null)
+  const [allClusters, setAllClusters] = useState<Cluster[]>([])
   const [activeCategory, setActiveCategory] = useState('overview')
   const [activeResource, setActiveResource] = useState('')
   const [namespaces, setNamespaces] = useState<string[]>([])
@@ -174,6 +175,7 @@ export default function ClusterDetail() {
     try {
       const result = await clusterAPI.getClusters()
       if (result.success && result.data) {
+        setAllClusters(result.data)
         const c = result.data.find((x: Cluster) => x.id === id)
         if (c) setCluster(c)
       }
@@ -454,9 +456,28 @@ export default function ClusterDetail() {
             </Button>
             <Breadcrumbs>
               <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => navigate('/clusters')}>集群管理</Link>
-              <Typography color="text.primary" sx={{ fontWeight: 600 }}>
-                {cluster?.display_name || cluster?.name || `集群 ${id}`}
-              </Typography>
+              {allClusters.length > 1 ? (
+                <Select
+                  value={id}
+                  size="small"
+                  variant="standard"
+                  sx={{ fontWeight: 600, color: 'text.primary', minWidth: 120 }}
+                  onChange={(e) => {
+                    const newId = Number(e.target.value)
+                    if (newId !== id) {
+                      navigate(`/clusters/${newId}`)
+                    }
+                  }}
+                >
+                  {allClusters.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>{c.display_name || c.name}</MenuItem>
+                  ))}
+                </Select>
+              ) : (
+                <Typography color="text.primary" sx={{ fontWeight: 600 }}>
+                  {cluster?.display_name || cluster?.name || `集群 ${id}`}
+                </Typography>
+              )}
             </Breadcrumbs>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
