@@ -894,3 +894,62 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 ---
 
 *最后更新：2026-04-19*
+
+---
+
+## 2026-04-19 用户管理 + 租户隔离 + 功能模块权限 Phase 1
+
+### 完成内容
+
+1. **数据模型扩展**
+   - `Role` 表扩展：新增 `scope` (platform/cluster/namespace)、`level` (100-300)、`permissions_data` (JSONB 扁平化权限列表)
+   - 新增 `NamespaceGrant` 表：用户-集群-命名空间-角色 四维授权
+   - 新增 `UserModuleOverride` 表：用户级功能模块权限覆盖
+
+2. **预置角色体系（6种）**
+   - `platform-admin` (level 300)：全部权限
+   - `cluster-admin` (level 200)：除系统管理外的全部
+   - `cluster-viewer` (level 110)：只读
+   - `namespace-admin` (level 150)：NS 级管理
+   - `namespace-operator` (level 120)：NS 级运维
+   - `namespace-viewer` (level 100)：NS 级只读
+
+3. **RBAC Service**
+   - `GetUserEffectiveRole`：获取用户最高级别角色
+   - `GetEffectiveRole`：获取用户在集群+NS 的有效角色
+   - `GetAllowedNamespaces`：获取用户有权限的 NS 列表
+   - `GetAllPermissions` / `GetModulePermissions` / `GetAIPermissions`：权限查询
+   - `GrantNamespace` / `RevokeNamespace`：NS 授权管理
+
+4. **中间件**
+   - `TenantScopeMiddleware`：自动为请求添加租户数据范围
+   - `ModulePermissionMiddleware`：功能模块权限校验（菜单级）
+   - `NSPermissionMiddleware`：K8s 命名空间权限校验
+   - `AIPermissionMiddleware`：AI 功能权限校验
+
+5. **后端 API 改造**
+   - 所有路由添加 `TenantScopeMiddleware`
+   - 各模块路由添加 `ModulePermissionMiddleware`
+   - 新增用户管理 API：`/users` CRUD、`/namespace-grants`、`/users/me/permissions`、`/users/me/menus`、`/users/me/namespaces`
+   - Inspection handler 添加租户过滤
+
+6. **前端改造**
+   - `usePermission` Hook：获取动态菜单和权限
+   - `MainLayout.tsx`：从后端 `/users/me/menus` 动态渲染菜单
+   - `App.tsx`：`ModuleRoute` 组件，无权限显示 403 页面
+
+7. **权限标识体系**
+   - 模块权限：`module:dashboard`, `module:cluster:manage`, `module:inspection`, ...
+   - AI 权限：`ai:chat`, `ai:agent_chat`, `ai:platform:manage`, ...
+   - K8s 权限：`pod:read`, `pod:write`, `deployment:read`, ...
+
+### 编译状态
+- 后端：`go build` ✅
+- 前端：`npm run build` ✅
+
+### 文档
+- `docs/user-management-namespace-rbac-v3.md` - NS 级 RBAC 方案
+- `docs/terminal-permission-analysis.md` - 终端权限分析
+- `docs/ai-permission-design.md` - AI 权限方案
+- `docs/module-permission-tenant-isolation.md` - 功能模块权限 + 租户隔离方案
+

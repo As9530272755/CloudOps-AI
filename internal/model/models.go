@@ -33,12 +33,15 @@ func (User) TableName() string {
 
 // Role 角色模型
 type Role struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	Name        string    `gorm:"size:50;unique;not null" json:"name"`
-	DisplayName string    `gorm:"size:100" json:"display_name"`
-	Description string    `gorm:"size:255" json:"description"`
-	IsSystem    bool      `gorm:"default:false" json:"is_system"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Name           string    `gorm:"size:50;unique;not null" json:"name"`
+	DisplayName    string    `gorm:"size:100" json:"display_name"`
+	Description    string    `gorm:"size:255" json:"description"`
+	IsSystem       bool      `gorm:"default:false" json:"is_system"`
+	Scope          string    `gorm:"size:32;default:'namespace'" json:"scope"` // platform/cluster/namespace
+	Level          int       `gorm:"default:100" json:"level"`
+	PermissionsData string   `gorm:"type:jsonb" json:"permissions_data"` // 扁平化权限列表 JSON ["module:dashboard","ai:chat",...]
+	CreatedAt      time.Time `json:"created_at"`
 	
 	// 关联
 	Permissions []Permission `gorm:"many2many:role_permissions;" json:"permissions,omitempty"`
@@ -314,7 +317,7 @@ func (AuditLog) TableName() string {
 	return "audit_logs"
 }
 
-// ClusterPermission 集群权限模型 - 用户集群访问控制
+// ClusterPermission 集群权限模型 - 用户集群访问控制（保留兼容）
  type ClusterPermission struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
 	UserID      uint           `gorm:"uniqueIndex:idx_user_cluster;not null" json:"user_id"`
@@ -335,6 +338,41 @@ func (AuditLog) TableName() string {
 // TableName 指定表名
 func (ClusterPermission) TableName() string {
 	return "cluster_permissions"
+}
+
+// NamespaceGrant 命名空间级授权（核心新增）
+type NamespaceGrant struct {
+	ID             uint      `gorm:"primarykey" json:"id"`
+	UserID         uint      `gorm:"not null;index:idx_ns_grant_user_cluster, priority:1" json:"user_id"`
+	ClusterID      uint      `gorm:"not null;index:idx_ns_grant_user_cluster, priority:2;index:idx_ns_grant_cluster_ns, priority:1" json:"cluster_id"`
+	Namespace      string    `gorm:"not null;size:253;index:idx_ns_grant_cluster_ns, priority:2" json:"namespace"`
+	RoleID         uint      `gorm:"not null" json:"role_id"`
+	GrantedBy      *uint     `json:"granted_by"`
+	GrantedAt      time.Time `json:"granted_at"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	
+	User    *User    `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Cluster *Cluster `gorm:"foreignKey:ClusterID" json:"cluster,omitempty"`
+	Role    *Role    `gorm:"foreignKey:RoleID" json:"role,omitempty"`
+}
+
+func (NamespaceGrant) TableName() string {
+	return "namespace_grants"
+}
+
+// UserModuleOverride 用户级功能模块权限覆盖
+type UserModuleOverride struct {
+	ID              uint      `gorm:"primarykey" json:"id"`
+	UserID          uint      `gorm:"not null;uniqueIndex" json:"user_id"`
+	EnabledModules  string    `gorm:"type:jsonb" json:"enabled_modules"`   // 额外开启 ["module:cluster:manage"]
+	DisabledModules string    `gorm:"type:jsonb" json:"disabled_modules"`  // 额外禁用 ["ai:agent_chat"]
+	DailyQuota      int       `gorm:"default:0" json:"daily_quota"`        // AI 每日配额 0=不限
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (UserModuleOverride) TableName() string {
+	return "user_module_overrides"
 }
 
 // ==================== 巡检中心模型 ====================

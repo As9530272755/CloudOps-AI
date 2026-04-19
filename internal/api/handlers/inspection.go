@@ -123,6 +123,7 @@ func (h *InspectionHandler) CreateTask(c *gin.Context) {
 		req.Timezone = "Asia/Shanghai"
 	}
 	task := toInspectionTask(req)
+	task.TenantID = c.GetUint("tenant_id")
 	if err := h.inspectionService.CreateTask(&task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -132,8 +133,13 @@ func (h *InspectionHandler) CreateTask(c *gin.Context) {
 
 // ListTasks 任务列表
 func (h *InspectionHandler) ListTasks(c *gin.Context) {
+	query := h.inspectionService.DB().Order("updated_at DESC")
+	// 非 superuser 只查本租户
+	if !c.GetBool("is_superuser") {
+		query = query.Where("tenant_id = ?", c.GetUint("tenant_id"))
+	}
 	var tasks []model.InspectionTask
-	if err := h.inspectionService.DB().Order("updated_at DESC").Find(&tasks).Error; err != nil {
+	if err := query.Find(&tasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}

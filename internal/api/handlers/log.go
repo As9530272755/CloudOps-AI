@@ -239,7 +239,11 @@ func fillBackendResp(b model.ClusterLogBackend) model.ClusterLogBackend {
 // ListLogBackends 列出日志后端
 func (h *LogHandler) ListLogBackends(c *gin.Context) {
 	clusterID, _ := strconv.Atoi(c.Query("cluster_id"))
-	list, err := h.logService.ListLogBackends(uint(clusterID))
+	var tenantID uint
+	if !c.GetBool("is_superuser") {
+		tenantID = c.GetUint("tenant_id")
+	}
+	list, err := h.logService.ListLogBackends(uint(clusterID), tenantID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return

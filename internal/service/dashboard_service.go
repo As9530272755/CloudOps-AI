@@ -49,7 +49,11 @@ func (s *DashboardService) CreateDashboard(ctx context.Context, tenantID uint, r
 // ListDashboards 获取仪表盘列表
 func (s *DashboardService) ListDashboards(ctx context.Context, tenantID uint) ([]model.Dashboard, error) {
 	var list []model.Dashboard
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("is_default DESC, updated_at DESC").Find(&list).Error; err != nil {
+	db := s.db.WithContext(ctx)
+	if tenantID > 0 {
+		db = db.Where("tenant_id = ?", tenantID)
+	}
+	if err := db.Order("is_default DESC, updated_at DESC").Find(&list).Error; err != nil {
 		return nil, err
 	}
 	return list, nil

@@ -15,6 +15,7 @@ import (
 // Router API 路由
 type Router struct {
 	authHandler          *handlers.AuthHandler
+	userHandler          *handlers.UserHandler
 	clusterHandler       *handlers.ClusterHandler
 	k8sHandler           *handlers.K8sHandler
 	dsHandler            *handlers.DatasourceHandler
@@ -32,12 +33,14 @@ type Router struct {
 	settingHandler       *handlers.SettingHandler
 	terminalHandler      *handlers.TerminalHandler
 	jwtManager           *auth.JWTManager
+	db                   *gorm.DB
 }
 
 // NewRouter 创建路由
 func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService, db *gorm.DB, k8sManager *service.K8sManager) *Router {
 	return &Router{
 		authHandler:          handlers.NewAuthHandler(jwtManager),
+		userHandler:          handlers.NewUserHandler(db),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
 		k8sHandler:           handlers.NewK8sHandler(k8sService),
 		dsHandler:            handlers.NewDatasourceHandler(dsService),
@@ -52,6 +55,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		settingHandler:       handlers.NewSettingHandler(settingService),
 		terminalHandler:      handlers.NewTerminalHandler(db, k8sManager, jwtManager),
 		jwtManager:           jwtManager,
+		db:                   db,
 	}
 }
 
@@ -73,12 +77,31 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 		// 需要认证的路由
 		protected := v1.Group("")
 		protected.Use(middleware.AuthMiddleware(r.jwtManager))
+		protected.Use(middleware.TenantScopeMiddleware())
 		{
 			// 用户信息
 			protected.GET("/auth/profile", r.authHandler.GetProfile)
 
+			// 当前用户权限 & 菜单
+			protected.GET("/users/me/permissions", r.userHandler.GetMyPermissions)
+			protected.GET("/users/me/menus", r.userHandler.GetMyMenus)
+			protected.GET("/users/me/namespaces", r.userHandler.GetMyNamespaces)
+
+			// 用户管理（系统级）
+			protected.GET("/users", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.ListUsers)
+			protected.POST("/users", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.CreateUser)
+			protected.GET("/users/:id", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.GetUser)
+			protected.PUT("/users/:id", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.UpdateUser)
+			protected.DELETE("/users/:id", middleware.ModulePermissionMiddleware(r.db, "module:system:user"), r.userHandler.DeleteUser)
+			protected.GET("/roles", r.userHandler.ListRoles)
+
+			// NS 授权管理
+			protected.POST("/namespace-grants", r.userHandler.GrantNamespace)
+			protected.DELETE("/namespace-grants/:grant_id", r.userHandler.RevokeNamespace)
+
 			// 集群管理
 			clusters := protected.Group("/clusters")
+			clusters.Use(middleware.ModulePermissionMiddleware(r.db, "module:cluster:manage"))
 			{
 				clusters.POST("", r.clusterHandler.CreateCluster)
 				clusters.GET("", r.clusterHandler.ListClusters)
@@ -88,17 +111,18 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				clusters.POST("/test-and-probe", r.clusterHandler.TestAndProbeCluster)
 			}
 
-			// K8s 资源管理
-			protected.GET("/clusters/:id/namespaces", r.k8sHandler.GetNamespaces)
-			protected.GET("/clusters/:id/stats", r.k8sHandler.GetClusterStats)
-			protected.POST("/clusters/:id/refresh", r.k8sHandler.RefreshCluster)
-			protected.GET("/search/resources", r.k8sHandler.SearchResources)
-			protected.GET("/clusters/:id/resources/:kind", r.k8sHandler.ListResources)
-			protected.GET("/clusters/:id/resources/:kind/:name/yaml", r.k8sHandler.GetResourceYAML)
-			protected.GET("/clusters/:id/resources/:kind/:name", r.k8sHandler.GetResource)
+			// K8s 资源管理（需要 NS 权限校验）
+			protected.GET("/clusters/:id/namespaces", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetNamespaces)
+			protected.GET("/clusters/:id/stats", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetClusterStats)
+			protected.POST("/clusters/:id/refresh", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.RefreshCluster)
+			protected.GET("/search/resources", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.SearchResources)
+			protected.GET("/clusters/:id/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.ListResources)
+			protected.GET("/clusters/:id/resources/:kind/:name/yaml", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResourceYAML)
+			protected.GET("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResource)
 
 			// 数据源管理
 			ds := protected.Group("/datasources")
+			ds.Use(middleware.ModulePermissionMiddleware(r.db, "module:data:manage"))
 			{
 				ds.POST("", r.dsHandler.CreateDataSource)
 				ds.GET("", r.dsHandler.ListDataSources)
@@ -112,6 +136,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 
 			// 仪表盘管理
 			dashboards := protected.Group("/dashboards")
+			dashboards.Use(middleware.ModulePermissionMiddleware(r.db, "module:dashboard"))
 			{
 				dashboards.POST("", r.dashboardHandler.CreateDashboard)
 				dashboards.GET("", r.dashboardHandler.ListDashboards)
@@ -128,6 +153,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 
 			// 巡检中心
 			inspection := protected.Group("/inspection")
+			inspection.Use(middleware.ModulePermissionMiddleware(r.db, "module:inspection"))
 			{
 				inspection.GET("/tasks", r.inspectionHandler.ListTasks)
 				inspection.POST("/tasks", r.inspectionHandler.CreateTask)
@@ -144,62 +170,67 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			}
 
 			// AI 平台管理
-			protected.GET("/ai/platforms/providers", r.aiPlatformHandler.ListProviderTypes)
-			protected.GET("/ai/platforms", r.aiPlatformHandler.ListPlatforms)
-			protected.POST("/ai/platforms", r.aiPlatformHandler.CreatePlatform)
-			protected.GET("/ai/platforms/:id", r.aiPlatformHandler.GetPlatform)
-			protected.PUT("/ai/platforms/:id", r.aiPlatformHandler.UpdatePlatform)
-			protected.DELETE("/ai/platforms/:id", r.aiPlatformHandler.DeletePlatform)
-			protected.POST("/ai/platforms/:id/test", r.aiPlatformHandler.TestPlatformConnection)
-			protected.POST("/ai/platforms/:id/default", r.aiPlatformHandler.SetDefaultPlatform)
+			protected.GET("/ai/platforms/providers", middleware.AIPermissionMiddleware(r.db, "ai:platform:view"), r.aiPlatformHandler.ListProviderTypes)
+			protected.GET("/ai/platforms", middleware.AIPermissionMiddleware(r.db, "ai:platform:view"), r.aiPlatformHandler.ListPlatforms)
+			protected.POST("/ai/platforms", middleware.AIPermissionMiddleware(r.db, "ai:platform:manage"), r.aiPlatformHandler.CreatePlatform)
+			protected.GET("/ai/platforms/:id", middleware.AIPermissionMiddleware(r.db, "ai:platform:view"), r.aiPlatformHandler.GetPlatform)
+			protected.PUT("/ai/platforms/:id", middleware.AIPermissionMiddleware(r.db, "ai:platform:manage"), r.aiPlatformHandler.UpdatePlatform)
+			protected.DELETE("/ai/platforms/:id", middleware.AIPermissionMiddleware(r.db, "ai:platform:manage"), r.aiPlatformHandler.DeletePlatform)
+			protected.POST("/ai/platforms/:id/test", middleware.AIPermissionMiddleware(r.db, "ai:platform:test"), r.aiPlatformHandler.TestPlatformConnection)
+			protected.POST("/ai/platforms/:id/default", middleware.AIPermissionMiddleware(r.db, "ai:platform:manage"), r.aiPlatformHandler.SetDefaultPlatform)
 
 			// AI 会话管理
-			protected.GET("/ai/sessions", r.aiChatSessionHandler.ListSessions)
-			protected.POST("/ai/sessions", r.aiChatSessionHandler.CreateSession)
-			protected.GET("/ai/sessions/:id/messages", r.aiChatSessionHandler.GetSessionMessages)
-			protected.PUT("/ai/sessions/:id/platform", r.aiChatSessionHandler.UpdateSessionPlatform)
-			protected.PUT("/ai/sessions/:id/title", r.aiChatSessionHandler.UpdateSessionTitle)
-			protected.DELETE("/ai/sessions/:id/messages", r.aiChatSessionHandler.ClearSessionMessages)
-			protected.DELETE("/ai/sessions/:id", r.aiChatSessionHandler.DeleteSession)
+			protected.GET("/ai/sessions", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.ListSessions)
+			protected.POST("/ai/sessions", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.CreateSession)
+			protected.GET("/ai/sessions/:id/messages", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.GetSessionMessages)
+			protected.PUT("/ai/sessions/:id/platform", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.UpdateSessionPlatform)
+			protected.PUT("/ai/sessions/:id/title", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.UpdateSessionTitle)
+			protected.DELETE("/ai/sessions/:id/messages", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.ClearSessionMessages)
+			protected.DELETE("/ai/sessions/:id", middleware.AIPermissionMiddleware(r.db, "ai:session_manage"), r.aiChatSessionHandler.DeleteSession)
 
 			// AI 对话
-			protected.POST("/ai/chat", r.aiChatHandler.Chat)
-			protected.POST("/ai/chat/stream", r.aiChatHandler.ChatStream)
-			protected.POST("/ai/agent/chat/stream", r.aiChatHandler.AgentChatStream)
+			protected.POST("/ai/chat", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.Chat)
+			protected.POST("/ai/chat/stream", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.ChatStream)
+			protected.POST("/ai/agent/chat/stream", middleware.AIPermissionMiddleware(r.db, "ai:agent_chat"), r.aiChatHandler.AgentChatStream)
 
-			protected.POST("/ai/chat/task", r.aiChatHandler.CreateTask)
-			protected.GET("/ai/chat/task/:id", r.aiChatHandler.GetTask)
+			protected.POST("/ai/chat/task", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.CreateTask)
+			protected.GET("/ai/chat/task/:id", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.GetTask)
+
 			// 网络追踪
-			protected.GET("/network-trace/config", r.networkTraceHandler.GetConfig)
-			protected.PUT("/network-trace/config", r.networkTraceHandler.UpdateConfig)
-			protected.GET("/clusters/:id/network/flows/topology", r.networkTraceHandler.GetTopology)
-			protected.POST("/clusters/:id/network/flows/enhance", r.networkTraceHandler.EnhanceTopology)
-			protected.GET("/clusters/:id/network/flows/traffic", r.networkTraceHandler.GetPodTraffic)
-			protected.GET("/clusters/:id/network/flows/list", r.networkTraceHandler.GetFlowList)
-			protected.GET("/clusters/:id/network/flows/timeseries", r.networkTraceHandler.GetTimeseries)
-			protected.POST("/clusters/:id/network/debug", r.networkTraceHandler.CreateDebug)
-			protected.GET("/clusters/:id/network/debug/logs", r.networkTraceHandler.GetDebugLogs)
+			nt := protected.Group("/network-trace")
+			nt.Use(middleware.ModulePermissionMiddleware(r.db, "module:network:trace"))
+			{
+				nt.GET("/config", r.networkTraceHandler.GetConfig)
+				nt.PUT("/config", r.networkTraceHandler.UpdateConfig)
+			}
+			protected.GET("/clusters/:id/network/flows/topology", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetTopology)
+			protected.POST("/clusters/:id/network/flows/enhance", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.EnhanceTopology)
+			protected.GET("/clusters/:id/network/flows/traffic", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetPodTraffic)
+			protected.GET("/clusters/:id/network/flows/list", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetFlowList)
+			protected.GET("/clusters/:id/network/flows/timeseries", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetTimeseries)
+			protected.POST("/clusters/:id/network/debug", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.CreateDebug)
+			protected.GET("/clusters/:id/network/debug/logs", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetDebugLogs)
 
-				// 日志管理
-				protected.POST("/logs/query", r.logHandler.QueryLogs)
-				protected.POST("/logs/histogram", r.logHandler.QueryHistogram)
-				protected.POST("/logs/analyze", r.logHandler.AnalyzeLogs)
-				protected.GET("/log-backends", r.logHandler.ListLogBackends)
-				protected.POST("/log-backends", r.logHandler.CreateLogBackend)
-				protected.GET("/log-backends/:id", r.logHandler.GetLogBackend)
-				protected.PUT("/log-backends/:id", r.logHandler.UpdateLogBackend)
-				protected.DELETE("/log-backends/:id", r.logHandler.DeleteLogBackend)
-				protected.GET("/log-backends/:id/test", r.logHandler.TestLogBackend)
+			// 日志管理
+			logs := protected.Group("/logs")
+			logs.Use(middleware.ModulePermissionMiddleware(r.db, "module:log:manage"))
+			{
+				logs.POST("/query", r.logHandler.QueryLogs)
+				logs.POST("/histogram", r.logHandler.QueryHistogram)
+				logs.POST("/analyze", r.logHandler.AnalyzeLogs)
+			}
+			protected.GET("/log-backends", middleware.ModulePermissionMiddleware(r.db, "module:log:manage"), r.logHandler.ListLogBackends)
+			protected.POST("/log-backends", middleware.ModulePermissionMiddleware(r.db, "module:log:manage"), r.logHandler.CreateLogBackend)
+			protected.GET("/log-backends/:id", middleware.ModulePermissionMiddleware(r.db, "module:log:manage"), r.logHandler.GetLogBackend)
+			protected.PUT("/log-backends/:id", middleware.ModulePermissionMiddleware(r.db, "module:log:manage"), r.logHandler.UpdateLogBackend)
+			protected.DELETE("/log-backends/:id", middleware.ModulePermissionMiddleware(r.db, "module:log:manage"), r.logHandler.DeleteLogBackend)
+			protected.GET("/log-backends/:id/test", middleware.ModulePermissionMiddleware(r.db, "module:log:manage"), r.logHandler.TestLogBackend)
 
-				// 系统设置（读取站点配置无需认证，登录页需要显示自定义 Logo 和名称）
+			// 系统设置（需要系统设置权限）
+			// 读取站点配置无需认证，登录页需要显示自定义 Logo 和名称
 			v1.GET("/settings/site", r.settingHandler.GetSiteConfig)
-			protected.PUT("/settings/site", r.settingHandler.UpdateSiteConfig)
-			protected.POST("/settings/site/logo", r.settingHandler.UploadLogo)
-
-				// TODO: 添加更多路由
-				// AI问答
-				// 终端
-				// 租户管理
+			protected.PUT("/settings/site", middleware.ModulePermissionMiddleware(r.db, "module:system:settings"), r.settingHandler.UpdateSiteConfig)
+			protected.POST("/settings/site/logo", middleware.ModulePermissionMiddleware(r.db, "module:system:settings"), r.settingHandler.UploadLogo)
 		}
 	}
 

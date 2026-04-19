@@ -26,8 +26,8 @@ func (h *DatasourceHandler) CreateDataSource(c *gin.Context) {
 		return
 	}
 
-	tenantID, _ := c.Get("tenant_id")
-	ds, err := h.dsService.CreateDataSource(c.Request.Context(), tenantID.(uint), &req)
+	tenantID := c.GetUint("tenant_id")
+	ds, err := h.dsService.CreateDataSource(c.Request.Context(), tenantID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -38,10 +38,13 @@ func (h *DatasourceHandler) CreateDataSource(c *gin.Context) {
 
 // ListDataSources 数据源列表
 func (h *DatasourceHandler) ListDataSources(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
+	var tenantID uint
+	if !c.GetBool("is_superuser") {
+		tenantID = c.GetUint("tenant_id")
+	}
 	dsType := c.Query("type")
 
-	list, err := h.dsService.ListDataSources(c.Request.Context(), tenantID.(uint), dsType)
+	list, err := h.dsService.ListDataSources(c.Request.Context(), tenantID, dsType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return

@@ -26,8 +26,8 @@ func (h *DashboardHandler) CreateDashboard(c *gin.Context) {
 		return
 	}
 
-	tenantID, _ := c.Get("tenant_id")
-	d, err := h.dbService.CreateDashboard(c.Request.Context(), tenantID.(uint), &req)
+	tenantID := c.GetUint("tenant_id")
+	d, err := h.dbService.CreateDashboard(c.Request.Context(), tenantID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -38,8 +38,11 @@ func (h *DashboardHandler) CreateDashboard(c *gin.Context) {
 
 // ListDashboards 列表
 func (h *DashboardHandler) ListDashboards(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
-	list, err := h.dbService.ListDashboards(c.Request.Context(), tenantID.(uint))
+	var tenantID uint
+	if !c.GetBool("is_superuser") {
+		tenantID = c.GetUint("tenant_id")
+	}
+	list, err := h.dbService.ListDashboards(c.Request.Context(), tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return

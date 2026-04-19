@@ -61,7 +61,10 @@ func (s *DatasourceService) CreateDataSource(ctx context.Context, tenantID uint,
 // ListDataSources 获取数据源列表
 func (s *DatasourceService) ListDataSources(ctx context.Context, tenantID uint, dsType string) ([]model.DataSource, error) {
 	var list []model.DataSource
-	db := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	db := s.db.WithContext(ctx)
+	if tenantID > 0 {
+		db = db.Where("tenant_id = ?", tenantID)
+	}
 	if dsType != "" {
 		db = db.Where("type = ?", dsType)
 	}

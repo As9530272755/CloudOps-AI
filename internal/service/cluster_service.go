@@ -130,7 +130,10 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 // ListClusters 获取集群列表（支持筛选）
 func (s *ClusterService) ListClusters(ctx context.Context, tenantID uint, keyword, status, authType string) ([]model.Cluster, error) {
 	var clusters []model.Cluster
-	db := s.db.Preload("Metadata").Where("tenant_id = ?", tenantID)
+	db := s.db.Preload("Metadata")
+	if tenantID > 0 {
+		db = db.Where("tenant_id = ?", tenantID)
+	}
 
 	if keyword != "" {
 		db = db.Where("name LIKE ? OR display_name LIKE ? OR server LIKE ?",

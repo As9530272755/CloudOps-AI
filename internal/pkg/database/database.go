@@ -93,6 +93,8 @@ func autoMigrate(db *gorm.DB) error {
 		&model.AIChatSession{},
 		&model.AIChatMessage{},
 		&model.SystemSetting{},
+		&model.NamespaceGrant{},
+		&model.UserModuleOverride{},
 	)
 }
 
@@ -122,9 +124,12 @@ func initDefaultData(db *gorm.DB) error {
 	db.Model(&model.Role{}).Count(&roleCount)
 	if roleCount == 0 {
 		roles := []model.Role{
-			{Name: "admin", DisplayName: "管理员", Description: "系统管理员", IsSystem: true},
-			{Name: "operator", DisplayName: "运维人员", Description: "负责日常运维", IsSystem: true},
-			{Name: "viewer", DisplayName: "只读用户", Description: "只能查看资源", IsSystem: true},
+			{Name: "platform-admin", DisplayName: "平台管理员", Description: "平台级管理员，拥有所有权限", IsSystem: true, Scope: "platform", Level: 300, PermissionsData: `["*:*","module:dashboard","module:cluster:manage","module:inspection","module:network:trace","module:data:manage","module:log:manage","module:terminal","module:ai:assistant","module:system:user","module:system:tenant","module:system:settings","ai:chat","ai:agent_chat","ai:image_input","ai:session_manage","ai:platform:view","ai:platform:manage","ai:platform:test","ai:log_analysis","ai:network_analysis","ai:inspection_analysis","ai:tool:list_clusters","ai:tool:cluster_status","ai:tool:list_pods","ai:tool:query_logs","pod:*","deployment:*","service:*","configmap:*","secret:*","event:read","log:read","terminal:use","namespace:read"]`},
+			{Name: "cluster-admin", DisplayName: "集群管理员", Description: "集群级管理员，可管理集群但不能管理系统配置", IsSystem: true, Scope: "cluster", Level: 200, PermissionsData: `["module:dashboard","module:cluster:manage","module:inspection","module:network:trace","module:data:manage","module:log:manage","module:terminal","module:ai:assistant","ai:chat","ai:agent_chat","ai:image_input","ai:session_manage","ai:platform:view","ai:platform:test","ai:log_analysis","ai:network_analysis","ai:inspection_analysis","ai:tool:list_clusters","ai:tool:cluster_status","ai:tool:list_pods","ai:tool:query_logs","pod:*","deployment:*","service:*","configmap:*","secret:*","event:read","log:read","terminal:use","namespace:read"]`},
+			{Name: "cluster-viewer", DisplayName: "集群只读", Description: "集群级只读用户", IsSystem: true, Scope: "cluster", Level: 110, PermissionsData: `["module:dashboard","module:inspection","module:network:trace","module:log:manage","module:ai:assistant","ai:chat","ai:agent_chat","ai:image_input","ai:session_manage","ai:platform:view","ai:log_analysis","ai:network_analysis","ai:inspection_analysis","ai:tool:list_clusters","ai:tool:cluster_status","pod:read","deployment:read","service:read","configmap:read","event:read","log:read","namespace:read"]`},
+			{Name: "namespace-admin", DisplayName: "命名空间管理员", Description: "命名空间级管理员", IsSystem: true, Scope: "namespace", Level: 150, PermissionsData: `["module:dashboard","module:inspection","module:network:trace","module:data:manage","module:log:manage","module:terminal","module:ai:assistant","ai:chat","ai:agent_chat","ai:image_input","ai:session_manage","ai:platform:view","ai:platform:test","ai:log_analysis","ai:network_analysis","ai:inspection_analysis","ai:tool:list_clusters","ai:tool:cluster_status","ai:tool:list_pods","ai:tool:query_logs","pod:*","deployment:*","service:*","configmap:*","secret:*","event:read","log:read","terminal:use","namespace:read"]`},
+			{Name: "namespace-operator", DisplayName: "命名空间运维", Description: "命名空间级运维人员", IsSystem: true, Scope: "namespace", Level: 120, PermissionsData: `["module:dashboard","module:inspection","module:network:trace","module:log:manage","module:terminal","module:ai:assistant","ai:chat","ai:agent_chat","ai:image_input","ai:session_manage","ai:platform:view","ai:log_analysis","ai:network_analysis","ai:tool:list_clusters","ai:tool:cluster_status","ai:tool:list_pods","pod:read","pod:write","pod:delete","deployment:read","deployment:write","service:read","service:write","configmap:read","configmap:write","event:read","log:read","terminal:use","namespace:read"]`},
+			{Name: "namespace-viewer", DisplayName: "命名空间只读", Description: "命名空间级只读用户", IsSystem: true, Scope: "namespace", Level: 100, PermissionsData: `["module:dashboard","module:inspection","module:network:trace","module:log:manage","module:ai:assistant","ai:chat","ai:image_input","ai:session_manage","ai:platform:view","ai:tool:list_clusters","pod:read","deployment:read","service:read","configmap:read","event:read","log:read","namespace:read"]`},
 		}
 		if err := db.Create(&roles).Error; err != nil {
 			return err
@@ -137,6 +142,7 @@ func initDefaultData(db *gorm.DB) error {
 	db.Model(&model.Permission{}).Count(&permCount)
 	if permCount == 0 {
 		permissions := []model.Permission{
+			// K8s 资源权限
 			{Name: "cluster:read", DisplayName: "查看集群", Resource: "cluster", Action: "read"},
 			{Name: "cluster:write", DisplayName: "管理集群", Resource: "cluster", Action: "write"},
 			{Name: "node:read", DisplayName: "查看节点", Resource: "node", Action: "read"},
@@ -145,6 +151,33 @@ func initDefaultData(db *gorm.DB) error {
 			{Name: "terminal:use", DisplayName: "使用终端", Resource: "terminal", Action: "use"},
 			{Name: "inspection:read", DisplayName: "查看巡检", Resource: "inspection", Action: "read"},
 			{Name: "inspection:write", DisplayName: "执行巡检", Resource: "inspection", Action: "write"},
+			// 功能模块权限
+			{Name: "module:dashboard", DisplayName: "仪表盘", Resource: "module", Action: "dashboard"},
+			{Name: "module:cluster:manage", DisplayName: "集群管理", Resource: "module", Action: "cluster:manage"},
+			{Name: "module:inspection", DisplayName: "巡检中心", Resource: "module", Action: "inspection"},
+			{Name: "module:network:trace", DisplayName: "网络追踪", Resource: "module", Action: "network:trace"},
+			{Name: "module:data:manage", DisplayName: "数据管理", Resource: "module", Action: "data:manage"},
+			{Name: "module:log:manage", DisplayName: "日志管理", Resource: "module", Action: "log:manage"},
+			{Name: "module:terminal", DisplayName: "Web终端", Resource: "module", Action: "terminal"},
+			{Name: "module:ai:assistant", DisplayName: "AI助手", Resource: "module", Action: "ai:assistant"},
+			{Name: "module:system:user", DisplayName: "用户管理", Resource: "module", Action: "system:user"},
+			{Name: "module:system:tenant", DisplayName: "租户管理", Resource: "module", Action: "system:tenant"},
+			{Name: "module:system:settings", DisplayName: "系统设置", Resource: "module", Action: "system:settings"},
+			// AI 权限
+			{Name: "ai:chat", DisplayName: "AI对话", Resource: "ai", Action: "chat"},
+			{Name: "ai:agent_chat", DisplayName: "AI Agent对话", Resource: "ai", Action: "agent_chat"},
+			{Name: "ai:image_input", DisplayName: "AI图片输入", Resource: "ai", Action: "image_input"},
+			{Name: "ai:session_manage", DisplayName: "AI会话管理", Resource: "ai", Action: "session_manage"},
+			{Name: "ai:platform:view", DisplayName: "查看AI平台", Resource: "ai", Action: "platform:view"},
+			{Name: "ai:platform:manage", DisplayName: "管理AI平台", Resource: "ai", Action: "platform:manage"},
+			{Name: "ai:platform:test", DisplayName: "测试AI平台", Resource: "ai", Action: "platform:test"},
+			{Name: "ai:log_analysis", DisplayName: "AI日志分析", Resource: "ai", Action: "log_analysis"},
+			{Name: "ai:network_analysis", DisplayName: "AI网络分析", Resource: "ai", Action: "network_analysis"},
+			{Name: "ai:inspection_analysis", DisplayName: "AI巡检分析", Resource: "ai", Action: "inspection_analysis"},
+			{Name: "ai:tool:list_clusters", DisplayName: "AI工具-列出集群", Resource: "ai", Action: "tool:list_clusters"},
+			{Name: "ai:tool:cluster_status", DisplayName: "AI工具-集群状态", Resource: "ai", Action: "tool:cluster_status"},
+			{Name: "ai:tool:list_pods", DisplayName: "AI工具-列出Pod", Resource: "ai", Action: "tool:list_pods"},
+			{Name: "ai:tool:query_logs", DisplayName: "AI工具-查询日志", Resource: "ai", Action: "tool:query_logs"},
 		}
 		if err := db.Create(&permissions).Error; err != nil {
 			return err
@@ -164,7 +197,7 @@ func initDefaultData(db *gorm.DB) error {
 
 		// 获取管理员角色
 		var adminRole model.Role
-		if err := db.Where("name = ?", "admin").First(&adminRole).Error; err != nil {
+		if err := db.Where("name = ?", "platform-admin").First(&adminRole).Error; err != nil {
 			return err
 		}
 

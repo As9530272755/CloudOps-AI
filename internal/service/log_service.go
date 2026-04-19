@@ -61,11 +61,14 @@ func validateQuery(req log.QueryRequest, backendCount int) error {
 
 // ====== 日志后端 CRUD ======
 
-func (s *LogService) ListLogBackends(clusterID uint) ([]model.ClusterLogBackend, error) {
+func (s *LogService) ListLogBackends(clusterID uint, tenantID uint) ([]model.ClusterLogBackend, error) {
 	var list []model.ClusterLogBackend
 	query := s.db.Order("id ASC")
 	if clusterID > 0 {
 		query = query.Where("cluster_id = ?", clusterID)
+	}
+	if tenantID > 0 {
+		query = query.Where("cluster_id IN (?)", s.db.Model(&model.Cluster{}).Where("tenant_id = ?", tenantID).Select("id"))
 	}
 	err := query.Find(&list).Error
 	return list, err

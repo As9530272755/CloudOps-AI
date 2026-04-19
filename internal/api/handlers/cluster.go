@@ -29,11 +29,11 @@ func (h *ClusterHandler) CreateCluster(c *gin.Context) {
 	}
 
 	// 从上下文获取用户信息
-	userID, _ := c.Get("user_id")
-	tenantID, _ := c.Get("tenant_id")
+	userID := c.GetUint("user_id")
+	tenantID := c.GetUint("tenant_id")
 
-	cluster, err := h.clusterService.CreateCluster(c.Request.Context(), 
-		userID.(uint), tenantID.(uint), &req)
+	cluster, err := h.clusterService.CreateCluster(c.Request.Context(),
+		userID, tenantID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -47,13 +47,16 @@ func (h *ClusterHandler) CreateCluster(c *gin.Context) {
 
 // ListClusters 集群列表
 func (h *ClusterHandler) ListClusters(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
+	var tenantID uint
+	if !c.GetBool("is_superuser") {
+		tenantID = c.GetUint("tenant_id")
+	}
 
 	keyword := c.Query("keyword")
 	status := c.Query("status")
 	authType := c.Query("auth_type")
 
-	clusters, err := h.clusterService.ListClusters(c.Request.Context(), tenantID.(uint), keyword, status, authType)
+	clusters, err := h.clusterService.ListClusters(c.Request.Context(), tenantID, keyword, status, authType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

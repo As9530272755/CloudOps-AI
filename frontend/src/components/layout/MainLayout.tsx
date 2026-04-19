@@ -18,6 +18,7 @@ import {
   AppBar,
   Toolbar,
   Tooltip,
+  CircularProgress,
 } from '@mui/material'
 
 import {
@@ -39,22 +40,24 @@ import {
 } from '@mui/icons-material'
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
+import { usePermission } from '../../hooks/usePermission'
 
 const DRAWER_WIDTH = 260
 
-const menuItems = [
-  { path: '/', label: '仪表盘', icon: <DashboardIcon />, group: '概览' },
-  { path: '/clusters', label: '集群管理', icon: <ClusterIcon />, group: 'Kubernetes' },
-  { path: '/inspection', label: '巡检中心', icon: <InspectionIcon />, group: 'Kubernetes' },
-  { path: '/network-trace', label: '网络追踪', icon: <NetworkTraceIcon />, group: 'Kubernetes' },
-  { path: '/data', label: '数据管理', icon: <DataIcon />, group: 'Kubernetes' },
-  { path: '/logs', label: '日志管理', icon: <LogsIcon />, group: '运维' },
-  { path: '/terminal', label: 'Web终端', icon: <TerminalIcon />, group: '运维' },
-  { path: '/ai', label: 'AI助手', icon: <AIIcon />, group: '智能' },
-  { path: '/users', label: '用户管理', icon: <UsersIcon />, group: '系统' },
-  { path: '/tenants', label: '租户管理', icon: <TenantsIcon />, group: '系统' },
-  { path: '/settings', label: '系统设置', icon: <SettingsIcon />, group: '系统' },
-]
+// 图标映射表
+const iconMap: Record<string, React.ReactNode> = {
+  dashboard: <DashboardIcon />,
+  cluster: <ClusterIcon />,
+  inspection: <InspectionIcon />,
+  network: <NetworkTraceIcon />,
+  data: <DataIcon />,
+  logs: <LogsIcon />,
+  terminal: <TerminalIcon />,
+  ai: <AIIcon />,
+  users: <UsersIcon />,
+  tenants: <TenantsIcon />,
+  settings: <SettingsIcon />,
+}
 
 export default function MainLayout() {
   const theme = useTheme()
@@ -65,6 +68,7 @@ export default function MainLayout() {
   const { data: user } = useProfile()
   const { mode, toggleColorMode } = useColorMode()
   const isDark = mode === 'dark'
+  const { menus, isLoading: menusLoading } = usePermission()
 
   const handleDrawerToggle = () => setOpen(!open)
 
@@ -74,12 +78,6 @@ export default function MainLayout() {
     navigate(path)
     if (isMobile) setOpen(false)
   }
-
-  const groupedItems = menuItems.reduce((acc, item) => {
-    if (!acc[item.group]) acc[item.group] = []
-    acc[item.group].push(item)
-    return acc
-  }, {} as Record<string, typeof menuItems>)
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -129,8 +127,13 @@ export default function MainLayout() {
 
       {/* Menu */}
       <Box sx={{ flex: 1, overflow: 'auto', py: 2, px: 2 }}>
-        {Object.entries(groupedItems).map(([group, items]) => (
-          <Box key={group} sx={{ mb: 2 }}>
+        {menusLoading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress size={24} />
+          </Box>
+        )}
+        {menus.map((group) => (
+          <Box key={group.group} sx={{ mb: 2 }}>
             <Typography
               variant="overline"
               sx={{
@@ -143,10 +146,10 @@ export default function MainLayout() {
                 letterSpacing: '0.04em',
               }}
             >
-              {group}
+              {group.group}
             </Typography>
             <List sx={{ p: 0 }}>
-              {items.map((item) => {
+              {group.items.map((item) => {
                 const selected =
                   location.pathname === item.path ||
                   (item.path !== '/' && location.pathname.startsWith(item.path))
@@ -172,7 +175,7 @@ export default function MainLayout() {
                           color: selected ? 'text.primary' : 'text.secondary',
                         }}
                       >
-                        {item.icon}
+                        {iconMap[item.icon] || <DashboardIcon />}
                       </ListItemIcon>
                       <ListItemText
                         primary={item.label}
