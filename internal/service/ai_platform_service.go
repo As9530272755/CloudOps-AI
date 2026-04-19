@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudops/platform/internal/model"
@@ -233,9 +234,19 @@ func (s *AIPlatformService) GetDefaultPlatform() (*model.AIPlatform, error) {
 }
 
 // 内部方法：根据 provider 类型构建配置 JSON
+func normalizeURL(url string) string {
+	url = strings.TrimSpace(url)
+	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	return strings.TrimSuffix(url, "/")
+}
+
 func (s *AIPlatformService) buildConfigJSON(providerType string, cfg PlatformFormConfig) (string, error) {
 	var cfgJSON []byte
 	var err error
+
+	cfg.URL = normalizeURL(cfg.URL)
 
 	switch providerType {
 	case "ollama":

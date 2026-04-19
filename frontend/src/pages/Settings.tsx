@@ -391,6 +391,7 @@ function AISettings() {
     setDialogOpen(true)
     setTestingDialog(false)
     setError('')
+    setMessage(null)
   }
 
   const handleSave = async () => {
@@ -612,6 +613,8 @@ function AISettings() {
                   onChange={(e) => setForm({ ...form, config: { ...form.config, url: e.target.value } })}
                   fullWidth
                   placeholder={form.provider_type === 'ollama' ? 'http://localhost:11434' : 'http://127.0.0.1:8080'}
+                  helperText="必须包含 http:// 或 https:// 协议头"
+                  error={form.config.url !== '' && !form.config.url.match(/^https?:\/\//)}
                 />
                 {form.provider_type !== 'ollama' && (
                   <TextField
@@ -682,11 +685,12 @@ function AISettings() {
                     provider_type: form.provider_type,
                     config: form.config,
                   })
-                  if (!createRes.success || !createRes.data?.id) {
+                  const createdPlatform = Array.isArray(createRes.data) ? createRes.data[0] : createRes.data
+                  if (!createRes.success || !createdPlatform?.id) {
                     setMessage({ text: createRes.error || '创建失败，无法测试', severity: 'error' })
                     return
                   }
-                  testId = createRes.data.id
+                  testId = createdPlatform.id
                   setEditingId(testId)
                 }
                 const res = await aiPlatformAPI.test(testId!)
