@@ -594,7 +594,7 @@ export default function Clusters() {
                 <TableHead>
                   <TableRow>
                     <TableCell>名称</TableCell>
-                    <TableCell>API Server</TableCell>
+                    {isPlatformAdmin && <TableCell>API Server</TableCell>}
                     <TableCell>版本</TableCell>
                     <TableCell>状态</TableCell>
                     <TableCell>节点/Pod</TableCell>
@@ -618,11 +618,13 @@ export default function Clusters() {
                           </Typography>
                         </Box>
                       </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                          {cluster.server || '-'}
-                        </Typography>
-                      </TableCell>
+                      {isPlatformAdmin && (
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                            {cluster.server || '-'}
+                          </Typography>
+                        </TableCell>
+                      )}
                       <TableCell>
                         {cluster.metadata?.version || '-'}
                       </TableCell>
