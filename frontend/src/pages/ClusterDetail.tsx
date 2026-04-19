@@ -55,6 +55,7 @@ import { k8sAPI, resourceCategories, resourceLabels, ClusterStats } from '../lib
 import ResourceEditorDialog from '../components/ResourceEditorDialog'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
 import { usePermission } from '../hooks/usePermission'
+import { wsManager } from '../lib/ws'
 
 const iconMap: Record<string, any> = {
   Dashboard: DashboardIcon,
@@ -443,12 +444,22 @@ export default function ClusterDetail() {
     return () => clearTimeout(timer)
   }, [keyword])
 
-  // 自动轮询刷新（每 5 秒），解决 informer 缓存延迟导致的数据不同步问题
+  // WebSocket 推送：收到资源变化推送时自动刷新
+  useEffect(() => {
+    const unsubscribe = wsManager.onMessage((msg) => {
+      if (msg.cluster_id === id && msg.kind === activeResource) {
+        loadResources(activeResource, page, keyword, true)
+      }
+    })
+    return unsubscribe
+  }, [id, activeResource, page, keyword])
+
+  // 自动轮询刷新（每 30 秒，作为 WebSocket 断线兜底）
   useEffect(() => {
     if (activeCategory === 'overview' || !activeResource || loading) return
     const interval = setInterval(() => {
       loadResources(activeResource, page, keyword, true)
-    }, 5000)
+    }, 30000)
     return () => clearInterval(interval)
   }, [activeCategory, activeResource, page, keyword, loading])
 

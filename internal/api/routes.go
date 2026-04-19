@@ -9,6 +9,7 @@ import (
 	"github.com/cloudops/platform/internal/api/handlers"
 	"github.com/cloudops/platform/internal/api/middleware"
 	"github.com/cloudops/platform/internal/pkg/auth"
+	"github.com/cloudops/platform/internal/pkg/ws"
 	"github.com/cloudops/platform/internal/service"
 )
 
@@ -242,6 +243,11 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 
 	// Web Terminal (WebSocket)
 	engine.GET("/ws/terminal", r.terminalHandler.Terminal)
+
+	// K8s 资源变化推送 (WebSocket)
+	engine.GET("/ws/k8s-events", func(c *gin.Context) {
+		ws.ServeWs(c.Writer, c.Request)
+	})
 
 	// 内部 Agent 工具执行 API（仅允许本机访问）
 	internal := engine.Group("/internal")

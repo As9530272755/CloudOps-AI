@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -25,6 +26,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/dynamic"
 	authorizationv1 "k8s.io/api/authorization/v1"
+
+	"github.com/cloudops/platform/internal/pkg/redis"
+	"github.com/cloudops/platform/internal/pkg/ws"
 )
 
 // K8sResourceService K8s资源服务
@@ -60,6 +64,21 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 		return nil, 0, fmt.Errorf("集群缓存正在同步，请稍后重试")
 	}
 
+	// Redis 缓存：多用户共享，减少 informer 内存扫描压力
+	cacheKey := fmt.Sprintf("k8s:list:%d:%s:%s:%s:%d:%d", clusterID, kind, namespace, keyword, page, limit)
+	if redis.Client != nil {
+		cached, err := redis.Client.Get(ctx, cacheKey).Result()
+		if err == nil && cached != "" {
+			var cachedResult struct {
+				Items []map[string]interface{} `json:"items"`
+				Total int                      `json:"total"`
+			}
+			if jsonErr := json.Unmarshal([]byte(cached), &cachedResult); jsonErr == nil {
+				return cachedResult.Items, cachedResult.Total, nil
+			}
+		}
+	}
+
 	var items []interface{}
 	var total int
 	var err error
@@ -83,6 +102,16 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	for _, obj := range items {
 		result = append(result, convertToSummary(obj))
 	}
+
+	// 写入 Redis 缓存（TTL 5 秒）
+	if redis.Client != nil {
+		cacheData, _ := json.Marshal(struct {
+			Items []map[string]interface{} `json:"items"`
+			Total int                      `json:"total"`
+		}{Items: result, Total: total})
+		_ = redis.Client.Set(ctx, cacheKey, string(cacheData), 5*time.Second)
+	}
+
 	return result, total, nil
 }
 
@@ -686,6 +715,9 @@ func (s *K8sResourceService) getDynamicClient(clusterID uint) (dynamic.Interface
 	if cc == nil {
 		return nil, fmt.Errorf("集群缓存正在重建，请 5-10 秒后重试")
 	}
+	if cc.DynamicClient != nil {
+		return cc.DynamicClient, nil
+	}
 	return dynamic.NewForConfig(cc.Config)
 }
 
@@ -876,6 +908,16 @@ func (s *K8sResourceService) syncObjectToStore(ctx context.Context, clusterID ui
 		}
 		_ = store.Delete(oldObj)
 	}
+
+	// 广播 WebSocket 推送，前端收到后自动刷新
+	ws.Broadcast(ws.ResourceChangeMessage{
+		Type:      "resource_change",
+		ClusterID: clusterID,
+		Kind:      kind,
+		Namespace: namespace,
+		Name:      name,
+		Action:    operation,
+	})
 }
 
 // getStoreByKind 根据资源类型获取对应的 informer store

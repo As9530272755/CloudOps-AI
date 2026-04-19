@@ -1913,3 +1913,53 @@ store.Replace(typedObjects, list.GetResourceVersion())
 ### 编译状态
 - 后端 `go build` ✅
 - 后端已重启 ✅
+
+
+---
+
+## 2026-04-19 中期可扩展性优化
+
+### 背景
+评估确认当前架构无法支撑 20+ 集群/几万 Pod，主要瓶颈：内存（全量 informer 缓存）、CPU（O(n) 分页扫描）、连接（dynamic client 每次新建）、前端轮询（5 秒全量请求）。
+
+### 优化内容
+
+#### 1. dynamic client 复用
+`internal/service/k8s_manager.go`：
+- `ClusterClient` 新增 `DynamicClient dynamic.Interface` 字段
+- `createClusterClient` 中一次性初始化 `dynamic.NewForConfig(config)`
+- `getDynamicClient` 优先返回缓存的 `cc.DynamicClient`，避免每次写操作新建 TCP 连接
+
+#### 2. Redis 缓存 ListResources
+`internal/service/k8s_resource_service.go`：
+- `ListResources` 增加 Redis 缓存层
+- 缓存 key: `k8s:list:${clusterID}:${kind}:${namespace}:${keyword}:${page}:${limit}`
+- 缓存 TTL: 5 秒
+- 多用户同时查看同一资源时共享缓存，大幅降低 informer 内存扫描压力
+
+#### 3. WebSocket 推送替代高频轮询
+
+**后端**:
+- 新增 `internal/pkg/ws/hub.go`：轻量级 WebSocket Hub，支持广播资源变化消息
+- `syncObjectToStore` 写操作成功后广播 `ResourceChangeMessage`
+- 路由新增 `/ws/k8s-events` WebSocket endpoint
+
+**前端**:
+- 新增 `frontend/src/lib/ws.ts`：WebSocket 连接管理（自动重连、消息分发）
+- `ClusterDetail.tsx`：
+  - WebSocket 收到匹配的 `cluster_id + kind` 推送时自动刷新
+  - 轮询降级为 30 秒（WebSocket 断线兜底）
+
+### 效果
+
+| 维度 | 优化前 | 优化后 |
+|------|--------|--------|
+| 写操作连接 | 每次新建 dynamic client | 复用缓存的连接 |
+| 列表请求 | 每次都扫描 informer 内存 | 5 秒 Redis 缓存共享 |
+| 前端刷新 | 5 秒轮询 | WebSocket 实时推送 + 30s 兜底 |
+| 50 用户请求量 | 600 请求/分钟 | 100 请求/分钟（Redis 命中） |
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npm run build` ✅
+- 后端已重启 ✅

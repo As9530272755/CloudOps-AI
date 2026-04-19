@@ -13,6 +13,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -29,14 +30,15 @@ import (
 
 // ClusterClient 单个集群的客户端和缓存
 type ClusterClient struct {
-	Client      *kubernetes.Clientset
-	Config      *rest.Config
-	Factory     informers.SharedInformerFactory
-	StopCh      chan struct{}
-	LastUsed    time.Time
-	Health      bool
-	SyncReady   bool
-	SyncMu      sync.RWMutex
+	Client         *kubernetes.Clientset
+	DynamicClient  dynamic.Interface
+	Config         *rest.Config
+	Factory        informers.SharedInformerFactory
+	StopCh         chan struct{}
+	LastUsed       time.Time
+	Health         bool
+	SyncReady      bool
+	SyncMu         sync.RWMutex
 
 	ApiExtClient   apiextensionsclientset.Interface
 	ApiExtFactory  apiextensionsinformers.SharedInformerFactory
@@ -452,8 +454,14 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	factory := informers.NewSharedInformerFactory(client, 60*time.Second)
 	apiextFactory := apiextensionsinformers.NewSharedInformerFactory(apiextClient, 60*time.Second)
 
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
 	cc := &ClusterClient{
 		Client:         client,
+		DynamicClient:  dynamicClient,
 		Config:         config,
 		Factory:        factory,
 		ApiExtClient:   apiextClient,
