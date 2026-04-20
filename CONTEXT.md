@@ -2425,3 +2425,38 @@ store.Replace(typedObjects, list.GetResourceVersion())
 - 支持表单模式的资源：33 种（原 39 种）
 - Informer Store：33 个
 - 资源类别分类已同步清理
+
+### 提交 `668382f`
+**fix: cluster health status inconsistency — remove hardcoded 'error' state**
+
+#### Bug 根因
+`probeClusterHealth` 获取 K8s Client 失败时：
+- 内存缓存 → `recordHealthCheck(false)` → `unhealthy` / `offline`
+- 数据库 → 硬写 `"error"`（与内存缓存不一致）
+- WebSocket 广播的是内存状态，页面刷新读数据库显示"异常"
+
+#### 修复
+- `probeClusterHealth`：获取 Client 失败时，用 `newStatus`（来自内存缓存）更新数据库，不再硬写 `"error"`
+- `testClusterConnection`：连接失败时写 `"unhealthy"`，不再写 `"error"`
+
+#### 状态模型统一为4种
+| 状态值 | 显示 | 触发条件 |
+|--------|------|---------|
+| `pending` | 检测中 | 刚添加集群初始化 |
+| `healthy` | 正常 | 探测成功 |
+| `unhealthy` | 不健康 | 连续 1~2 次探测失败 |
+| `offline` | 离线 | 连续 ≥3 次探测失败 |
+
+> 废弃 `error` / `warning` 两个遗留状态值
+
+### 提交 `da4d732`
+**fix: remove legacy 'error'/'warning' status mappings from frontend**
+
+- 清理 `statusColors` / `statusLabels`：移除 `warning` 和 `error` 条目
+- 状态筛选下拉框同步为 4 个选项：正常 / 不健康 / 离线 / 检测中
+- 前端与后端 4 状态模型对齐
+
+### 重启后端服务
+- `pkill -f cloudops-backend` + `go build` + `nohup` 启动
+- 服务正常启动，Informer 开始同步集群缓存
+- 概览页不再显示已删除的 6 种资源类型
