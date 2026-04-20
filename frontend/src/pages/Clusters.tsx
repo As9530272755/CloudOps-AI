@@ -174,8 +174,8 @@ export default function Clusters() {
   }, [searchQuery, searchKindFilter, searchNsFilter, searchClusterFilter, searchLabelFilter])
 
   // 加载集群列表
-  const loadClusters = async () => {
-    setLoading(true)
+  const loadClusters = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const params: ClusterListParams = {}
       if (filters.status) params.status = filters.status
@@ -188,15 +188,15 @@ export default function Clusters() {
     } catch (err: any) {
       setError(err.message || '加载集群列表失败')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     loadClusters()
-    // 自动轮询：每 5 秒刷新集群状态
+    // 自动轮询：每 5 秒静默刷新集群状态（不触发 loading）
     const interval = setInterval(() => {
-      loadClusters()
+      loadClusters(true)
     }, 5000)
     return () => clearInterval(interval)
   }, [])
@@ -379,7 +379,7 @@ export default function Clusters() {
             <Button
               variant="outlined"
               startIcon={<RefreshIcon />}
-              onClick={loadClusters}
+              onClick={() => loadClusters()}
               disabled={loading}
             >
               刷新
@@ -557,7 +557,7 @@ export default function Clusters() {
             </Button>
             <Button
               variant="contained"
-              onClick={loadClusters}
+              onClick={() => loadClusters()}
               disabled={loading}
             >
               查询
