@@ -263,14 +263,14 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 	// 获取客户端
 	client, err := s.GetK8sClient(ctx, clusterID)
 	if err != nil {
-		s.updateClusterHealth(clusterID, "error", err.Error())
+		s.updateClusterHealth(clusterID, "unhealthy", err.Error())
 		return
 	}
 
 	// 测试连接 - 获取版本
 	version, err := client.Discovery().ServerVersion()
 	if err != nil {
-		s.updateClusterHealth(clusterID, "error", err.Error())
+		s.updateClusterHealth(clusterID, "unhealthy", err.Error())
 		return
 	}
 
@@ -459,7 +459,7 @@ func (s *ClusterService) probeClusterHealth(clusterID uint) {
 		s.healthMu.RLock()
 		newStatus := s.healthCache[clusterID].Status
 		s.healthMu.RUnlock()
-		s.updateClusterHealth(clusterID, "error", "")
+		s.updateClusterHealth(clusterID, newStatus, "")
 		if oldStatus != newStatus {
 			ws.Broadcast(ws.ResourceChangeMessage{Type: "cluster_status_change", ClusterID: clusterID, Status: newStatus})
 		}

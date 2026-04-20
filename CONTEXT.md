@@ -2396,3 +2396,32 @@ store.Replace(typedObjects, list.GetResourceVersion())
 ---
 
 *最后更新：2026-04-20*
+
+---
+
+## 2026-04-20 开发记录
+
+### 提交 `c28c10c`
+**feat: remove 6 unsupported K8s resource types (frontend + backend) + WS indicator position + status text**
+
+#### 变更内容
+1. **删除6种K8s版本不支持的资源类型**（前后端同步清理）
+   - `certificatesigningrequests` / `priorityclasses` / `runtimeclasses`
+   - `volumeattachments` / `csidrivers` / `csinodes`
+   - 后端：`k8s_manager.go`（Informer stores 33个）+ `k8s_resource_service.go`（CRUD case）
+   - 前端：ClusterDetail.tsx / Clusters.tsx / ResourceEditorDialog.tsx / resource-forms/index.ts / k8s-api.ts / yaml-helpers.ts
+   - 删除6个表单组件文件
+
+2. **WebSocket 状态指示器位置优化**
+   - 从「侧边栏收起时才显示的底部浮动栏」移到「侧边栏内部用户区域上方」
+   - 现在无论侧边栏展开/收起都始终可见
+
+3. **状态文案修改**
+   - `unhealthy` → '不健康'
+   - `healthy` → '正常'
+   - 表头「连接状态」→「API状态」
+
+#### 资源类型现状
+- 支持表单模式的资源：33 种（原 39 种）
+- Informer Store：33 个
+- 资源类别分类已同步清理
