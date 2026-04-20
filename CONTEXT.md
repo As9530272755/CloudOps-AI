@@ -2567,3 +2567,20 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 | `frontend/src/pages/Inspection.tsx` | 弹窗内独立错误状态 + Alert 渲染 |
 
 前端编译 ✅
+
+
+---
+
+### 提交 `217db24`
+**fix(inspection): prevent duplicate task names within same tenant**
+
+**问题**：同一租户内可以创建同名巡检任务（如两个都叫 "test"），导致管理混乱。
+
+**修复**：
+- 模型 `InspectionTask`：`name` 字段增加 `uniqueIndex:idx_inspection_task_name_tenant`，数据库层面约束（name + tenant_id）唯一
+- `CreateTask`：写入前先查询同名任务，存在则返回 `巡检任务名称 'xxx' 已存在`
+- `UpdateTask`：写入前先查询同名任务（排除自己），存在则返回同样错误
+- `UpdateTask` Handler：补充 `task.TenantID` 传递给服务层，确保查重条件完整
+- 前端弹窗内错误提示已在前一提交中实现，本次后端返回的重复错误会自动显示在弹窗内
+
+后端编译 ✅ 服务重启 ✅

@@ -1481,7 +1481,7 @@ func (s *InspectionService) DB() *gorm.DB {
 func (s *InspectionService) CreateTask(task *model.InspectionTask) error {
 	var existing model.InspectionTask
 	if err := s.db.Where("tenant_id = ? AND name = ?", task.TenantID, task.Name).First(&existing).Error; err == nil {
-		return fmt.Errorf("巡检任务名称 '%s' 已存在", task.Name)
+		return fmt.Errorf("该任务名称已存在，请修改后重试")
 	}
 	if err := s.db.Create(task).Error; err != nil {
 		return err
@@ -1493,7 +1493,7 @@ func (s *InspectionService) CreateTask(task *model.InspectionTask) error {
 func (s *InspectionService) UpdateTask(task *model.InspectionTask) error {
 	var existing model.InspectionTask
 	if err := s.db.Where("tenant_id = ? AND name = ? AND id != ?", task.TenantID, task.Name, task.ID).First(&existing).Error; err == nil {
-		return fmt.Errorf("巡检任务名称 '%s' 已存在", task.Name)
+		return fmt.Errorf("该任务名称已存在，请修改后重试")
 	}
 	if err := s.db.Save(task).Error; err != nil {
 		return err

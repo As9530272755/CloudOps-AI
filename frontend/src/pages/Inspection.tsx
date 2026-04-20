@@ -168,7 +168,8 @@ export default function Inspection() {
       setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
       loadTasks()
     } catch (err: any) {
-      setTaskDialogError(err.message || '保存失败')
+      const msg = err.response?.data?.error || err.message || '保存失败'
+      setTaskDialogError(msg)
     }
   }
 

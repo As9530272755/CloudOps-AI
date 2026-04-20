@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cloudops/platform/internal/model"
@@ -129,7 +130,11 @@ func (h *InspectionHandler) CreateTask(c *gin.Context) {
 	task := toInspectionTask(req)
 	task.TenantID = c.GetUint("tenant_id")
 	if err := h.inspectionService.CreateTask(&task); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		if strings.Contains(err.Error(), "已存在") {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": toTaskResp(task)})
@@ -181,7 +186,11 @@ func (h *InspectionHandler) UpdateTask(c *gin.Context) {
 	task.ID = uint(id)
 	task.TenantID = c.GetUint("tenant_id")
 	if err := h.inspectionService.UpdateTask(&task); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		if strings.Contains(err.Error(), "已存在") {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": toTaskResp(task)})
