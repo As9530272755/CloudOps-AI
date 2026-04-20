@@ -140,26 +140,6 @@ func main() {
 	agentService := service.NewAgentService(aiPlatformService, aiChatSessionService, logService, k8sService, db)
 	log.Println("✅ Agent 服务初始化完成")
 
-	// Agent Runtime 已禁用（功能暂未使用，避免 19000 端口冲突）
-	// 如需启用，取消下面代码的注释：
-	/*
-	execPath, _ := os.Executable()
-	execDir := filepath.Dir(execPath)
-	agentRuntime := exec.CommandContext(context.Background(), "node", "agent-runtime/dist/server.js", "--port", "19000")
-	agentRuntime.Stdout = os.Stdout
-	agentRuntime.Stderr = os.Stderr
-	agentRuntime.Dir = execDir
-	if err := agentRuntime.Start(); err != nil {
-		log.Printf("⚠️ Agent Runtime 启动失败: %v", err)
-	} else {
-		log.Println("✅ Agent Runtime (Node.js) 启动在 http://127.0.0.1:19000")
-		time.Sleep(1 * time.Second)
-	}
-	*/
-
-	// 创建 Agent Runtime 代理
-	agentRuntimeProxy := service.NewAgentRuntimeProxy(aiPlatformService)
-	log.Println("✅ Agent Runtime 代理初始化完成")
 
 	// 启动第三方对接系统健康检查（每 30 秒一次）
 	dsService.StartHealthMonitor()
@@ -169,7 +149,7 @@ func main() {
 	log.Println("✅ 第三方系统健康检查 Monitor 启动完成")
 
 	// 注册 API 路由
-	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, agentRuntimeProxy, logService, settingService, db, k8sManager)
+	apiRouter := api.NewRouter(jwtManager, clusterService, k8sService, dsService, dashboardService, inspectionService, networkTraceService, aiPlatformService, aiChatSessionService, aiService, aiTaskService, agentService, logService, settingService, db, k8sManager)
 
 	// 设置运行模式
 	if cfg.Server.Backend.Mode == "release" {

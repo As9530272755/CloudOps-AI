@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -19,7 +18,6 @@ type AIChatHandler struct {
 	taskService     *service.AITaskService
 	sessionSvc      *service.AIChatSessionService
 	agentSvc        *service.AgentService
-	agentRuntimeProxy *service.AgentRuntimeProxy
 }
 
 func (h *AIChatHandler) getUserID(c *gin.Context) uint {
@@ -51,13 +49,12 @@ func (h *AIChatHandler) checkSessionOwner(c *gin.Context, sessionID string) bool
 }
 
 // NewAIChatHandler 创建 Handler
-func NewAIChatHandler(svc *service.AIService, taskSvc *service.AITaskService, sessionSvc *service.AIChatSessionService, agentSvc *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy) *AIChatHandler {
+func NewAIChatHandler(svc *service.AIService, taskSvc *service.AITaskService, sessionSvc *service.AIChatSessionService, agentSvc *service.AgentService) *AIChatHandler {
 	return &AIChatHandler{
 		svc:               svc,
 		taskService:       taskSvc,
 		sessionSvc:        sessionSvc,
 		agentSvc:          agentSvc,
-		agentRuntimeProxy: agentRuntimeProxy,
 	}
 }
 
@@ -205,70 +202,4 @@ func (h *AIChatHandler) GetTask(c *gin.Context) {
 		"success": true,
 		"data":    status,
 	})
-}
-
-// AgentChatStream Agent 流式对话 (SSE)
-func (h *AIChatHandler) AgentChatStream(c *gin.Context) {
-	var req ChatRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-	log.Printf("[AGENT-HANDLER] request session=%s platform=%s messages=%d", req.SessionID, req.PlatformID, len(req.Messages))
-	if !h.checkSessionOwner(c, req.SessionID) {
-		return
-	}
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.WriteHeader(http.StatusOK)
-
-	var mu sync.Mutex
-	flush := func() {
-		if f, ok := c.Writer.(http.Flusher); ok {
-			f.Flush()
-		}
-	}
-
-	// 定期心跳
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				mu.Lock()
-				b, _ := json.Marshal(service.AgentEvent{Type: "heartbeat"})
-				fmt.Fprintf(c.Writer, "data: %s\n\n", b)
-				flush()
-				mu.Unlock()
-			case <-done:
-				return
-			}
-		}
-	}()
-
-	err := h.agentRuntimeProxy.AgentChatStream(c.Request.Context(), req.SessionID, req.PlatformID, req.Messages, func(ev service.AgentEvent) {
-		mu.Lock()
-		b, _ := json.Marshal(ev)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
-		flush()
-		mu.Unlock()
-	})
-	close(done)
-
-	if err != nil {
-		mu.Lock()
-		b, _ := json.Marshal(service.AgentEvent{Type: "error", Content: err.Error()})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
-		flush()
-		mu.Unlock()
-	}
-	mu.Lock()
-	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-	flush()
-	mu.Unlock()
 }

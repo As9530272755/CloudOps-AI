@@ -29,7 +29,6 @@ type Router struct {
 	aiChatHandler        *handlers.AIChatHandler
 	aiTaskService        *service.AITaskService
 	agentService         *service.AgentService
-	agentRuntimeProxy    *service.AgentRuntimeProxy
 	agentToolsHandler    *handlers.AgentToolsHandler
 	logHandler           *handlers.LogHandler
 	settingHandler       *handlers.SettingHandler
@@ -39,7 +38,7 @@ type Router struct {
 }
 
 // NewRouter 创建路由
-func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, agentRuntimeProxy *service.AgentRuntimeProxy, logService *service.LogService, settingService *service.SettingService, db *gorm.DB, k8sManager *service.K8sManager) *Router {
+func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterService, k8sService *service.K8sResourceService, dsService *service.DatasourceService, dashboardService *service.DashboardService, inspectionService *service.InspectionService, networkTraceService *service.NetworkTraceService, aiPlatformService *service.AIPlatformService, aiChatSessionService *service.AIChatSessionService, aiService *service.AIService, aiTaskSvc *service.AITaskService, agentService *service.AgentService, logService *service.LogService, settingService *service.SettingService, db *gorm.DB, k8sManager *service.K8sManager) *Router {
 	return &Router{
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		userHandler:          handlers.NewUserHandler(db),
@@ -52,7 +51,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		networkTraceHandler:  handlers.NewNetworkTraceHandler(networkTraceService),
 		aiPlatformHandler:    handlers.NewAIPlatformHandler(aiPlatformService),
 		aiChatSessionHandler: handlers.NewAIChatSessionHandler(aiChatSessionService),
-		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService, agentService, agentRuntimeProxy),
+		aiChatHandler:        handlers.NewAIChatHandler(aiService, aiTaskSvc, aiChatSessionService, agentService),
 		agentToolsHandler:    handlers.NewAgentToolsHandler(agentService),
 		logHandler:           handlers.NewLogHandler(logService),
 		settingHandler:       handlers.NewSettingHandler(settingService),
@@ -213,7 +212,6 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			// AI 对话
 			protected.POST("/ai/chat", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.Chat)
 			protected.POST("/ai/chat/stream", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.ChatStream)
-			protected.POST("/ai/agent/chat/stream", middleware.AIPermissionMiddleware(r.db, "ai:agent_chat"), r.aiChatHandler.AgentChatStream)
 
 			protected.POST("/ai/chat/task", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.CreateTask)
 			protected.GET("/ai/chat/task/:id", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.GetTask)
