@@ -407,6 +407,8 @@ func (s *ClusterService) StartHealthMonitor() {
 			if err := s.db.Find(&list).Error; err != nil {
 				continue
 			}
+
+			var wg sync.WaitGroup
 			for _, c := range list {
 				// 根据内存缓存状态决定探测间隔
 				s.healthMu.RLock()
@@ -426,45 +428,67 @@ func (s *ClusterService) StartHealthMonitor() {
 					continue // 跳过，未到探测时间
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				client, err := s.GetK8sClient(ctx, c.ID)
-				if err != nil {
-					cancel()
-					s.recordHealthCheck(c.ID, false)
-					s.updateClusterHealth(c.ID, "error", "")
-					continue
-				}
-				_, err = client.Discovery().ServerVersion()
-				cancel()
-
-				status := "error"
-				if err == nil {
-					status = "healthy"
-					s.recordHealthCheck(c.ID, true)
-				} else {
-					s.recordHealthCheck(c.ID, false)
-				}
-				s.updateClusterHealth(c.ID, status, "")
-
-				// 同步 informer 缓存中的 node/pod 数量到数据库，解决列表页与详情页数据不一致
-				if status == "healthy" {
-					if cc := s.k8sManager.GetClusterClient(c.ID); cc != nil {
-						cc.SyncMu.RLock()
-						ready := cc.SyncReady
-						cc.SyncMu.RUnlock()
-						if ready {
-							nodeCount := len(cc.NodeStore.List())
-							podCount := len(cc.PodStore.List())
-							s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", c.ID).Updates(map[string]interface{}{
-								"node_count": nodeCount,
-								"pod_count":  podCount,
-							})
-						}
-					}
-				}
+				wg.Add(1)
+				go func(clusterID uint) {
+					defer wg.Done()
+					s.probeClusterHealth(clusterID)
+				}(c.ID)
 			}
+			wg.Wait()
 		}
 	}()
+}
+
+// probeClusterHealth 探测单个集群健康状态（独立 goroutine，带超时）
+func (s *ClusterService) probeClusterHealth(clusterID uint) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	client, err := s.GetK8sClient(ctx, clusterID)
+	cancel()
+	if err != nil {
+		s.recordHealthCheck(clusterID, false)
+		s.updateClusterHealth(clusterID, "error", "")
+		return
+	}
+
+	// ServerVersion() 不接收 context，必须用 goroutine + select 做真正的超时控制
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Discovery().ServerVersion()
+		done <- err
+	}()
+
+	select {
+	case err = <-done:
+		// 正常完成
+	case <-time.After(10 * time.Second):
+		err = fmt.Errorf("health check timeout")
+	}
+
+	status := "error"
+	if err == nil {
+		status = "healthy"
+		s.recordHealthCheck(clusterID, true)
+	} else {
+		s.recordHealthCheck(clusterID, false)
+	}
+	s.updateClusterHealth(clusterID, status, "")
+
+	// 同步 informer 缓存中的 node/pod 数量到数据库
+	if status == "healthy" {
+		if cc := s.k8sManager.GetClusterClient(clusterID); cc != nil {
+			cc.SyncMu.RLock()
+			ready := cc.SyncReady
+			cc.SyncMu.RUnlock()
+			if ready {
+				nodeCount := len(cc.NodeStore.List())
+				podCount := len(cc.PodStore.List())
+				s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Updates(map[string]interface{}{
+					"node_count": nodeCount,
+					"pod_count":  podCount,
+				})
+			}
+		}
+	}
 }
 
 // GetK8sClient 获取K8s客户端
