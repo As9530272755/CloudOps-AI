@@ -134,10 +134,6 @@ go build -o cloudops-backend ./cmd/server
 # 方式一：直接启动（开发环境）
 ./cloudops-backend
 
-# 方式二：systemd 服务（生产环境，推荐）
-cp systemd/cloudops-backend.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now cloudops-backend
 ```
 
 后端将监听 `http://0.0.0.0:9000`

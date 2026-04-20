@@ -2697,3 +2697,19 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 - CONTEXT.md 已同步 ✅
 - 后端 & 前端编译通过 ✅
 - 服务稳定运行 ✅
+
+
+---
+
+### 开发阶段移除 systemd 服务
+
+**原因**：当前处于开发阶段，频繁编译重启，systemd 自动重启会干扰开发流程。
+
+**操作**：
+- `systemctl stop cloudops-backend`
+- `systemctl disable cloudops-backend`
+- `rm /etc/systemd/system/cloudops-backend.service`
+- `systemctl daemon-reload`
+- 改用 `nohup ./cloudops-backend &` 手动启动
+
+后端当前以 nohup 方式运行，PID 稳定。
