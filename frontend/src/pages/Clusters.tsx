@@ -194,6 +194,11 @@ export default function Clusters() {
 
   useEffect(() => {
     loadClusters()
+    // 自动轮询：每 5 秒刷新集群状态
+    const interval = setInterval(() => {
+      loadClusters()
+    }, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   const resetForm = () => {

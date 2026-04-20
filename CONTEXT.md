@@ -2315,6 +2315,27 @@ store.Replace(typedObjects, list.GetResourceVersion())
 - 后端 `go build` ✅
 - 后端已重启 ✅
 
+### 20.8 修复：健康检查探测被 TCP 超时阻塞 21 秒
+
+**现象**：停掉 YH 集群 API Server 后，`curl` 超时 21 秒，但前端集群列表仍显示"正常"。
+
+**根因**：
+1. `client.Discovery().ServerVersion()` **不接收 context 参数**，外层 10 秒 context 完全无效
+2. 集群断开后，`ServerVersion()` 挂起直到 TCP 层超时（~21 秒）
+3. `StartHealthMonitor` 是**单线程顺序执行**，一个集群卡住，所有其他集群的探测全被阻塞
+4. 内存缓存和数据库在 21 秒内始终未被更新
+
+**修复**：`internal/service/cluster_service.go`
+- 抽取 `probeClusterHealth()` — 每个集群独立 goroutine 探测
+- `ServerVersion()` 用 goroutine + select 做真正的 10 秒超时控制
+- 一个集群挂起不再影响其他集群的探测
+
+**效果**：offline 集群检测延迟从 **21 秒+** → **10 秒内**
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+
 ---
 
 *最后更新：2026-04-20*
