@@ -82,6 +82,20 @@ const singularMap: Record<string, string> = {
   roles: 'role', rolebindings: 'rolebinding',
   clusterroles: 'clusterrole', clusterrolebindings: 'clusterrolebinding',
   customresourcedefinitions: 'customresourcedefinition',
+  horizontalpodautoscalers: 'horizontalpodautoscaler',
+  networkpolicies: 'networkpolicy',
+  poddisruptionbudgets: 'poddisruptionbudget',
+  endpointslices: 'endpointslice',
+  replicationcontrollers: 'replicationcontroller',
+  limitranges: 'limitrange',
+  resourcequotas: 'resourcequota',
+  certificatesigningrequests: 'certificatesigningrequest',
+  priorityclasses: 'priorityclass',
+  leases: 'lease',
+  runtimeclasses: 'runtimeclass',
+  volumeattachments: 'volumeattachment',
+  csidrivers: 'csidriver',
+  csinodes: 'csinode',
 }
 
 function hasResourcePermission(resource: string, permissions: string[]): boolean {
@@ -97,6 +111,8 @@ const namespacedResources = new Set([
   'jobs', 'cronjobs', 'services', 'ingresses', 'endpoints',
   'persistentvolumeclaims', 'configmaps', 'secrets', 'serviceaccounts',
   'roles', 'rolebindings', 'events',
+  'horizontalpodautoscalers', 'networkpolicies', 'poddisruptionbudgets', 'endpointslices',
+  'replicationcontrollers', 'limitranges', 'resourcequotas', 'leases',
 ])
 
 // 资源状态颜色映射（通用）
@@ -444,20 +460,35 @@ export default function ClusterDetail() {
     return () => clearTimeout(timer)
   }, [keyword])
 
+  // 用 ref 保存最新的 page 和 keyword，避免 WebSocket handler 闭包捕获旧值
+  const pageRef = useRef(page)
+  const keywordRef = useRef(keyword)
+  useEffect(() => { pageRef.current = page }, [page])
+  useEffect(() => { keywordRef.current = keyword }, [keyword])
+
   // WebSocket 推送：收到资源变化推送时自动刷新
   useEffect(() => {
+    // 概览页不订阅具体资源变化（概览数据通过轮询兜底）
+    if (activeCategory === 'overview' || !activeResource) {
+      wsManager.subscribe(null, null)
+      return () => {}
+    }
+
+    // 只订阅当前集群当前资源类型
+    wsManager.subscribe(Number(id), [activeResource])
+
     const unsubscribe = wsManager.onMessage((msg) => {
       // 显式转字符串比较，消除类型隐患
       if (String(msg.cluster_id) === String(id) && msg.kind === activeResource) {
         console.log('[WS] resource_change received:', msg.kind, msg.name, msg.action)
         // 延迟 500ms 刷新，给后端 syncObjectToStore 完成留时间
         setTimeout(() => {
-          loadResources(activeResource, page, keyword, true)
+          loadResources(activeResource, pageRef.current, keywordRef.current, true)
         }, 500)
       }
     })
     return unsubscribe
-  }, [id, activeResource, page, keyword])
+  }, [id, activeCategory, activeResource])
 
   // 自动轮询刷新（每 30 秒，作为 WebSocket 断线兜底）
   useEffect(() => {
@@ -512,6 +543,34 @@ export default function ClusterDetail() {
           { key: 'versions', label: '版本' },
           { key: 'established', label: '状态' },
         ]
+      case 'horizontalpodautoscalers':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'minReplicas', label: '最小副本' }, { key: 'maxReplicas', label: '最大副本' }, { key: 'currentReplicas', label: '当前副本' }]
+      case 'networkpolicies':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'podSelector', label: 'Pod选择器' }, { key: 'policyTypes', label: '策略类型' }]
+      case 'poddisruptionbudgets':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'minAvailable', label: '最小可用' }, { key: 'maxUnavailable', label: '最大不可用' }]
+      case 'endpointslices':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'addressType', label: '地址类型' }, { key: 'endpoints', label: '端点数量' }]
+      case 'replicationcontrollers':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'replicas', label: '副本' }]
+      case 'limitranges':
+        return [...common, { key: 'namespace', label: '命名空间' }]
+      case 'resourcequotas':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hard', label: '配额限制' }]
+      case 'certificatesigningrequests':
+        return [...common, { key: 'signerName', label: '签名者' }, { key: 'username', label: '用户名' }, { key: 'status', label: '状态' }]
+      case 'priorityclasses':
+        return [...common, { key: 'value', label: '优先级值' }, { key: 'globalDefault', label: '全局默认' }]
+      case 'leases':
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'holderIdentity', label: '持有者' }]
+      case 'runtimeclasses':
+        return [...common, { key: 'handler', label: 'Handler' }]
+      case 'volumeattachments':
+        return [...common, { key: 'attacher', label: '挂载驱动' }, { key: 'node', label: '节点' }, { key: 'attached', label: '已挂载' }]
+      case 'csidrivers':
+        return [...common]
+      case 'csinodes':
+        return [...common]
       default:
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }]
     }

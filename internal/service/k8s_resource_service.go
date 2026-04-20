@@ -18,6 +18,13 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	policyv1 "k8s.io/api/policy/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	certificatesv1 "k8s.io/api/certificates/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	nodev1 "k8s.io/api/node/v1"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -118,7 +125,7 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 // kindToGVK 为 scheme 无法识别的类型提供手动 GVK 映射
 func kindToGVK(kind string) schema.GroupVersionKind {
 	switch kind {
-	case "pods", "services", "endpoints", "persistentvolumeclaims", "configmaps", "secrets", "serviceaccounts", "nodes", "namespaces", "persistentvolumes", "events":
+	case "pods", "services", "endpoints", "persistentvolumeclaims", "configmaps", "secrets", "serviceaccounts", "nodes", "namespaces", "persistentvolumes", "events", "replicationcontrollers", "limitranges", "resourcequotas":
 		return schema.GroupVersionKind{Version: "v1", Kind: kindToTitle(kind)}
 	case "deployments", "daemonsets", "replicasets", "statefulsets":
 		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: kindToTitle(kind)}
@@ -132,6 +139,28 @@ func kindToGVK(kind string) schema.GroupVersionKind {
 		return schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: kindToTitle(kind)}
 	case "customresourcedefinitions":
 		return schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"}
+	case "horizontalpodautoscalers":
+		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}
+	case "networkpolicies":
+		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}
+	case "poddisruptionbudgets":
+		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}
+	case "endpointslices":
+		return schema.GroupVersionKind{Group: "discovery.k8s.io", Version: "v1", Kind: "EndpointSlice"}
+	case "certificatesigningrequests":
+		return schema.GroupVersionKind{Group: "certificates.k8s.io", Version: "v1", Kind: "CertificateSigningRequest"}
+	case "priorityclasses":
+		return schema.GroupVersionKind{Group: "scheduling.k8s.io", Version: "v1", Kind: "PriorityClass"}
+	case "leases":
+		return schema.GroupVersionKind{Group: "coordination.k8s.io", Version: "v1", Kind: "Lease"}
+	case "runtimeclasses":
+		return schema.GroupVersionKind{Group: "node.k8s.io", Version: "v1", Kind: "RuntimeClass"}
+	case "volumeattachments":
+		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "VolumeAttachment"}
+	case "csidrivers":
+		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSIDriver"}
+	case "csinodes":
+		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSINode"}
 	default:
 		return schema.GroupVersionKind{}
 	}
@@ -558,6 +587,147 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"scope":             string(v.Spec.Scope),
 			"versions":          strings.Join(versions, ", "),
 			"established":       established,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *autoscalingv2.HorizontalPodAutoscaler:
+		scaleTarget := fmt.Sprintf("%s/%s", v.Spec.ScaleTargetRef.Kind, v.Spec.ScaleTargetRef.Name)
+		minReplicas := int32(0)
+		if v.Spec.MinReplicas != nil {
+			minReplicas = *v.Spec.MinReplicas
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"scale_target":      scaleTarget,
+			"min_replicas":      minReplicas,
+			"max_replicas":      v.Spec.MaxReplicas,
+			"current_replicas":  v.Status.CurrentReplicas,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *networkingv1.NetworkPolicy:
+		policyTypes := make([]string, 0, len(v.Spec.PolicyTypes))
+		for _, pt := range v.Spec.PolicyTypes {
+			policyTypes = append(policyTypes, string(pt))
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"pod_selector":      v.Spec.PodSelector.String(),
+			"policy_types":      strings.Join(policyTypes, ", "),
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *policyv1.PodDisruptionBudget:
+		minAvailable := ""
+		if v.Spec.MinAvailable != nil {
+			minAvailable = v.Spec.MinAvailable.String()
+		}
+		maxUnavailable := ""
+		if v.Spec.MaxUnavailable != nil {
+			maxUnavailable = v.Spec.MaxUnavailable.String()
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"min_available":     minAvailable,
+			"max_unavailable":   maxUnavailable,
+			"current_healthy":   v.Status.CurrentHealthy,
+			"desired_healthy":   v.Status.DesiredHealthy,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *discoveryv1.EndpointSlice:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"address_type":      string(v.AddressType),
+			"endpoints":         len(v.Endpoints),
+			"ports":             len(v.Ports),
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *corev1.ReplicationController:
+		replicas := int32(0)
+		if v.Spec.Replicas != nil {
+			replicas = *v.Spec.Replicas
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"replicas":          fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, replicas),
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *corev1.LimitRange:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"limits":            len(v.Spec.Limits),
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *corev1.ResourceQuota:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"hard":              len(v.Spec.Hard),
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *certificatesv1.CertificateSigningRequest:
+		status := "Pending"
+		for _, cond := range v.Status.Conditions {
+			if cond.Type == certificatesv1.CertificateApproved {
+				status = "Approved"
+				break
+			} else if cond.Type == certificatesv1.CertificateDenied {
+				status = "Denied"
+				break
+			}
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"signer_name":       v.Spec.SignerName,
+			"username":          v.Spec.Username,
+			"status":            status,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *schedulingv1.PriorityClass:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"value":             v.Value,
+			"global_default":    v.GlobalDefault,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *coordinationv1.Lease:
+		renewTime := ""
+		if v.Spec.RenewTime != nil {
+			renewTime = v.Spec.RenewTime.Format(time.RFC3339)
+		}
+		return map[string]interface{}{
+			"name":              v.Name,
+			"namespace":         v.Namespace,
+			"holder_identity":   v.Spec.HolderIdentity,
+			"renew_time":        renewTime,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *nodev1.RuntimeClass:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"handler":           v.Handler,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *storagev1.VolumeAttachment:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"attacher":          v.Spec.Attacher,
+			"node":              v.Spec.NodeName,
+			"attached":          v.Status.Attached,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *storagev1.CSIDriver:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *storagev1.CSINode:
+		return map[string]interface{}{
+			"name":              v.Name,
+			"drivers":           len(v.Spec.Drivers),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	default:
@@ -1002,6 +1172,34 @@ func getStoreByKind(cc *ClusterClient, kind string) cache.Store {
 		return cc.EventStore
 	case "customresourcedefinitions":
 		return cc.CRDStore
+	case "horizontalpodautoscalers":
+		return cc.HorizontalPodAutoscalerStore
+	case "networkpolicies":
+		return cc.NetworkPolicyStore
+	case "poddisruptionbudgets":
+		return cc.PodDisruptionBudgetStore
+	case "endpointslices":
+		return cc.EndpointSliceStore
+	case "replicationcontrollers":
+		return cc.ReplicationControllerStore
+	case "limitranges":
+		return cc.LimitRangeStore
+	case "resourcequotas":
+		return cc.ResourceQuotaStore
+	case "certificatesigningrequests":
+		return cc.CertificateSigningRequestStore
+	case "priorityclasses":
+		return cc.PriorityClassStore
+	case "leases":
+		return cc.LeaseStore
+	case "runtimeclasses":
+		return cc.RuntimeClassStore
+	case "volumeattachments":
+		return cc.VolumeAttachmentStore
+	case "csidrivers":
+		return cc.CSIDriverStore
+	case "csinodes":
+		return cc.CSINodeStore
 	default:
 		return nil
 	}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,13 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	certificatesv1 "k8s.io/api/certificates/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -20,11 +28,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/cache"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextensionsinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 
 	"github.com/cloudops/platform/internal/model"
+	"github.com/cloudops/platform/internal/pkg/ws"
 	"gorm.io/gorm"
 )
 
@@ -39,6 +49,7 @@ type ClusterClient struct {
 	Health         bool
 	SyncReady      bool
 	SyncMu         sync.RWMutex
+	clusterID      uint
 
 	ApiExtClient   apiextensionsclientset.Interface
 	ApiExtFactory  apiextensionsinformers.SharedInformerFactory
@@ -67,6 +78,20 @@ type ClusterClient struct {
 	ClusterRoleStore     cache.Store
 	ClusterRoleBindingStore cache.Store
 	EventStore           cache.Store
+	HorizontalPodAutoscalerStore cache.Store
+	NetworkPolicyStore   cache.Store
+	PodDisruptionBudgetStore cache.Store
+	EndpointSliceStore   cache.Store
+	ReplicationControllerStore cache.Store
+	LimitRangeStore      cache.Store
+	ResourceQuotaStore   cache.Store
+	CertificateSigningRequestStore cache.Store
+	PriorityClassStore   cache.Store
+	LeaseStore           cache.Store
+	RuntimeClassStore    cache.Store
+	VolumeAttachmentStore cache.Store
+	CSIDriverStore       cache.Store
+	CSINodeStore         cache.Store
 	CRDStore             cache.Store
 }
 
@@ -329,6 +354,146 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 		if len(result) >= limit {
 			break
 		}
+		appendFromStore(cc, "horizontalpodautoscalers", cc.HorizontalPodAutoscalerStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "horizontalpodautoscalers", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "networkpolicies", cc.NetworkPolicyStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*networkingv1.NetworkPolicy)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "networkpolicies", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "poddisruptionbudgets", cc.PodDisruptionBudgetStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*policyv1.PodDisruptionBudget)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "poddisruptionbudgets", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "endpointslices", cc.EndpointSliceStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*discoveryv1.EndpointSlice)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "endpointslices", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "replicationcontrollers", cc.ReplicationControllerStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.ReplicationController)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "replicationcontrollers", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "limitranges", cc.LimitRangeStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.LimitRange)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "limitranges", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "resourcequotas", cc.ResourceQuotaStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*corev1.ResourceQuota)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "resourcequotas", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "certificatesigningrequests", cc.CertificateSigningRequestStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*certificatesv1.CertificateSigningRequest)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "certificatesigningrequests", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "priorityclasses", cc.PriorityClassStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*schedulingv1.PriorityClass)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "priorityclasses", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "leases", cc.LeaseStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*coordinationv1.Lease)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "leases", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "runtimeclasses", cc.RuntimeClassStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*nodev1.RuntimeClass)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "runtimeclasses", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "volumeattachments", cc.VolumeAttachmentStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*storagev1.VolumeAttachment)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "volumeattachments", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "csidrivers", cc.CSIDriverStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*storagev1.CSIDriver)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "csidrivers", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
+		appendFromStore(cc, "csinodes", cc.CSINodeStore, func(obj interface{}) (SearchResult, bool) {
+			v := obj.(*storagev1.CSINode)
+			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "csinodes", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
 		appendFromStore(cc, "customresourcedefinitions", cc.CRDStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*v1.CustomResourceDefinition)
 			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
@@ -428,6 +593,69 @@ func (km *K8sManager) buildConfig(clusterID uint) (*rest.Config, error) {
 	return config, nil
 }
 
+// addResourceEventHandler 为 informer 添加事件处理器，在资源变化时广播 WebSocket
+func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint, kind string, cc *ClusterClient) {
+	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if !cc.SyncReady {
+				return
+			}
+			metaObj, ok := obj.(metav1.Object)
+			if !ok {
+				return
+			}
+			log.Printf("[informer] %s/%s added in cluster %d", kind, metaObj.GetName(), clusterID)
+			invalidateListCache(context.Background(), clusterID, kind)
+			ws.Broadcast(ws.ResourceChangeMessage{
+				Type:      "resource_change",
+				ClusterID: clusterID,
+				Kind:      kind,
+				Namespace: metaObj.GetNamespace(),
+				Name:      metaObj.GetName(),
+				Action:    "create",
+			})
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if !cc.SyncReady {
+				return
+			}
+			metaObj, ok := newObj.(metav1.Object)
+			if !ok {
+				return
+			}
+			log.Printf("[informer] %s/%s updated in cluster %d", kind, metaObj.GetName(), clusterID)
+			invalidateListCache(context.Background(), clusterID, kind)
+			ws.Broadcast(ws.ResourceChangeMessage{
+				Type:      "resource_change",
+				ClusterID: clusterID,
+				Kind:      kind,
+				Namespace: metaObj.GetNamespace(),
+				Name:      metaObj.GetName(),
+				Action:    "update",
+			})
+		},
+		DeleteFunc: func(obj interface{}) {
+			if !cc.SyncReady {
+				return
+			}
+			metaObj, ok := obj.(metav1.Object)
+			if !ok {
+				return
+			}
+			log.Printf("[informer] %s/%s deleted in cluster %d", kind, metaObj.GetName(), clusterID)
+			invalidateListCache(context.Background(), clusterID, kind)
+			ws.Broadcast(ws.ResourceChangeMessage{
+				Type:      "resource_change",
+				ClusterID: clusterID,
+				Kind:      kind,
+				Namespace: metaObj.GetNamespace(),
+				Name:      metaObj.GetName(),
+				Action:    "delete",
+			})
+		},
+	})
+}
+
 // createClusterClient 内部方法：构建并启动一个新的 ClusterClient
 func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (*ClusterClient, error) {
 	config, err := km.buildConfig(clusterID)
@@ -469,6 +697,7 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		StopCh:         stopCh,
 		LastUsed:       time.Now(),
 		Health:         true,
+		clusterID:      clusterID,
 	}
 
 	// 注册所有资源类型的 Informer
@@ -495,7 +724,61 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	cc.ClusterRoleStore = factory.Rbac().V1().ClusterRoles().Informer().GetStore()
 	cc.ClusterRoleBindingStore = factory.Rbac().V1().ClusterRoleBindings().Informer().GetStore()
 	cc.EventStore = factory.Core().V1().Events().Informer().GetStore()
+	cc.HorizontalPodAutoscalerStore = factory.Autoscaling().V2().HorizontalPodAutoscalers().Informer().GetStore()
+	cc.NetworkPolicyStore = factory.Networking().V1().NetworkPolicies().Informer().GetStore()
+	cc.PodDisruptionBudgetStore = factory.Policy().V1().PodDisruptionBudgets().Informer().GetStore()
+	cc.EndpointSliceStore = factory.Discovery().V1().EndpointSlices().Informer().GetStore()
+	cc.ReplicationControllerStore = factory.Core().V1().ReplicationControllers().Informer().GetStore()
+	cc.LimitRangeStore = factory.Core().V1().LimitRanges().Informer().GetStore()
+	cc.ResourceQuotaStore = factory.Core().V1().ResourceQuotas().Informer().GetStore()
+	cc.CertificateSigningRequestStore = factory.Certificates().V1().CertificateSigningRequests().Informer().GetStore()
+	cc.PriorityClassStore = factory.Scheduling().V1().PriorityClasses().Informer().GetStore()
+	cc.LeaseStore = factory.Coordination().V1().Leases().Informer().GetStore()
+	cc.RuntimeClassStore = factory.Node().V1().RuntimeClasses().Informer().GetStore()
+	cc.VolumeAttachmentStore = factory.Storage().V1().VolumeAttachments().Informer().GetStore()
+	cc.CSIDriverStore = factory.Storage().V1().CSIDrivers().Informer().GetStore()
+	cc.CSINodeStore = factory.Storage().V1().CSINodes().Informer().GetStore()
 	cc.CRDStore = apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetStore()
+
+	// 为所有 informer 注册事件处理器，资源变化时广播 WebSocket
+	addResourceEventHandler(factory.Core().V1().Nodes().Informer(), clusterID, "nodes", cc)
+	addResourceEventHandler(factory.Core().V1().Namespaces().Informer(), clusterID, "namespaces", cc)
+	addResourceEventHandler(factory.Core().V1().Pods().Informer(), clusterID, "pods", cc)
+	addResourceEventHandler(factory.Apps().V1().Deployments().Informer(), clusterID, "deployments", cc)
+	addResourceEventHandler(factory.Apps().V1().StatefulSets().Informer(), clusterID, "statefulsets", cc)
+	addResourceEventHandler(factory.Apps().V1().DaemonSets().Informer(), clusterID, "daemonsets", cc)
+	addResourceEventHandler(factory.Apps().V1().ReplicaSets().Informer(), clusterID, "replicasets", cc)
+	addResourceEventHandler(factory.Batch().V1().Jobs().Informer(), clusterID, "jobs", cc)
+	addResourceEventHandler(factory.Batch().V1().CronJobs().Informer(), clusterID, "cronjobs", cc)
+	addResourceEventHandler(factory.Core().V1().Services().Informer(), clusterID, "services", cc)
+	addResourceEventHandler(factory.Networking().V1().Ingresses().Informer(), clusterID, "ingresses", cc)
+	addResourceEventHandler(factory.Core().V1().Endpoints().Informer(), clusterID, "endpoints", cc)
+	addResourceEventHandler(factory.Core().V1().PersistentVolumes().Informer(), clusterID, "persistentvolumes", cc)
+	addResourceEventHandler(factory.Core().V1().PersistentVolumeClaims().Informer(), clusterID, "persistentvolumeclaims", cc)
+	addResourceEventHandler(factory.Storage().V1().StorageClasses().Informer(), clusterID, "storageclasses", cc)
+	addResourceEventHandler(factory.Core().V1().ConfigMaps().Informer(), clusterID, "configmaps", cc)
+	addResourceEventHandler(factory.Core().V1().Secrets().Informer(), clusterID, "secrets", cc)
+	addResourceEventHandler(factory.Core().V1().ServiceAccounts().Informer(), clusterID, "serviceaccounts", cc)
+	addResourceEventHandler(factory.Rbac().V1().Roles().Informer(), clusterID, "roles", cc)
+	addResourceEventHandler(factory.Rbac().V1().RoleBindings().Informer(), clusterID, "rolebindings", cc)
+	addResourceEventHandler(factory.Rbac().V1().ClusterRoles().Informer(), clusterID, "clusterroles", cc)
+	addResourceEventHandler(factory.Rbac().V1().ClusterRoleBindings().Informer(), clusterID, "clusterrolebindings", cc)
+	addResourceEventHandler(factory.Core().V1().Events().Informer(), clusterID, "events", cc)
+	addResourceEventHandler(factory.Autoscaling().V2().HorizontalPodAutoscalers().Informer(), clusterID, "horizontalpodautoscalers", cc)
+	addResourceEventHandler(factory.Networking().V1().NetworkPolicies().Informer(), clusterID, "networkpolicies", cc)
+	addResourceEventHandler(factory.Policy().V1().PodDisruptionBudgets().Informer(), clusterID, "poddisruptionbudgets", cc)
+	addResourceEventHandler(factory.Discovery().V1().EndpointSlices().Informer(), clusterID, "endpointslices", cc)
+	addResourceEventHandler(factory.Core().V1().ReplicationControllers().Informer(), clusterID, "replicationcontrollers", cc)
+	addResourceEventHandler(factory.Core().V1().LimitRanges().Informer(), clusterID, "limitranges", cc)
+	addResourceEventHandler(factory.Core().V1().ResourceQuotas().Informer(), clusterID, "resourcequotas", cc)
+	addResourceEventHandler(factory.Certificates().V1().CertificateSigningRequests().Informer(), clusterID, "certificatesigningrequests", cc)
+	addResourceEventHandler(factory.Scheduling().V1().PriorityClasses().Informer(), clusterID, "priorityclasses", cc)
+	addResourceEventHandler(factory.Coordination().V1().Leases().Informer(), clusterID, "leases", cc)
+	addResourceEventHandler(factory.Node().V1().RuntimeClasses().Informer(), clusterID, "runtimeclasses", cc)
+	addResourceEventHandler(factory.Storage().V1().VolumeAttachments().Informer(), clusterID, "volumeattachments", cc)
+	addResourceEventHandler(factory.Storage().V1().CSIDrivers().Informer(), clusterID, "csidrivers", cc)
+	addResourceEventHandler(factory.Storage().V1().CSINodes().Informer(), clusterID, "csinodes", cc)
+	addResourceEventHandler(apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer(), clusterID, "customresourcedefinitions", cc)
 
 	factory.Start(stopCh)
 	apiextFactory.Start(stopCh)
@@ -524,6 +807,20 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		factory.Rbac().V1().ClusterRoles().Informer().HasSynced,
 		factory.Rbac().V1().ClusterRoleBindings().Informer().HasSynced,
 		factory.Core().V1().Events().Informer().HasSynced,
+		factory.Autoscaling().V2().HorizontalPodAutoscalers().Informer().HasSynced,
+		factory.Networking().V1().NetworkPolicies().Informer().HasSynced,
+		factory.Policy().V1().PodDisruptionBudgets().Informer().HasSynced,
+		factory.Discovery().V1().EndpointSlices().Informer().HasSynced,
+		factory.Core().V1().ReplicationControllers().Informer().HasSynced,
+		factory.Core().V1().LimitRanges().Informer().HasSynced,
+		factory.Core().V1().ResourceQuotas().Informer().HasSynced,
+		factory.Certificates().V1().CertificateSigningRequests().Informer().HasSynced,
+		factory.Scheduling().V1().PriorityClasses().Informer().HasSynced,
+		factory.Coordination().V1().Leases().Informer().HasSynced,
+		factory.Node().V1().RuntimeClasses().Informer().HasSynced,
+		factory.Storage().V1().VolumeAttachments().Informer().HasSynced,
+		factory.Storage().V1().CSIDrivers().Informer().HasSynced,
+		factory.Storage().V1().CSINodes().Informer().HasSynced,
 		apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced,
 	}
 
@@ -695,6 +992,22 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 		store = cc.RoleBindingStore
 	case "events":
 		store = cc.EventStore
+	case "horizontalpodautoscalers":
+		store = cc.HorizontalPodAutoscalerStore
+	case "networkpolicies":
+		store = cc.NetworkPolicyStore
+	case "poddisruptionbudgets":
+		store = cc.PodDisruptionBudgetStore
+	case "endpointslices":
+		store = cc.EndpointSliceStore
+	case "replicationcontrollers":
+		store = cc.ReplicationControllerStore
+	case "limitranges":
+		store = cc.LimitRangeStore
+	case "resourcequotas":
+		store = cc.ResourceQuotaStore
+	case "leases":
+		store = cc.LeaseStore
 	default:
 		return nil, 0, fmt.Errorf("unsupported namespaced resource kind: %s", kind)
 	}
@@ -730,6 +1043,18 @@ func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, pag
 		store = cc.ClusterRoleBindingStore
 	case "customresourcedefinitions":
 		store = cc.CRDStore
+	case "certificatesigningrequests":
+		store = cc.CertificateSigningRequestStore
+	case "priorityclasses":
+		store = cc.PriorityClassStore
+	case "runtimeclasses":
+		store = cc.RuntimeClassStore
+	case "volumeattachments":
+		store = cc.VolumeAttachmentStore
+	case "csidrivers":
+		store = cc.CSIDriverStore
+	case "csinodes":
+		store = cc.CSINodeStore
 	default:
 		return nil, 0, fmt.Errorf("unsupported cluster resource kind: %s", kind)
 	}
@@ -783,6 +1108,34 @@ func getNamespace(obj interface{}) string {
 	case *corev1.Event:
 		return v.Namespace
 	case *v1.CustomResourceDefinition:
+		return ""
+	case *autoscalingv2.HorizontalPodAutoscaler:
+		return v.Namespace
+	case *networkingv1.NetworkPolicy:
+		return v.Namespace
+	case *policyv1.PodDisruptionBudget:
+		return v.Namespace
+	case *discoveryv1.EndpointSlice:
+		return v.Namespace
+	case *corev1.ReplicationController:
+		return v.Namespace
+	case *corev1.LimitRange:
+		return v.Namespace
+	case *corev1.ResourceQuota:
+		return v.Namespace
+	case *certificatesv1.CertificateSigningRequest:
+		return ""
+	case *schedulingv1.PriorityClass:
+		return ""
+	case *coordinationv1.Lease:
+		return v.Namespace
+	case *nodev1.RuntimeClass:
+		return ""
+	case *storagev1.VolumeAttachment:
+		return ""
+	case *storagev1.CSIDriver:
+		return ""
+	case *storagev1.CSINode:
 		return ""
 	default:
 		return ""
@@ -839,6 +1192,34 @@ func getName(obj interface{}) string {
 	case *corev1.Event:
 		return v.Name
 	case *v1.CustomResourceDefinition:
+		return v.Name
+	case *autoscalingv2.HorizontalPodAutoscaler:
+		return v.Name
+	case *networkingv1.NetworkPolicy:
+		return v.Name
+	case *policyv1.PodDisruptionBudget:
+		return v.Name
+	case *discoveryv1.EndpointSlice:
+		return v.Name
+	case *corev1.ReplicationController:
+		return v.Name
+	case *corev1.LimitRange:
+		return v.Name
+	case *corev1.ResourceQuota:
+		return v.Name
+	case *certificatesv1.CertificateSigningRequest:
+		return v.Name
+	case *schedulingv1.PriorityClass:
+		return v.Name
+	case *coordinationv1.Lease:
+		return v.Name
+	case *nodev1.RuntimeClass:
+		return v.Name
+	case *storagev1.VolumeAttachment:
+		return v.Name
+	case *storagev1.CSIDriver:
+		return v.Name
+	case *storagev1.CSINode:
 		return v.Name
 	default:
 		return ""
@@ -947,6 +1328,48 @@ func (cc *ClusterClient) GetResourceByName(kind, namespace, name string) (interf
 	case "events":
 		store = cc.EventStore
 		key = namespace + "/" + name
+	case "horizontalpodautoscalers":
+		store = cc.HorizontalPodAutoscalerStore
+		key = namespace + "/" + name
+	case "networkpolicies":
+		store = cc.NetworkPolicyStore
+		key = namespace + "/" + name
+	case "poddisruptionbudgets":
+		store = cc.PodDisruptionBudgetStore
+		key = namespace + "/" + name
+	case "endpointslices":
+		store = cc.EndpointSliceStore
+		key = namespace + "/" + name
+	case "replicationcontrollers":
+		store = cc.ReplicationControllerStore
+		key = namespace + "/" + name
+	case "limitranges":
+		store = cc.LimitRangeStore
+		key = namespace + "/" + name
+	case "resourcequotas":
+		store = cc.ResourceQuotaStore
+		key = namespace + "/" + name
+	case "leases":
+		store = cc.LeaseStore
+		key = namespace + "/" + name
+	case "certificatesigningrequests":
+		store = cc.CertificateSigningRequestStore
+		key = name
+	case "priorityclasses":
+		store = cc.PriorityClassStore
+		key = name
+	case "runtimeclasses":
+		store = cc.RuntimeClassStore
+		key = name
+	case "volumeattachments":
+		store = cc.VolumeAttachmentStore
+		key = name
+	case "csidrivers":
+		store = cc.CSIDriverStore
+		key = name
+	case "csinodes":
+		store = cc.CSINodeStore
+		key = name
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", kind)
 	}

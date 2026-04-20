@@ -25,6 +25,20 @@ import { ServiceForm, serviceDefaultData } from './resource-forms/ServiceForm'
 import { ConfigMapForm, configMapDefaultData } from './resource-forms/ConfigMapForm'
 import { SecretForm, secretDefaultData } from './resource-forms/SecretForm'
 import { PodForm, podDefaultData } from './resource-forms/PodForm'
+import { HorizontalPodAutoscalerForm, horizontalPodAutoscalerDefaultData } from './resource-forms/HorizontalPodAutoscalerForm'
+import { NetworkPolicyForm, networkPolicyDefaultData } from './resource-forms/NetworkPolicyForm'
+import { PodDisruptionBudgetForm, podDisruptionBudgetDefaultData } from './resource-forms/PodDisruptionBudgetForm'
+import { EndpointSliceForm, endpointSliceDefaultData } from './resource-forms/EndpointSliceForm'
+import { ReplicationControllerForm, replicationControllerDefaultData } from './resource-forms/ReplicationControllerForm'
+import { LimitRangeForm, limitRangeDefaultData } from './resource-forms/LimitRangeForm'
+import { ResourceQuotaForm, resourceQuotaDefaultData } from './resource-forms/ResourceQuotaForm'
+import { CertificateSigningRequestForm, certificateSigningRequestDefaultData } from './resource-forms/CertificateSigningRequestForm'
+import { PriorityClassForm, priorityClassDefaultData } from './resource-forms/PriorityClassForm'
+import { LeaseForm, leaseDefaultData } from './resource-forms/LeaseForm'
+import { RuntimeClassForm, runtimeClassDefaultData } from './resource-forms/RuntimeClassForm'
+import { VolumeAttachmentForm, volumeAttachmentDefaultData } from './resource-forms/VolumeAttachmentForm'
+import { CSIDriverForm, csiDriverDefaultData } from './resource-forms/CSIDriverForm'
+import { CSINodeForm, csiNodeDefaultData } from './resource-forms/CSINodeForm'
 
 interface ResourceEditorDialogProps {
   open: boolean
@@ -50,6 +64,34 @@ function getDefaultFormData(kind: string, namespace: string): FormData {
       return { ...secretDefaultData, ...base }
     case 'pods':
       return { ...podDefaultData, ...base }
+    case 'horizontalpodautoscalers':
+      return { ...horizontalPodAutoscalerDefaultData, ...base }
+    case 'networkpolicies':
+      return { ...networkPolicyDefaultData, ...base }
+    case 'poddisruptionbudgets':
+      return { ...podDisruptionBudgetDefaultData, ...base }
+    case 'endpointslices':
+      return { ...endpointSliceDefaultData, ...base }
+    case 'replicationcontrollers':
+      return { ...replicationControllerDefaultData, ...base }
+    case 'limitranges':
+      return { ...limitRangeDefaultData, ...base }
+    case 'resourcequotas':
+      return { ...resourceQuotaDefaultData, ...base }
+    case 'certificatesigningrequests':
+      return { ...certificateSigningRequestDefaultData, ...base }
+    case 'priorityclasses':
+      return { ...priorityClassDefaultData, ...base }
+    case 'leases':
+      return { ...leaseDefaultData, ...base }
+    case 'runtimeclasses':
+      return { ...runtimeClassDefaultData, ...base }
+    case 'volumeattachments':
+      return { ...volumeAttachmentDefaultData, ...base }
+    case 'csidrivers':
+      return { ...csiDriverDefaultData, ...base }
+    case 'csinodes':
+      return { ...csiNodeDefaultData, ...base }
     default:
       return { name: '', namespace }
   }
@@ -72,6 +114,34 @@ function renderForm(
       return <SecretForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'pods':
       return <PodForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'horizontalpodautoscalers':
+      return <HorizontalPodAutoscalerForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'networkpolicies':
+      return <NetworkPolicyForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'poddisruptionbudgets':
+      return <PodDisruptionBudgetForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'endpointslices':
+      return <EndpointSliceForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'replicationcontrollers':
+      return <ReplicationControllerForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'limitranges':
+      return <LimitRangeForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'resourcequotas':
+      return <ResourceQuotaForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'certificatesigningrequests':
+      return <CertificateSigningRequestForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'priorityclasses':
+      return <PriorityClassForm data={data as any} onChange={onChange} />
+    case 'leases':
+      return <LeaseForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'runtimeclasses':
+      return <RuntimeClassForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'volumeattachments':
+      return <VolumeAttachmentForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'csidrivers':
+      return <CSIDriverForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'csinodes':
+      return <CSINodeForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     default:
       return null
   }

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -27,18 +29,20 @@ type ResourceChangeMessage struct {
 
 // Hub 管理 WebSocket 连接和广播
 type Hub struct {
-	clients map[*Client]bool
-	broadcast chan ResourceChangeMessage
-	register chan *Client
+	clients    map[*Client]bool
+	broadcast  chan ResourceChangeMessage
+	register   chan *Client
 	unregister chan *Client
-	mu sync.RWMutex
+	mu         sync.RWMutex
 }
 
 // Client WebSocket 客户端
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan ResourceChangeMessage
+	hub       *Hub
+	conn      *websocket.Conn
+	send      chan ResourceChangeMessage
+	clusterID uint
+	kinds     map[string]bool
 }
 
 var globalHub *Hub
@@ -56,6 +60,17 @@ func NewHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 	}
+}
+
+// shouldSendToClient 判断消息是否应该发送给指定客户端
+func shouldSendToClient(c *Client, msg ResourceChangeMessage) bool {
+	if c.clusterID != 0 && c.clusterID != msg.ClusterID {
+		return false
+	}
+	if c.kinds != nil && len(c.kinds) > 0 && !c.kinds[msg.Kind] {
+		return false
+	}
+	return true
 }
 
 // Run 启动 Hub 事件循环
@@ -76,6 +91,9 @@ func (h *Hub) Run() {
 		case message := <-h.broadcast:
 			h.mu.RLock()
 			for client := range h.clients {
+				if !shouldSendToClient(client, message) {
+					continue
+				}
 				select {
 				case client.send <- message:
 				default:
@@ -105,7 +123,32 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WebSocket upgrade failed: %v", err)
 		return
 	}
-	client := &Client{hub: globalHub, conn: conn, send: make(chan ResourceChangeMessage, 64)}
+
+	clusterIDStr := r.URL.Query().Get("cluster_id")
+	kindsStr := r.URL.Query().Get("kinds")
+
+	var clusterID uint
+	if clusterIDStr != "" {
+		if id, err := strconv.ParseUint(clusterIDStr, 10, 64); err == nil {
+			clusterID = uint(id)
+		}
+	}
+
+	var kindsMap map[string]bool
+	if kindsStr != "" {
+		kindsMap = make(map[string]bool)
+		for _, k := range strings.Split(kindsStr, ",") {
+			kindsMap[strings.TrimSpace(k)] = true
+		}
+	}
+
+	client := &Client{
+		hub:       globalHub,
+		conn:      conn,
+		send:      make(chan ResourceChangeMessage, 64),
+		clusterID: clusterID,
+		kinds:     kindsMap,
+	}
 	client.hub.register <- client
 
 	go client.writePump()
@@ -129,21 +172,18 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump 向客户端推送消息
+// writePump 向客户端写入消息
 func (c *Client) writePump() {
-	defer c.conn.Close()
-	for {
-		msg, ok := <-c.send
-		if !ok {
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-			return
-		}
+	defer func() {
+		c.conn.Close()
+	}()
+	for msg := range c.send {
 		data, err := json.Marshal(msg)
 		if err != nil {
 			continue
 		}
 		if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			return
+			break
 		}
 	}
 }

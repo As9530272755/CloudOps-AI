@@ -2104,3 +2104,94 @@ store.Replace(typedObjects, list.GetResourceVersion())
 ---
 
 *最后更新：2026-04-19*
+
+---
+
+## 2026-04-20 补全 K8s 资源类型支持 + 创建弹窗 + WebSocket 优化
+
+### 20.1 WebSocket 订阅过滤（保留）
+
+**实现**：
+- 后端 `internal/pkg/ws/hub.go`：Client 增加 `clusterID` + `kinds` 订阅字段，`shouldSendToClient` 过滤
+- 前端 `frontend/src/lib/ws.ts`：`subscribe(clusterID, kinds)` 动态订阅
+- 前端 `frontend/src/pages/ClusterDetail.tsx`：概览页不订阅，资源页只订阅当前类型
+
+### 20.2 Informer 按需加载 → 回滚为全量 + 事件广播
+
+**回滚原因**：按需加载导致概览页数据不全、未访问资源无法实时感知异常。
+
+**最终架构**：
+- `createClusterClient` 一次性启动全部 37 种资源类型的 informer
+- 每个 informer 注册 `addResourceEventHandler`，资源变化时广播 WebSocket
+- `syncObjectToStore` 指数退避重试 + `invalidateListCache` 保留
+- WebSocket 订阅过滤保留
+
+### 20.3 新增 14 种资源类型支持
+
+**后端变更**：
+- `internal/service/k8s_manager.go`：
+  - 添加 14 个 Store 字段 + `clusterID` 字段
+  - `createClusterClient` 中获取 Store + 注册事件 handler + synced
+  - `GetNamespacedResourceList` / `GetClusterResourceList` / `GetResourceByName` / `SearchGlobalResources` 添加分支
+- `internal/service/k8s_resource_service.go`：
+  - `kindToGVK` 添加 14 种映射
+  - `getStoreByKind` 添加 14 个 case
+  - `convertToSummary` 添加 14 个类型转换
+
+**前端变更**：
+- `frontend/src/lib/k8s-api.ts`：resourceCategories 添加 14 种新资源
+- `frontend/src/pages/ClusterDetail.tsx`：singularMap + namespacedResources + getColumns 添加 14 种资源
+
+### 20.4 新增 14 种资源的表单创建弹窗
+
+**新建表单组件**（14 个）：
+
+| 资源类型 | 表单文件 | 关键字段 |
+|----------|----------|----------|
+| horizontalpodautoscalers | `HorizontalPodAutoscalerForm.tsx` | scaleTargetRef, min/maxReplicas, CPU target |
+| networkpolicies | `NetworkPolicyForm.tsx` | podSelector, policyTypes (Ingress/Egress) |
+| poddisruptionbudgets | `PodDisruptionBudgetForm.tsx` | minAvailable, maxUnavailable, selector |
+| endpointslices | `EndpointSliceForm.tsx` | addressType, endpoints, ports |
+| replicationcontrollers | `ReplicationControllerForm.tsx` | image, replicas, port |
+| limitranges | `LimitRangeForm.tsx` | limits rules (type/max/min/default) |
+| resourcequotas | `ResourceQuotaForm.tsx` | hard limits (cpu/memory/pods/services) |
+| certificatesigningrequests | `CertificateSigningRequestForm.tsx` | signerName, request, usages |
+| priorityclasses | `PriorityClassForm.tsx` | value, globalDefault, description |
+| leases | `LeaseForm.tsx` | holderIdentity, leaseDurationSeconds |
+| runtimeclasses | `RuntimeClassForm.tsx` | handler, overhead, scheduling |
+| volumeattachments | `VolumeAttachmentForm.tsx` | attacher, nodeName, source |
+| csidrivers | `CSIDriverForm.tsx` | attachRequired, podInfoOnMount, volumeLifecycleModes |
+| csinodes | `CSINodeForm.tsx` | drivers (name/nodeID/topologyKeys) |
+
+**修改文件**：
+- `frontend/src/components/resource-forms/index.ts`：导出 14 个新表单
+- `frontend/src/lib/yaml-helpers.ts`：14 种资源的 manifest 双向转换
+- `frontend/src/components/ResourceEditorDialog.tsx`：导入表单组件 + defaultData
+
+### 20.5 前端性能优化
+
+- `frontend/vite.config.ts`：添加 `manualChunks` 代码分割（vendor-react/mui/charts/grid/utils）
+- `frontend/src/pages/ClusterDetail.tsx`：WebSocket useEffect 移除 `page`/`keyword` 依赖，避免翻页时 WebSocket 频繁重连
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npx tsc --noEmit` ✅
+
+### 当前支持资源类型统计
+
+| 分类 | 数量 | 资源类型 |
+|------|------|----------|
+| 工作负载 | 10 | pods, deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs, horizontalpodautoscalers, poddisruptionbudgets, replicationcontrollers |
+| 服务与网络 | 5 | services, ingresses, endpoints, networkpolicies, endpointslices |
+| 存储 | 6 | persistentvolumes, persistentvolumeclaims, storageclasses, volumeattachments, csidrivers, csinodes |
+| 配置 | 8 | configmaps, secrets, serviceaccounts, limitranges, resourcequotas, priorityclasses, leases |
+| 访问控制 | 5 | roles, rolebindings, clusterroles, clusterrolebindings, certificatesigningrequests |
+| 节点 | 2 | nodes, runtimeclasses |
+| 命名空间 | 1 | namespaces |
+| 事件 | 1 | events |
+| 自定义资源 | 1 | customresourcedefinitions |
+| **总计** | **39** | |
+
+---
+
+*最后更新：2026-04-20*

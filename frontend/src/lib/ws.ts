@@ -1,5 +1,3 @@
-const WS_URL = `ws://${window.location.host}/ws/k8s-events`
-
 export interface ResourceChangeMessage {
   type: string
   cluster_id: number
@@ -18,11 +16,46 @@ class WsManager {
   private reconnectDelay = 3000
   private maxReconnectDelay = 30000
 
+  // 当前订阅参数
+  private currentClusterID: number | null = null
+  private currentKinds: string[] | null = null
+
+  subscribe(clusterID: number | null, kinds: string[] | null) {
+    const needReconnect =
+      this.currentClusterID !== clusterID ||
+      JSON.stringify(this.currentKinds) !== JSON.stringify(kinds)
+
+    this.currentClusterID = clusterID
+    this.currentKinds = kinds
+
+    if (needReconnect) {
+      this.disconnect()
+      this.connect()
+    } else if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.connect()
+    }
+  }
+
+  private buildUrl(): string {
+    const params = new URLSearchParams()
+    if (this.currentClusterID != null) {
+      params.set('cluster_id', String(this.currentClusterID))
+    }
+    if (this.currentKinds != null && this.currentKinds.length > 0) {
+      params.set('kinds', this.currentKinds.join(','))
+    }
+    const qs = params.toString()
+    return `ws://${window.location.host}/ws/k8s-events${qs ? '?' + qs : ''}`
+  }
+
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return
 
+    const url = this.buildUrl()
+    console.log('[WS] connecting to', url)
+
     try {
-      this.ws = new WebSocket(WS_URL)
+      this.ws = new WebSocket(url)
 
       this.ws.onopen = () => {
         console.log('[WS] connected')
@@ -65,7 +98,6 @@ class WsManager {
 
   onMessage(handler: MessageHandler) {
     this.handlers.add(handler)
-    this.connect()
     return () => {
       this.handlers.delete(handler)
       if (this.handlers.size === 0) {
