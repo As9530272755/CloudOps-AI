@@ -3,7 +3,6 @@
 #   {{DB_HOST}}       - 数据库地址
 #   {{DB_PASSWORD}}   - 数据库密码
 #   {{JWT_SECRET}}    - JWT 密钥
-#   {{ENCRYPTION_KEY}}- AES 加密密钥
 
 server:
   backend:
@@ -25,11 +24,11 @@ server:
 
 database:
   postgres:
-    host: "{{DB_HOST}}"
+    host: "127.0.0.1"
     port: 5432
     database: "cloudops"
     username: "cloudops"
-    password: "{{DB_PASSWORD}}"
+    password: "cloudops123"
     ssl_mode: "disable"
     max_connections: 100
     max_idle: 10
@@ -62,14 +61,9 @@ ai:
 
 security:
   jwt:
-    secret: "{{JWT_SECRET}}"
+    secret: "dev-jwt-secret-key-2024cloudops"
     access_expire: 1h
     refresh_expire: 24h
-
-  encryption:
-    algorithm: "AES-256-GCM"
-    key_id: "default"
-    key: "{{ENCRYPTION_KEY}}"
 
   rate_limit:
     enabled: true
