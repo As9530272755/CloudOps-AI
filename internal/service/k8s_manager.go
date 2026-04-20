@@ -774,7 +774,7 @@ func (km *K8sManager) StartCluster(ctx context.Context, clusterID uint) error {
 
 	cc, err := km.createClusterClient(ctx, clusterID)
 	if err != nil {
-		km.updateHealth(clusterID, "error", err.Error())
+		km.updateHealth(clusterID, "unhealthy", err.Error())
 		return err
 	}
 
@@ -790,7 +790,7 @@ func (km *K8sManager) RefreshCluster(clusterID uint) error {
 	// 1. 在后台创建新的 ClusterClient（旧的继续服务）
 	cc, err := km.createClusterClient(context.Background(), clusterID)
 	if err != nil {
-		km.updateHealth(clusterID, "error", err.Error())
+		km.updateHealth(clusterID, "unhealthy", err.Error())
 		return err
 	}
 
