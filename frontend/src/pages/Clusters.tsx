@@ -67,10 +67,8 @@ const searchCategoryMap: Record<string, { label: string; resources: string[] }> 
 }
 
 // 状态颜色映射（连接状态）
-const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
+const statusColors: Record<string, 'success' | 'error' | 'default'> = {
   healthy: 'success',
-  warning: 'warning',
-  error: 'error',
   unhealthy: 'error',
   offline: 'error',
   pending: 'default',
@@ -78,8 +76,6 @@ const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> 
 
 const statusLabels: Record<string, string> = {
   healthy: '正常',
-  warning: '警告',
-  error: '异常',
   unhealthy: '不健康',
   offline: '离线',
   pending: '检测中',
@@ -589,8 +585,8 @@ export default function Clusters() {
               >
                 <MenuItem value="">全部</MenuItem>
                 <MenuItem value="healthy">正常</MenuItem>
-                <MenuItem value="warning">警告</MenuItem>
-                <MenuItem value="error">异常</MenuItem>
+                <MenuItem value="unhealthy">不健康</MenuItem>
+                <MenuItem value="offline">离线</MenuItem>
                 <MenuItem value="pending">检测中</MenuItem>
               </Select>
             </FormControl>
