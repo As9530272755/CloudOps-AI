@@ -331,6 +331,20 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 			"secrets":                   len(cc.SecretStore.List()),
 			"events":                    len(cc.EventStore.List()),
 			"customresourcedefinitions": len(cc.CRDStore.List()),
+			"horizontalpodautoscalers":  len(cc.HorizontalPodAutoscalerStore.List()),
+			"networkpolicies":           len(cc.NetworkPolicyStore.List()),
+			"poddisruptionbudgets":      len(cc.PodDisruptionBudgetStore.List()),
+			"endpointslices":            len(cc.EndpointSliceStore.List()),
+			"replicationcontrollers":    len(cc.ReplicationControllerStore.List()),
+			"limitranges":               len(cc.LimitRangeStore.List()),
+			"resourcequotas":            len(cc.ResourceQuotaStore.List()),
+			"certificatesigningrequests":len(cc.CertificateSigningRequestStore.List()),
+			"priorityclasses":           len(cc.PriorityClassStore.List()),
+			"leases":                    len(cc.LeaseStore.List()),
+			"runtimeclasses":            len(cc.RuntimeClassStore.List()),
+			"volumeattachments":         len(cc.VolumeAttachmentStore.List()),
+			"csidrivers":                len(cc.CSIDriverStore.List()),
+			"csinodes":                  len(cc.CSINodeStore.List()),
 		}, nil
 	}
 
@@ -353,6 +367,14 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 		"configmaps":       countStoreByNamespaces(cc.ConfigMapStore, allowedSet),
 		"secrets":          countStoreByNamespaces(cc.SecretStore, allowedSet),
 		"events":           countStoreByNamespaces(cc.EventStore, allowedSet),
+		"horizontalpodautoscalers": countStoreByNamespaces(cc.HorizontalPodAutoscalerStore, allowedSet),
+		"networkpolicies":  countStoreByNamespaces(cc.NetworkPolicyStore, allowedSet),
+		"poddisruptionbudgets": countStoreByNamespaces(cc.PodDisruptionBudgetStore, allowedSet),
+		"endpointslices":   countStoreByNamespaces(cc.EndpointSliceStore, allowedSet),
+		"replicationcontrollers": countStoreByNamespaces(cc.ReplicationControllerStore, allowedSet),
+		"limitranges":      countStoreByNamespaces(cc.LimitRangeStore, allowedSet),
+		"resourcequotas":   countStoreByNamespaces(cc.ResourceQuotaStore, allowedSet),
+		"leases":           countStoreByNamespaces(cc.LeaseStore, allowedSet),
 	}, nil
 }
 

@@ -678,7 +678,29 @@ export default function ClusterDetail() {
               <Grid container spacing={3}>
                 {filteredStats && Object.entries(filteredStats).map(([key, value]) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={key}>
-                    <Card sx={{ textAlign: 'center', p: 2 }}>
+                    <Card
+                      sx={{
+                        textAlign: 'center',
+                        p: 2,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        '&:hover': {
+                          boxShadow: 4,
+                          transform: 'translateY(-2px)',
+                        },
+                      }}
+                      onClick={() => {
+                        // 找到资源类型对应的分类
+                        const cat = filteredCategories.find(c => c.resources.includes(key))
+                        if (cat) {
+                          setActiveCategory(cat.key)
+                          setActiveResource(key)
+                          setPage(1)
+                          setKeyword('')
+                          loadResources(key, 1, '')
+                        }
+                      }}
+                    >
                       <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>{value}</Typography>
                       <Typography variant="body2" color="text.secondary">{resourceLabels[key] || key}</Typography>
                     </Card>
