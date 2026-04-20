@@ -359,21 +359,42 @@ func (s *ClusterService) updateClusterHealth(clusterID uint, status string, erro
 }
 
 // probePermissionScope 探测 kubeconfig 的权限范围
+// 同时探测全局权限（ClusterRole）和 default namespace 权限（Role），取最严格的
 func (s *ClusterService) probePermissionScope(ctx context.Context, client *kubernetes.Clientset) string {
-	review := &authorizationv1.SelfSubjectRulesReview{
+	// 1. 探测全局权限（ClusterRole，Namespace 为空字符串）
+	globalReview := &authorizationv1.SelfSubjectRulesReview{
+		Spec: authorizationv1.SelfSubjectRulesReviewSpec{
+			Namespace: "",
+		},
+	}
+	globalResult, globalErr := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, globalReview, metav1.CreateOptions{})
+	globalScope := evaluatePermissionScope(globalResult)
+
+	// 2. 探测 default namespace 权限（Role）
+	nsReview := &authorizationv1.SelfSubjectRulesReview{
 		Spec: authorizationv1.SelfSubjectRulesReviewSpec{
 			Namespace: "default",
 		},
 	}
+	nsResult, nsErr := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, nsReview, metav1.CreateOptions{})
+	nsScope := evaluatePermissionScope(nsResult)
 
-	result, err := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, review, metav1.CreateOptions{})
-	if err != nil {
-		return "unknown"
+	// 3. 两个探测都失败，默认 read-only（安全保守）
+	if globalErr != nil && nsErr != nil {
+		return "read-only"
 	}
 
+	// 4. 取最严格的权限
+	return stricterPermissionScope(globalScope, nsScope)
+}
+
+// evaluatePermissionScope 从 SelfSubjectRulesReview 结果中评估权限范围
+func evaluatePermissionScope(result *authorizationv1.SelfSubjectRulesReview) string {
+	if result == nil {
+		return "unknown"
+	}
 	hasWrite := false
 	hasDelete := false
-
 	for _, rule := range result.Status.ResourceRules {
 		for _, verb := range rule.Verbs {
 			if verb == "*" {
@@ -387,7 +408,6 @@ func (s *ClusterService) probePermissionScope(ctx context.Context, client *kuber
 			}
 		}
 	}
-
 	if hasWrite && hasDelete {
 		return "admin"
 	}
@@ -395,6 +415,20 @@ func (s *ClusterService) probePermissionScope(ctx context.Context, client *kuber
 		return "read-write"
 	}
 	return "read-only"
+}
+
+// stricterPermissionScope 返回两个权限范围中更严格的一个
+func stricterPermissionScope(a, b string) string {
+	order := map[string]int{
+		"admin":      3,
+		"read-write": 2,
+		"read-only":  1,
+		"unknown":    0,
+	}
+	if order[a] < order[b] {
+		return a
+	}
+	return b
 }
 
 // StartHealthMonitor 启动集群健康检查
@@ -510,6 +544,17 @@ func (s *ClusterService) probeClusterHealth(clusterID uint) {
 					"node_count": nodeCount,
 					"pod_count":  podCount,
 				})
+			}
+		}
+
+		// 补充探测 permission_scope（仅 unknown 或空值时）
+		var cluster model.Cluster
+		if err := s.db.Where("id = ?", clusterID).First(&cluster).Error; err == nil {
+			if cluster.PermissionScope == "unknown" || cluster.PermissionScope == "" {
+				if client, err := s.GetK8sClient(context.Background(), clusterID); err == nil {
+					scope := s.probePermissionScope(context.Background(), client)
+					s.db.Model(&model.Cluster{}).Where("id = ?", clusterID).Update("permission_scope", scope)
+				}
 			}
 		}
 	}

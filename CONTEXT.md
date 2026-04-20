@@ -2460,3 +2460,15 @@ store.Replace(typedObjects, list.GetResourceVersion())
 - `pkill -f cloudops-backend` + `go build` + `nohup` 启动
 - 服务正常启动，Informer 开始同步集群缓存
 - 概览页不再显示已删除的 6 种资源类型
+
+### 提交 `419abde`
+**chore: remove AgentRuntimeProxy and all related code**
+
+Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启动代码，但 Go 端的 `AgentRuntimeProxy` 代理及相关引用仍残留。本次彻底清理：
+
+- 删除 `internal/service/agent_runtime_proxy.go`（整个代理服务）
+- `cmd/server/main.go`：移除 `NewAgentRuntimeProxy` 创建及 `NewRouter` 参数传递
+- `internal/api/routes.go`：移除 `agentRuntimeProxy` 字段、构造函数参数、`/ai/agent/chat/stream` 路由
+- `internal/api/handlers/ai_chat.go`：移除 `agentRuntimeProxy` 字段、`AgentChatStream` Handler、未使用的 `log` import
+
+后端编译 ✅ 服务重启 ✅
