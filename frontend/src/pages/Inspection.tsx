@@ -174,10 +174,16 @@ export default function Inspection() {
 
   const doDeleteTask = async () => {
     if (!confirmId) return
-    await inspectionAPI.deleteTask(confirmId)
-    loadTasks()
-    setConfirmOpen(false)
-    setConfirmId(null)
+    try {
+      await inspectionAPI.deleteTask(confirmId)
+      // 直接从本地状态移除，无需重新请求 API，用户体验更即时
+      setTasks(prev => prev.filter(t => t.id !== confirmId))
+    } catch (err: any) {
+      setError(err.message || '删除失败')
+    } finally {
+      setConfirmOpen(false)
+      setConfirmId(null)
+    }
   }
 
   const handleTrigger = async (id: number) => {
