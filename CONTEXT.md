@@ -2584,3 +2584,116 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 - 前端弹窗内错误提示已在前一提交中实现，本次后端返回的重复错误会自动显示在弹窗内
 
 后端编译 ✅ 服务重启 ✅
+
+
+---
+
+### 提交 `eea9de2`
+**fix(inspection): friendly error message for duplicate task name**
+
+**问题**：创建同名任务时后端返回 500，前端 catch 块显示 "Request failed with status code 500"，用户体验差。
+
+**修复**：
+- 后端 `CreateTask`/`UpdateTask`：同名冲突从 500 改为 **409 Conflict**
+- 后端错误信息：`"该任务名称已存在，请修改后重试"`
+- 前端 `handleSaveTask` catch 块：优先取 `err.response.data.error` 显示在弹窗内
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 提交 `bb60ced`
+**fix(ui): show validation errors inside dialogs instead of global alert**
+
+**问题**：`86c3a87` 中前端校验 `cluster_ids` 非空时使用了全局 `setError`，导致错误提示飘在页面顶部，被弹窗遮挡。
+
+**修复**：
+- `taskDialogError` / `setTaskDialogError`：编辑任务弹窗内部错误
+- `quickDialogError` / `setQuickDialogError`：一键巡检弹窗内部错误
+- 弹窗打开/关闭时清空对应错误状态
+- 校验失败时错误 Alert 渲染在 `DialogContent` 顶部
+
+**文件变更**
+| 文件 | 变更 |
+|------|------|
+| `frontend/src/pages/Inspection.tsx` | 弹窗内独立错误状态 + Alert 渲染 |
+
+前端编译 ✅
+
+---
+
+### 提交 `217db24`
+**fix(inspection): prevent duplicate task names within same tenant**
+
+**问题**：同一租户内可以创建同名巡检任务（如两个都叫 "test"），导致管理混乱。
+
+**修复**：
+- 模型 `InspectionTask`：`name` 字段增加 `uniqueIndex:idx_inspection_task_name_tenant`，数据库层面约束（name + tenant_id）唯一
+- `CreateTask`：写入前先查询同名任务，存在则返回错误
+- `UpdateTask`：写入前先查询同名任务（排除自己），存在则返回同样错误
+- `UpdateTask` Handler：补充 `task.TenantID` 传递给服务层，确保查重条件完整
+
+后端编译 ✅ 服务重启 ✅
+
+---
+
+### 提交 `86c3a87`
+**fix(inspection): prevent empty cluster_ids & show task_name in job list**
+
+**修复 1：空 cluster_ids 执行全部集群**
+- `CreateTask` / `UpdateTask` Handler：请求 `cluster_ids` 为空时直接返回 400
+- `runJobWithTask`：空 `cluster_ids` 不再默认执行全部活跃集群，而是将 job 状态置为 `failed`
+- 前端 `handleSaveTask`：保存前校验 `cluster_ids` 非空
+
+**修复 2：执行记录显示优化**
+- 后端 `ListJobs`：返回 `task_name` 字段，一键巡检显示「一键巡检」
+- 前端表格：列名 "Job ID" → "任务名称"
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 基础设施：systemd 服务稳定化
+
+**问题**：后端用 `nohup` 启动，进程经常莫名其妙消失，导致登录失败。
+
+**修复**：
+- 编写 `/etc/systemd/system/cloudops-backend.service`
+- `Restart=always`：崩溃或退出后自动重启
+- `After=network.target postgresql.service redis-server.service`：确保依赖就绪
+- 已 `systemctl enable` 开机自启
+- 当前后端 PID 稳定运行
+
+服务状态：
+```
+● cloudops-backend.service - CloudOps Backend
+   Active: active (running)
+```
+
+---
+
+## 2026-04-20 开发总结
+
+### 今日提交（5 个）
+| 提交 | 说明 |
+|------|------|
+| `eea9de2` | 同名冲突友好错误提示（409 + 弹窗内显示） |
+| `bb60ced` | 弹窗内错误提示 UI 规范 |
+| `217db24` | 巡检任务名唯一性校验（数据库索引 + 服务层查重） |
+| `86c3a87` | 空 cluster_ids 修复 + 执行记录显示 task_name |
+
+### 巡检中心 Bug 全部修复
+1. ✅ 空 cluster_ids 不再执行全部集群
+2. ✅ 执行记录显示任务名称（一键巡检显示「一键巡检」）
+3. ✅ 查看详情白屏（html2pdf.js 动态导入，前期已修复）
+4. ✅ 同名任务禁止创建
+5. ✅ 弹窗内友好错误提示
+
+### 基础设施改进
+- ✅ 后端注册为 systemd 服务，自动重启，解决登录不稳定问题
+
+### 代码状态
+- GitHub `main` 分支已推送 ✅
+- CONTEXT.md 已同步 ✅
+- 后端 & 前端编译通过 ✅
+- 服务稳定运行 ✅
