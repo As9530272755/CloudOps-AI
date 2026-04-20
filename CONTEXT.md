@@ -2368,6 +2368,31 @@ store.Replace(typedObjects, list.GetResourceVersion())
 - 前端 `npx tsc --noEmit` ✅
 - 后端已重启 ✅
 
+### 20.10 集群状态空白修复 + 资源类别过滤 + WebSocket 状态指示器
+
+**1. 集群状态空白修复**
+- 根因：`statusLabels` 缺少 `unhealthy` / `offline` 映射，WebSocket 推送这两个状态后 Chip label 为 `undefined`
+- 修复：`Clusters.tsx` 增加 `unhealthy → 异常`、`offline → 离线`
+- 表头"状态"改为"**连接状态**"，明确字段含义
+
+**2. 全局搜索增加资源类别过滤**
+- 新增"资源类别"下拉（负载均衡 / 工作负载 / 存储 / 网络 / 配置 / 访问控制 / 节点 / 命名空间 / 事件 / 自定义资源）
+- 选择类别后，"资源类型"下拉自动过滤只显示该类别的资源
+- 后端 `SearchGlobalResources`：`kindFilter` 支持逗号分隔的多 kind
+- 搜索时若未选具体类型但选了类别，传入该类别下所有 kind
+
+**3. WebSocket 连接状态指示器**
+- `ws.ts`：暴露 `connectionState` + `onConnectionStateChange` + `getConnectionState()`
+- `MainLayout.tsx` 底部固定栏增加状态圆点：
+  - 🟢 绿色 = 实时推送正常
+  - 🟠 橙色 = 连接中...
+  - 🔴 红色 = 实时推送断开
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npx tsc --noEmit` ✅
+- 后端已重启 ✅
+
 ---
 
 *最后更新：2026-04-20*

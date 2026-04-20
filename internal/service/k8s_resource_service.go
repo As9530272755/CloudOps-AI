@@ -21,10 +21,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	policyv1 "k8s.io/api/policy/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	certificatesv1 "k8s.io/api/certificates/v1"
-	schedulingv1 "k8s.io/api/scheduling/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
-	nodev1 "k8s.io/api/node/v1"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -147,20 +144,8 @@ func kindToGVK(kind string) schema.GroupVersionKind {
 		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}
 	case "endpointslices":
 		return schema.GroupVersionKind{Group: "discovery.k8s.io", Version: "v1", Kind: "EndpointSlice"}
-	case "certificatesigningrequests":
-		return schema.GroupVersionKind{Group: "certificates.k8s.io", Version: "v1", Kind: "CertificateSigningRequest"}
-	case "priorityclasses":
-		return schema.GroupVersionKind{Group: "scheduling.k8s.io", Version: "v1", Kind: "PriorityClass"}
 	case "leases":
 		return schema.GroupVersionKind{Group: "coordination.k8s.io", Version: "v1", Kind: "Lease"}
-	case "runtimeclasses":
-		return schema.GroupVersionKind{Group: "node.k8s.io", Version: "v1", Kind: "RuntimeClass"}
-	case "volumeattachments":
-		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "VolumeAttachment"}
-	case "csidrivers":
-		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSIDriver"}
-	case "csinodes":
-		return schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSINode"}
 	default:
 		return schema.GroupVersionKind{}
 	}
@@ -338,13 +323,7 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 			"replicationcontrollers":    len(cc.ReplicationControllerStore.List()),
 			"limitranges":               len(cc.LimitRangeStore.List()),
 			"resourcequotas":            len(cc.ResourceQuotaStore.List()),
-			"certificatesigningrequests":len(cc.CertificateSigningRequestStore.List()),
-			"priorityclasses":           len(cc.PriorityClassStore.List()),
 			"leases":                    len(cc.LeaseStore.List()),
-			"runtimeclasses":            len(cc.RuntimeClassStore.List()),
-			"volumeattachments":         len(cc.VolumeAttachmentStore.List()),
-			"csidrivers":                len(cc.CSIDriverStore.List()),
-			"csinodes":                  len(cc.CSINodeStore.List()),
 		}, nil
 	}
 
@@ -690,31 +669,6 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"hard":              len(v.Spec.Hard),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
-	case *certificatesv1.CertificateSigningRequest:
-		status := "Pending"
-		for _, cond := range v.Status.Conditions {
-			if cond.Type == certificatesv1.CertificateApproved {
-				status = "Approved"
-				break
-			} else if cond.Type == certificatesv1.CertificateDenied {
-				status = "Denied"
-				break
-			}
-		}
-		return map[string]interface{}{
-			"name":              v.Name,
-			"signer_name":       v.Spec.SignerName,
-			"username":          v.Spec.Username,
-			"status":            status,
-			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
-		}
-	case *schedulingv1.PriorityClass:
-		return map[string]interface{}{
-			"name":              v.Name,
-			"value":             v.Value,
-			"global_default":    v.GlobalDefault,
-			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
-		}
 	case *coordinationv1.Lease:
 		renewTime := ""
 		if v.Spec.RenewTime != nil {
@@ -725,31 +679,6 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"namespace":         v.Namespace,
 			"holder_identity":   v.Spec.HolderIdentity,
 			"renew_time":        renewTime,
-			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
-		}
-	case *nodev1.RuntimeClass:
-		return map[string]interface{}{
-			"name":              v.Name,
-			"handler":           v.Handler,
-			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
-		}
-	case *storagev1.VolumeAttachment:
-		return map[string]interface{}{
-			"name":              v.Name,
-			"attacher":          v.Spec.Attacher,
-			"node":              v.Spec.NodeName,
-			"attached":          v.Status.Attached,
-			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
-		}
-	case *storagev1.CSIDriver:
-		return map[string]interface{}{
-			"name":              v.Name,
-			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
-		}
-	case *storagev1.CSINode:
-		return map[string]interface{}{
-			"name":              v.Name,
-			"drivers":           len(v.Spec.Drivers),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	default:
@@ -1208,20 +1137,8 @@ func getStoreByKind(cc *ClusterClient, kind string) cache.Store {
 		return cc.LimitRangeStore
 	case "resourcequotas":
 		return cc.ResourceQuotaStore
-	case "certificatesigningrequests":
-		return cc.CertificateSigningRequestStore
-	case "priorityclasses":
-		return cc.PriorityClassStore
 	case "leases":
 		return cc.LeaseStore
-	case "runtimeclasses":
-		return cc.RuntimeClassStore
-	case "volumeattachments":
-		return cc.VolumeAttachmentStore
-	case "csidrivers":
-		return cc.CSIDriverStore
-	case "csinodes":
-		return cc.CSINodeStore
 	default:
 		return nil
 	}

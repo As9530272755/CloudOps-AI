@@ -237,6 +237,36 @@ export default function MainLayout() {
         </Tooltip>
       </Box>
 
+      {/* WebSocket 状态 */}
+      <Box sx={{ px: 2, pb: 1 }}>
+        <Box
+          sx={{
+            px: 2,
+            py: 1,
+            borderRadius: '10px',
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+          }}
+        >
+          <Box
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              bgcolor: wsState === 'connected' ? '#4caf50' : wsState === 'connecting' ? '#ff9800' : '#f44336',
+              boxShadow: `0 0 6px ${wsState === 'connected' ? '#4caf50' : wsState === 'connecting' ? '#ff9800' : '#f44336'}`,
+            }}
+          />
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+            {wsState === 'connected' ? '实时推送正常' : wsState === 'connecting' ? '连接中...' : '实时推送断开'}
+          </Typography>
+        </Box>
+      </Box>
+
       {/* User */}
       <Box sx={{ p: 2 }}>
         <Box
@@ -351,18 +381,6 @@ export default function MainLayout() {
               boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
             }}
           >
-            <Tooltip title={wsState === 'connected' ? '实时推送正常' : wsState === 'connecting' ? '连接中...' : '实时推送断开'}>
-              <Box
-                sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  bgcolor: wsState === 'connected' ? '#4caf50' : wsState === 'connecting' ? '#ff9800' : '#f44336',
-                  boxShadow: `0 0 6px ${wsState === 'connected' ? '#4caf50' : wsState === 'connecting' ? '#ff9800' : '#f44336'}`,
-                  cursor: 'pointer',
-                }}
-              />
-            </Tooltip>
             <Tooltip title="展开侧边栏">
               <IconButton onClick={handleDrawerToggle} sx={{ color: 'text.primary' }}>
                 <MenuIcon fontSize="small" />

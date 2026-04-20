@@ -17,10 +17,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	certificatesv1 "k8s.io/api/certificates/v1"
-	schedulingv1 "k8s.io/api/scheduling/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
-	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -85,13 +82,7 @@ type ClusterClient struct {
 	ReplicationControllerStore cache.Store
 	LimitRangeStore      cache.Store
 	ResourceQuotaStore   cache.Store
-	CertificateSigningRequestStore cache.Store
-	PriorityClassStore   cache.Store
 	LeaseStore           cache.Store
-	RuntimeClassStore    cache.Store
-	VolumeAttachmentStore cache.Store
-	CSIDriverStore       cache.Store
-	CSINodeStore         cache.Store
 	CRDStore             cache.Store
 }
 
@@ -433,70 +424,10 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 		if len(result) >= limit {
 			break
 		}
-		appendFromStore(cc, "certificatesigningrequests", cc.CertificateSigningRequestStore, func(obj interface{}) (SearchResult, bool) {
-			v := obj.(*certificatesv1.CertificateSigningRequest)
-			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "certificatesigningrequests", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
-			}
-			return SearchResult{}, false
-		})
-		if len(result) >= limit {
-			break
-		}
-		appendFromStore(cc, "priorityclasses", cc.PriorityClassStore, func(obj interface{}) (SearchResult, bool) {
-			v := obj.(*schedulingv1.PriorityClass)
-			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "priorityclasses", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
-			}
-			return SearchResult{}, false
-		})
-		if len(result) >= limit {
-			break
-		}
 		appendFromStore(cc, "leases", cc.LeaseStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*coordinationv1.Lease)
 			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
 				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "leases", Namespace: v.Namespace, Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
-			}
-			return SearchResult{}, false
-		})
-		if len(result) >= limit {
-			break
-		}
-		appendFromStore(cc, "runtimeclasses", cc.RuntimeClassStore, func(obj interface{}) (SearchResult, bool) {
-			v := obj.(*nodev1.RuntimeClass)
-			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "runtimeclasses", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
-			}
-			return SearchResult{}, false
-		})
-		if len(result) >= limit {
-			break
-		}
-		appendFromStore(cc, "volumeattachments", cc.VolumeAttachmentStore, func(obj interface{}) (SearchResult, bool) {
-			v := obj.(*storagev1.VolumeAttachment)
-			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "volumeattachments", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
-			}
-			return SearchResult{}, false
-		})
-		if len(result) >= limit {
-			break
-		}
-		appendFromStore(cc, "csidrivers", cc.CSIDriverStore, func(obj interface{}) (SearchResult, bool) {
-			v := obj.(*storagev1.CSIDriver)
-			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "csidrivers", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
-			}
-			return SearchResult{}, false
-		})
-		if len(result) >= limit {
-			break
-		}
-		appendFromStore(cc, "csinodes", cc.CSINodeStore, func(obj interface{}) (SearchResult, bool) {
-			v := obj.(*storagev1.CSINode)
-			if strings.Contains(strings.ToLower(v.Name), kwordLower) {
-				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "csinodes", Namespace: "-", Name: v.Name, Status: "", Labels: copyLabels(v.Labels)}, true
 			}
 			return SearchResult{}, false
 		})
@@ -740,13 +671,7 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	cc.ReplicationControllerStore = factory.Core().V1().ReplicationControllers().Informer().GetStore()
 	cc.LimitRangeStore = factory.Core().V1().LimitRanges().Informer().GetStore()
 	cc.ResourceQuotaStore = factory.Core().V1().ResourceQuotas().Informer().GetStore()
-	cc.CertificateSigningRequestStore = factory.Certificates().V1().CertificateSigningRequests().Informer().GetStore()
-	cc.PriorityClassStore = factory.Scheduling().V1().PriorityClasses().Informer().GetStore()
 	cc.LeaseStore = factory.Coordination().V1().Leases().Informer().GetStore()
-	cc.RuntimeClassStore = factory.Node().V1().RuntimeClasses().Informer().GetStore()
-	cc.VolumeAttachmentStore = factory.Storage().V1().VolumeAttachments().Informer().GetStore()
-	cc.CSIDriverStore = factory.Storage().V1().CSIDrivers().Informer().GetStore()
-	cc.CSINodeStore = factory.Storage().V1().CSINodes().Informer().GetStore()
 	cc.CRDStore = apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetStore()
 
 	// 为所有 informer 注册事件处理器，资源变化时广播 WebSocket
@@ -780,13 +705,7 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	addResourceEventHandler(factory.Core().V1().ReplicationControllers().Informer(), clusterID, "replicationcontrollers", cc)
 	addResourceEventHandler(factory.Core().V1().LimitRanges().Informer(), clusterID, "limitranges", cc)
 	addResourceEventHandler(factory.Core().V1().ResourceQuotas().Informer(), clusterID, "resourcequotas", cc)
-	addResourceEventHandler(factory.Certificates().V1().CertificateSigningRequests().Informer(), clusterID, "certificatesigningrequests", cc)
-	addResourceEventHandler(factory.Scheduling().V1().PriorityClasses().Informer(), clusterID, "priorityclasses", cc)
 	addResourceEventHandler(factory.Coordination().V1().Leases().Informer(), clusterID, "leases", cc)
-	addResourceEventHandler(factory.Node().V1().RuntimeClasses().Informer(), clusterID, "runtimeclasses", cc)
-	addResourceEventHandler(factory.Storage().V1().VolumeAttachments().Informer(), clusterID, "volumeattachments", cc)
-	addResourceEventHandler(factory.Storage().V1().CSIDrivers().Informer(), clusterID, "csidrivers", cc)
-	addResourceEventHandler(factory.Storage().V1().CSINodes().Informer(), clusterID, "csinodes", cc)
 	addResourceEventHandler(apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer(), clusterID, "customresourcedefinitions", cc)
 
 	factory.Start(stopCh)
@@ -823,13 +742,7 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		factory.Core().V1().ReplicationControllers().Informer().HasSynced,
 		factory.Core().V1().LimitRanges().Informer().HasSynced,
 		factory.Core().V1().ResourceQuotas().Informer().HasSynced,
-		factory.Certificates().V1().CertificateSigningRequests().Informer().HasSynced,
-		factory.Scheduling().V1().PriorityClasses().Informer().HasSynced,
 		factory.Coordination().V1().Leases().Informer().HasSynced,
-		factory.Node().V1().RuntimeClasses().Informer().HasSynced,
-		factory.Storage().V1().VolumeAttachments().Informer().HasSynced,
-		factory.Storage().V1().CSIDrivers().Informer().HasSynced,
-		factory.Storage().V1().CSINodes().Informer().HasSynced,
 		apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced,
 	}
 
@@ -1052,18 +965,6 @@ func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, pag
 		store = cc.ClusterRoleBindingStore
 	case "customresourcedefinitions":
 		store = cc.CRDStore
-	case "certificatesigningrequests":
-		store = cc.CertificateSigningRequestStore
-	case "priorityclasses":
-		store = cc.PriorityClassStore
-	case "runtimeclasses":
-		store = cc.RuntimeClassStore
-	case "volumeattachments":
-		store = cc.VolumeAttachmentStore
-	case "csidrivers":
-		store = cc.CSIDriverStore
-	case "csinodes":
-		store = cc.CSINodeStore
 	default:
 		return nil, 0, fmt.Errorf("unsupported cluster resource kind: %s", kind)
 	}
@@ -1132,20 +1033,8 @@ func getNamespace(obj interface{}) string {
 		return v.Namespace
 	case *corev1.ResourceQuota:
 		return v.Namespace
-	case *certificatesv1.CertificateSigningRequest:
-		return ""
-	case *schedulingv1.PriorityClass:
-		return ""
 	case *coordinationv1.Lease:
 		return v.Namespace
-	case *nodev1.RuntimeClass:
-		return ""
-	case *storagev1.VolumeAttachment:
-		return ""
-	case *storagev1.CSIDriver:
-		return ""
-	case *storagev1.CSINode:
-		return ""
 	default:
 		return ""
 	}
@@ -1216,19 +1105,7 @@ func getName(obj interface{}) string {
 		return v.Name
 	case *corev1.ResourceQuota:
 		return v.Name
-	case *certificatesv1.CertificateSigningRequest:
-		return v.Name
-	case *schedulingv1.PriorityClass:
-		return v.Name
 	case *coordinationv1.Lease:
-		return v.Name
-	case *nodev1.RuntimeClass:
-		return v.Name
-	case *storagev1.VolumeAttachment:
-		return v.Name
-	case *storagev1.CSIDriver:
-		return v.Name
-	case *storagev1.CSINode:
 		return v.Name
 	default:
 		return ""
@@ -1361,24 +1238,6 @@ func (cc *ClusterClient) GetResourceByName(kind, namespace, name string) (interf
 	case "leases":
 		store = cc.LeaseStore
 		key = namespace + "/" + name
-	case "certificatesigningrequests":
-		store = cc.CertificateSigningRequestStore
-		key = name
-	case "priorityclasses":
-		store = cc.PriorityClassStore
-		key = name
-	case "runtimeclasses":
-		store = cc.RuntimeClassStore
-		key = name
-	case "volumeattachments":
-		store = cc.VolumeAttachmentStore
-		key = name
-	case "csidrivers":
-		store = cc.CSIDriverStore
-		key = name
-	case "csinodes":
-		store = cc.CSINodeStore
-		key = name
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", kind)
 	}

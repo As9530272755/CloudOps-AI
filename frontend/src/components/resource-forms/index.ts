@@ -15,13 +15,7 @@ export * from './EndpointSliceForm'
 export * from './ReplicationControllerForm'
 export * from './LimitRangeForm'
 export * from './ResourceQuotaForm'
-export * from './CertificateSigningRequestForm'
-export * from './PriorityClassForm'
 export * from './LeaseForm'
-export * from './RuntimeClassForm'
-export * from './VolumeAttachmentForm'
-export * from './CSIDriverForm'
-export * from './CSINodeForm'
 export * from './StatefulSetForm'
 export * from './DaemonSetForm'
 export * from './ReplicaSetForm'
@@ -63,13 +57,7 @@ export const supportedFormKinds = [
   'replicationcontrollers',
   'limitranges',
   'resourcequotas',
-  'certificatesigningrequests',
-  'priorityclasses',
   'leases',
-  'runtimeclasses',
-  'volumeattachments',
-  'csidrivers',
-  'csinodes',
   'statefulsets',
   'daemonsets',
   'replicasets',

@@ -161,49 +161,9 @@ export interface ResourceQuotaFormData extends FormData {
   hard: { key: string; value: string }[]
 }
 
-export interface CertificateSigningRequestFormData extends FormData {
-  signerName: string
-  request: string
-  usages: string[]
-}
-
-export interface PriorityClassFormData extends FormData {
-  value: number
-  globalDefault: boolean
-  description: string
-}
-
 export interface LeaseFormData extends FormData {
   holderIdentity: string
   leaseDurationSeconds: number
-}
-
-export interface RuntimeClassFormData extends FormData {
-  handler: string
-  overhead: { cpu: string; memory: string }
-  scheduling: { key: string; value: string }[]
-}
-
-export interface VolumeAttachmentFormData extends FormData {
-  attacher: string
-  nodeName: string
-  source: { persistentVolumeName: string }
-}
-
-export interface CSIDriverFormData extends FormData {
-  attachRequired: boolean
-  podInfoOnMount: boolean
-  volumeLifecycleModes: string[]
-}
-
-export interface CSINodeDriver {
-  name: string
-  nodeID: string
-  topologyKeys: string
-}
-
-export interface CSINodeFormData extends FormData {
-  drivers: CSINodeDriver[]
 }
 
 export interface EndpointFormData extends FormData {
@@ -1213,70 +1173,6 @@ export function manifestToResourceQuotaForm(manifest: any): ResourceQuotaFormDat
   }
 }
 
-// ===================== CertificateSigningRequest =====================
-
-export function certificateSigningRequestFormToManifest(data: CertificateSigningRequestFormData): any {
-  return {
-    apiVersion: 'certificates.k8s.io/v1',
-    kind: 'CertificateSigningRequest',
-    metadata: {
-      name: data.name,
-      namespace: data.namespace,
-    },
-    spec: {
-      signerName: data.signerName,
-      request: data.request,
-      usages: data.usages,
-    },
-  }
-}
-
-export function manifestToCertificateSigningRequestForm(manifest: any): CertificateSigningRequestFormData | null {
-  try {
-    return {
-      name: manifest.metadata?.name || '',
-      namespace: manifest.metadata?.namespace || 'default',
-      signerName: manifest.spec?.signerName || '',
-      request: manifest.spec?.request || '',
-      usages: manifest.spec?.usages || [],
-    }
-  } catch {
-    return null
-  }
-}
-
-// ===================== PriorityClass =====================
-
-export function priorityClassFormToManifest(data: PriorityClassFormData): any {
-  const manifest: any = {
-    apiVersion: 'scheduling.k8s.io/v1',
-    kind: 'PriorityClass',
-    metadata: {
-      name: data.name,
-    },
-    value: data.value,
-    globalDefault: data.globalDefault,
-  }
-  if (data.description) {
-    manifest.description = data.description
-  }
-  return manifest
-}
-
-export function manifestToPriorityClassForm(manifest: any): PriorityClassFormData | null {
-  try {
-    return {
-      name: manifest.metadata?.name || '',
-      namespace: manifest.metadata?.namespace || 'default',
-      value: manifest.value ?? 1000,
-      globalDefault: manifest.globalDefault ?? false,
-      description: manifest.description || '',
-    }
-  } catch {
-    return null
-  }
-}
-
 // ===================== Lease =====================
 
 export function leaseFormToManifest(data: LeaseFormData): any {
@@ -1305,161 +1201,6 @@ export function manifestToLeaseForm(manifest: any): LeaseFormData | null {
       namespace: manifest.metadata?.namespace || 'kube-system',
       holderIdentity: manifest.spec?.holderIdentity || '',
       leaseDurationSeconds: manifest.spec?.leaseDurationSeconds || 15,
-    }
-  } catch {
-    return null
-  }
-}
-
-// ===================== RuntimeClass =====================
-
-export function runtimeClassFormToManifest(data: RuntimeClassFormData): any {
-  const manifest: any = {
-    apiVersion: 'node.k8s.io/v1',
-    kind: 'RuntimeClass',
-    metadata: {
-      name: data.name,
-      namespace: data.namespace,
-    },
-    handler: data.handler,
-  }
-  const overhead: Record<string, string> = {}
-  if (data.overhead.cpu) overhead.cpu = data.overhead.cpu
-  if (data.overhead.memory) overhead.memory = data.overhead.memory
-  if (Object.keys(overhead).length) {
-    manifest.overhead = { podFixed: overhead }
-  }
-  const nodeSelector: Record<string, string> = {}
-  data.scheduling.forEach((item) => {
-    if (item.key) nodeSelector[item.key] = item.value
-  })
-  if (Object.keys(nodeSelector).length) {
-    manifest.scheduling = { nodeSelector }
-  }
-  return manifest
-}
-
-export function manifestToRuntimeClassForm(manifest: any): RuntimeClassFormData | null {
-  try {
-    const podFixed = manifest.overhead?.podFixed || {}
-    const nodeSelector = manifest.scheduling?.nodeSelector || {}
-    return {
-      name: manifest.metadata?.name || '',
-      namespace: manifest.metadata?.namespace || 'default',
-      handler: manifest.handler || '',
-      overhead: {
-        cpu: podFixed.cpu || '',
-        memory: podFixed.memory || '',
-      },
-      scheduling: Object.entries(nodeSelector).map(([key, value]) => ({ key, value: String(value) })),
-    }
-  } catch {
-    return null
-  }
-}
-
-// ===================== VolumeAttachment =====================
-
-export function volumeAttachmentFormToManifest(data: VolumeAttachmentFormData): any {
-  const manifest: any = {
-    apiVersion: 'storage.k8s.io/v1',
-    kind: 'VolumeAttachment',
-    metadata: {
-      name: data.name,
-      namespace: data.namespace,
-    },
-    spec: {
-      attacher: data.attacher,
-      nodeName: data.nodeName,
-      source: {},
-    },
-  }
-  if (data.source.persistentVolumeName) {
-    manifest.spec.source.persistentVolumeName = data.source.persistentVolumeName
-  }
-  return manifest
-}
-
-export function manifestToVolumeAttachmentForm(manifest: any): VolumeAttachmentFormData | null {
-  try {
-    return {
-      name: manifest.metadata?.name || '',
-      namespace: manifest.metadata?.namespace || 'default',
-      attacher: manifest.spec?.attacher || '',
-      nodeName: manifest.spec?.nodeName || '',
-      source: {
-        persistentVolumeName: manifest.spec?.source?.persistentVolumeName || '',
-      },
-    }
-  } catch {
-    return null
-  }
-}
-
-// ===================== CSIDriver =====================
-
-export function csiDriverFormToManifest(data: CSIDriverFormData): any {
-  return {
-    apiVersion: 'storage.k8s.io/v1',
-    kind: 'CSIDriver',
-    metadata: {
-      name: data.name,
-      namespace: data.namespace,
-    },
-    spec: {
-      attachRequired: data.attachRequired,
-      podInfoOnMount: data.podInfoOnMount,
-      volumeLifecycleModes: data.volumeLifecycleModes,
-    },
-  }
-}
-
-export function manifestToCSIDriverForm(manifest: any): CSIDriverFormData | null {
-  try {
-    return {
-      name: manifest.metadata?.name || '',
-      namespace: manifest.metadata?.namespace || 'default',
-      attachRequired: manifest.spec?.attachRequired !== false,
-      podInfoOnMount: manifest.spec?.podInfoOnMount ?? false,
-      volumeLifecycleModes: manifest.spec?.volumeLifecycleModes || ['Persistent'],
-    }
-  } catch {
-    return null
-  }
-}
-
-// ===================== CSINode =====================
-
-export function csiNodeFormToManifest(data: CSINodeFormData): any {
-  return {
-    apiVersion: 'storage.k8s.io/v1',
-    kind: 'CSINode',
-    metadata: {
-      name: data.name,
-      namespace: data.namespace,
-    },
-    spec: {
-      drivers: data.drivers
-        .filter((d) => d.name)
-        .map((d) => ({
-          name: d.name,
-          nodeID: d.nodeID,
-          topologyKeys: d.topologyKeys ? d.topologyKeys.split(',').map((k) => k.trim()).filter(Boolean) : [],
-        })),
-    },
-  }
-}
-
-export function manifestToCSINodeForm(manifest: any): CSINodeFormData | null {
-  try {
-    return {
-      name: manifest.metadata?.name || '',
-      namespace: manifest.metadata?.namespace || 'default',
-      drivers: (manifest.spec?.drivers || []).map((d: any) => ({
-        name: d.name || '',
-        nodeID: d.nodeID || '',
-        topologyKeys: Array.isArray(d.topologyKeys) ? d.topologyKeys.join(', ') : String(d.topologyKeys || ''),
-      })),
     }
   } catch {
     return null
@@ -2018,33 +1759,7 @@ export function generateManifest(kind: string, data: FormData): any {
       return limitRangeFormToManifest(data as LimitRangeFormData)
     case 'resourcequotas':
       return resourceQuotaFormToManifest(data as ResourceQuotaFormData)
-    case 'certificatesigningrequests':
-      return certificateSigningRequestFormToManifest(data as CertificateSigningRequestFormData)
-    case 'priorityclasses':
-      return priorityClassFormToManifest(data as PriorityClassFormData)
-    case 'leases':
-      return leaseFormToManifest(data as LeaseFormData)
-    case 'runtimeclasses':
-      return runtimeClassFormToManifest(data as RuntimeClassFormData)
-    case 'volumeattachments':
-      return volumeAttachmentFormToManifest(data as VolumeAttachmentFormData)
-    case 'csidrivers':
-      return csiDriverFormToManifest(data as CSIDriverFormData)
-    case 'csinodes':
-      return csiNodeFormToManifest(data as CSINodeFormData)
-    case 'statefulsets':
-      return statefulSetFormToManifest(data as StatefulSetFormData)
-    case 'daemonsets':
       return daemonSetFormToManifest(data as DaemonSetFormData)
-    case 'replicasets':
-      return replicaSetFormToManifest(data as ReplicaSetFormData)
-    case 'jobs':
-      return jobFormToManifest(data as JobFormData)
-    case 'cronjobs':
-      return cronJobFormToManifest(data as CronJobFormData)
-    case 'endpoints':
-      return endpointFormToManifest(data as EndpointFormData)
-    case 'persistentvolumes':
       return persistentVolumeFormToManifest(data as PersistentVolumeFormData)
     case 'persistentvolumeclaims':
       return persistentVolumeClaimFormToManifest(data as PersistentVolumeClaimFormData)
@@ -2101,20 +1816,8 @@ export function parseManifest(kind: string, manifest: any): FormData | null {
       return manifestToLimitRangeForm(manifest)
     case 'resourcequotas':
       return manifestToResourceQuotaForm(manifest)
-    case 'certificatesigningrequests':
-      return manifestToCertificateSigningRequestForm(manifest)
-    case 'priorityclasses':
-      return manifestToPriorityClassForm(manifest)
     case 'leases':
       return manifestToLeaseForm(manifest)
-    case 'runtimeclasses':
-      return manifestToRuntimeClassForm(manifest)
-    case 'volumeattachments':
-      return manifestToVolumeAttachmentForm(manifest)
-    case 'csidrivers':
-      return manifestToCSIDriverForm(manifest)
-    case 'csinodes':
-      return manifestToCSINodeForm(manifest)
     case 'statefulsets':
       return manifestToStatefulSetForm(manifest)
     case 'daemonsets':
@@ -2125,21 +1828,7 @@ export function parseManifest(kind: string, manifest: any): FormData | null {
       return manifestToJobForm(manifest)
     case 'cronjobs':
       return manifestToCronJobForm(manifest)
-    case 'endpoints':
-      return manifestToEndpointForm(manifest)
-    case 'persistentvolumes':
-      return manifestToPersistentVolumeForm(manifest)
-    case 'persistentvolumeclaims':
       return manifestToPersistentVolumeClaimForm(manifest)
-    case 'storageclasses':
-      return manifestToStorageClassForm(manifest)
-    case 'serviceaccounts':
-      return manifestToServiceAccountForm(manifest)
-    case 'roles':
-      return manifestToRoleForm(manifest)
-    case 'rolebindings':
-      return manifestToRoleBindingForm(manifest)
-    case 'clusterroles':
       return manifestToClusterRoleForm(manifest)
     case 'clusterrolebindings':
       return manifestToClusterRoleBindingForm(manifest)
@@ -2162,8 +1851,7 @@ export function supportsFormMode(kind: string): boolean {
     'deployments', 'services', 'configmaps', 'secrets', 'pods',
     'horizontalpodautoscalers', 'ingresses', 'networkpolicies', 'poddisruptionbudgets',
     'endpointslices', 'replicationcontrollers', 'limitranges', 'resourcequotas',
-    'certificatesigningrequests', 'priorityclasses', 'leases',
-    'runtimeclasses', 'volumeattachments', 'csidrivers', 'csinodes',
+    'leases',
     'statefulsets', 'daemonsets', 'replicasets', 'jobs', 'cronjobs',
     'endpoints', 'persistentvolumes', 'persistentvolumeclaims', 'storageclasses',
     'serviceaccounts', 'roles', 'rolebindings', 'clusterroles', 'clusterrolebindings',

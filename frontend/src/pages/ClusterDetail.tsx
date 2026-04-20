@@ -89,13 +89,7 @@ const singularMap: Record<string, string> = {
   replicationcontrollers: 'replicationcontroller',
   limitranges: 'limitrange',
   resourcequotas: 'resourcequota',
-  certificatesigningrequests: 'certificatesigningrequest',
-  priorityclasses: 'priorityclass',
   leases: 'lease',
-  runtimeclasses: 'runtimeclass',
-  volumeattachments: 'volumeattachment',
-  csidrivers: 'csidriver',
-  csinodes: 'csinode',
 }
 
 function hasResourcePermission(resource: string, permissions: string[]): boolean {
@@ -557,20 +551,8 @@ export default function ClusterDetail() {
         return [...common, { key: 'namespace', label: '命名空间' }]
       case 'resourcequotas':
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hard', label: '配额限制' }]
-      case 'certificatesigningrequests':
-        return [...common, { key: 'signerName', label: '签名者' }, { key: 'username', label: '用户名' }, { key: 'status', label: '状态' }]
-      case 'priorityclasses':
-        return [...common, { key: 'value', label: '优先级值' }, { key: 'globalDefault', label: '全局默认' }]
       case 'leases':
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'holderIdentity', label: '持有者' }]
-      case 'runtimeclasses':
-        return [...common, { key: 'handler', label: 'Handler' }]
-      case 'volumeattachments':
-        return [...common, { key: 'attacher', label: '挂载驱动' }, { key: 'node', label: '节点' }, { key: 'attached', label: '已挂载' }]
-      case 'csidrivers':
-        return [...common]
-      case 'csinodes':
-        return [...common]
       default:
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }]
     }

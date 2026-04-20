@@ -202,7 +202,7 @@ export const resourceCategories = [
     key: 'nodes',
     label: '节点',
     icon: 'Computer',
-    resources: ['nodes', 'runtimeclasses'],
+    resources: ['nodes'],
   },
   {
     key: 'workloads',
@@ -220,19 +220,19 @@ export const resourceCategories = [
     key: 'storage',
     label: '存储',
     icon: 'Storage',
-    resources: ['persistentvolumes', 'persistentvolumeclaims', 'storageclasses', 'volumeattachments', 'csidrivers', 'csinodes'],
+    resources: ['persistentvolumes', 'persistentvolumeclaims', 'storageclasses'],
   },
   {
     key: 'config',
     label: '配置',
     icon: 'Settings',
-    resources: ['configmaps', 'secrets', 'serviceaccounts', 'limitranges', 'resourcequotas', 'priorityclasses', 'leases'],
+    resources: ['configmaps', 'secrets', 'serviceaccounts', 'limitranges', 'resourcequotas', 'leases'],
   },
   {
     key: 'rbac',
     label: '访问控制',
     icon: 'Security',
-    resources: ['roles', 'rolebindings', 'clusterroles', 'clusterrolebindings', 'certificatesigningrequests'],
+    resources: ['roles', 'rolebindings', 'clusterroles', 'clusterrolebindings'],
   },
   {
     key: 'namespaces',
@@ -286,11 +286,5 @@ export const resourceLabels: Record<string, string> = {
   replicationcontrollers: 'ReplicationController',
   limitranges: 'LimitRange',
   resourcequotas: 'ResourceQuota',
-  certificatesigningrequests: 'CertificateSigningRequest',
-  priorityclasses: 'PriorityClass',
   leases: 'Lease',
-  runtimeclasses: 'RuntimeClass',
-  volumeattachments: 'VolumeAttachment',
-  csidrivers: 'CSIDriver',
-  csinodes: 'CSINode',
 }

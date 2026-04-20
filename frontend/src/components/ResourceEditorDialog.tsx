@@ -33,13 +33,7 @@ import { EndpointSliceForm, endpointSliceDefaultData } from './resource-forms/En
 import { ReplicationControllerForm, replicationControllerDefaultData } from './resource-forms/ReplicationControllerForm'
 import { LimitRangeForm, limitRangeDefaultData } from './resource-forms/LimitRangeForm'
 import { ResourceQuotaForm, resourceQuotaDefaultData } from './resource-forms/ResourceQuotaForm'
-import { CertificateSigningRequestForm, certificateSigningRequestDefaultData } from './resource-forms/CertificateSigningRequestForm'
-import { PriorityClassForm, priorityClassDefaultData } from './resource-forms/PriorityClassForm'
 import { LeaseForm, leaseDefaultData } from './resource-forms/LeaseForm'
-import { RuntimeClassForm, runtimeClassDefaultData } from './resource-forms/RuntimeClassForm'
-import { VolumeAttachmentForm, volumeAttachmentDefaultData } from './resource-forms/VolumeAttachmentForm'
-import { CSIDriverForm, csiDriverDefaultData } from './resource-forms/CSIDriverForm'
-import { CSINodeForm, csiNodeDefaultData } from './resource-forms/CSINodeForm'
 import { StatefulSetForm, statefulSetDefaultData } from './resource-forms/StatefulSetForm'
 import { DaemonSetForm, daemonSetDefaultData } from './resource-forms/DaemonSetForm'
 import { ReplicaSetForm, replicaSetDefaultData } from './resource-forms/ReplicaSetForm'
@@ -99,20 +93,8 @@ function getDefaultFormData(kind: string, namespace: string): FormData {
       return { ...limitRangeDefaultData, ...base }
     case 'resourcequotas':
       return { ...resourceQuotaDefaultData, ...base }
-    case 'certificatesigningrequests':
-      return { ...certificateSigningRequestDefaultData, ...base }
-    case 'priorityclasses':
-      return { ...priorityClassDefaultData, ...base }
     case 'leases':
       return { ...leaseDefaultData, ...base }
-    case 'runtimeclasses':
-      return { ...runtimeClassDefaultData, ...base }
-    case 'volumeattachments':
-      return { ...volumeAttachmentDefaultData, ...base }
-    case 'csidrivers':
-      return { ...csiDriverDefaultData, ...base }
-    case 'csinodes':
-      return { ...csiNodeDefaultData, ...base }
     case 'statefulsets':
       return { ...statefulSetDefaultData, ...base }
     case 'daemonsets':
@@ -187,20 +169,8 @@ function renderForm(
       return <LimitRangeForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'resourcequotas':
       return <ResourceQuotaForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
-    case 'certificatesigningrequests':
-      return <CertificateSigningRequestForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
-    case 'priorityclasses':
-      return <PriorityClassForm data={data as any} onChange={onChange} />
     case 'leases':
       return <LeaseForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
-    case 'runtimeclasses':
-      return <RuntimeClassForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
-    case 'volumeattachments':
-      return <VolumeAttachmentForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
-    case 'csidrivers':
-      return <CSIDriverForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
-    case 'csinodes':
-      return <CSINodeForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'statefulsets':
       return <StatefulSetForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'daemonsets':

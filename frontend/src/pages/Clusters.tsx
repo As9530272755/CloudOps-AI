@@ -57,10 +57,10 @@ const searchCategoryMap: Record<string, { label: string; resources: string[] }> 
   'loadbalance': { label: '负载均衡', resources: ['services', 'ingresses'] },
   'workloads': { label: '工作负载', resources: ['pods', 'deployments', 'statefulsets', 'daemonsets', 'replicasets', 'jobs', 'cronjobs', 'horizontalpodautoscalers', 'poddisruptionbudgets', 'replicationcontrollers'] },
   'network': { label: '网络', resources: ['endpoints', 'networkpolicies', 'endpointslices'] },
-  'storage': { label: '存储', resources: ['persistentvolumes', 'persistentvolumeclaims', 'storageclasses', 'volumeattachments', 'csidrivers', 'csinodes'] },
-  'config': { label: '配置', resources: ['configmaps', 'secrets', 'serviceaccounts', 'limitranges', 'resourcequotas', 'priorityclasses', 'leases'] },
-  'rbac': { label: '访问控制', resources: ['roles', 'rolebindings', 'clusterroles', 'clusterrolebindings', 'certificatesigningrequests'] },
-  'nodes': { label: '节点', resources: ['nodes', 'runtimeclasses'] },
+  'storage': { label: '存储', resources: ['persistentvolumes', 'persistentvolumeclaims', 'storageclasses'] },
+  'config': { label: '配置', resources: ['configmaps', 'secrets', 'serviceaccounts', 'limitranges', 'resourcequotas', 'leases'] },
+  'rbac': { label: '访问控制', resources: ['roles', 'rolebindings', 'clusterroles', 'clusterrolebindings'] },
+  'nodes': { label: '节点', resources: ['nodes'] },
   'namespaces': { label: '命名空间', resources: ['namespaces'] },
   'events': { label: '事件', resources: ['events'] },
   'custom': { label: '自定义资源', resources: ['customresourcedefinitions'] },
@@ -80,7 +80,7 @@ const statusLabels: Record<string, string> = {
   healthy: '正常',
   warning: '警告',
   error: '异常',
-  unhealthy: '异常',
+  unhealthy: '不健康',
   offline: '离线',
   pending: '检测中',
 }
@@ -666,7 +666,7 @@ export default function Clusters() {
                     <TableCell>名称</TableCell>
                     {isPlatformAdmin && <TableCell>API Server</TableCell>}
                     <TableCell>版本</TableCell>
-                    <TableCell>连接状态</TableCell>
+                    <TableCell>API 状态</TableCell>
                     {isPlatformAdmin && <TableCell>节点/Pod</TableCell>}
                     <TableCell align="right">操作</TableCell>
                   </TableRow>
