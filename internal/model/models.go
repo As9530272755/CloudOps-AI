@@ -382,7 +382,7 @@ func (UserModuleOverride) TableName() string {
 type InspectionTask struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	TenantID       uint           `gorm:"index" json:"tenant_id"`
-	Name           string         `gorm:"size:128;not null" json:"name"`
+	Name           string         `gorm:"size:128;not null;uniqueIndex:idx_inspection_task_name_tenant" json:"name"`
 	Description    string         `gorm:"size:512" json:"description"`
 	Schedule       string         `gorm:"size:64" json:"schedule"`           // Cron 表达式，空表示手动
 	ScheduleType   string         `gorm:"size:32" json:"schedule_type"`      // manual / hourly / daily / weekly / custom

@@ -179,6 +179,7 @@ func (h *InspectionHandler) UpdateTask(c *gin.Context) {
 		return
 	}
 	task.ID = uint(id)
+	task.TenantID = c.GetUint("tenant_id")
 	if err := h.inspectionService.UpdateTask(&task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
