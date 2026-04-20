@@ -46,6 +46,7 @@ import {
 } from '@mui/icons-material'
 
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest, UpdateClusterRequest, TestAndProbeResult } from '../lib/cluster-api'
+import { wsManager, ResourceChangeMessage } from '../lib/ws'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
 import { usePermission } from '../hooks/usePermission'
@@ -194,11 +195,30 @@ export default function Clusters() {
 
   useEffect(() => {
     loadClusters()
-    // 自动轮询：每 5 秒静默刷新集群状态（不触发 loading）
-    const interval = setInterval(() => {
-      loadClusters(true)
-    }, 5000)
-    return () => clearInterval(interval)
+
+    // WebSocket 订阅集群状态变化（监听所有集群）
+    wsManager.subscribe(null, null)
+    const unsubscribe = wsManager.onMessage((msg: ResourceChangeMessage) => {
+      if (msg.type === 'cluster_status_change') {
+        setClusters((prev) =>
+          prev.map((c) =>
+            c.id === msg.cluster_id
+              ? {
+                  ...c,
+                  metadata: {
+                    ...c.metadata,
+                    health_status: msg.status,
+                  },
+                }
+              : c
+          )
+        )
+      }
+    })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   const resetForm = () => {

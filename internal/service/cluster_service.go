@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/cloudops/platform/internal/model"
+	"github.com/cloudops/platform/internal/pkg/ws"
 )
 
 // ClusterHealthState 集群健康状态（内存缓存）
@@ -441,12 +442,27 @@ func (s *ClusterService) StartHealthMonitor() {
 
 // probeClusterHealth 探测单个集群健康状态（独立 goroutine，带超时）
 func (s *ClusterService) probeClusterHealth(clusterID uint) {
+	// 记录旧状态，用于判断是否有变化
+	s.healthMu.RLock()
+	oldState, hasOld := s.healthCache[clusterID]
+	oldStatus := ""
+	if hasOld {
+		oldStatus = oldState.Status
+	}
+	s.healthMu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	client, err := s.GetK8sClient(ctx, clusterID)
 	cancel()
 	if err != nil {
 		s.recordHealthCheck(clusterID, false)
+		s.healthMu.RLock()
+		newStatus := s.healthCache[clusterID].Status
+		s.healthMu.RUnlock()
 		s.updateClusterHealth(clusterID, "error", "")
+		if oldStatus != newStatus {
+			ws.Broadcast(ws.ResourceChangeMessage{Type: "cluster_status_change", ClusterID: clusterID, Status: newStatus})
+		}
 		return
 	}
 
@@ -464,17 +480,25 @@ func (s *ClusterService) probeClusterHealth(clusterID uint) {
 		err = fmt.Errorf("health check timeout")
 	}
 
-	status := "error"
 	if err == nil {
-		status = "healthy"
 		s.recordHealthCheck(clusterID, true)
 	} else {
 		s.recordHealthCheck(clusterID, false)
 	}
-	s.updateClusterHealth(clusterID, status, "")
+
+	s.healthMu.RLock()
+	newStatus := s.healthCache[clusterID].Status
+	s.healthMu.RUnlock()
+
+	s.updateClusterHealth(clusterID, newStatus, "")
+
+	// 状态变化时广播 WebSocket
+	if oldStatus != newStatus {
+		ws.Broadcast(ws.ResourceChangeMessage{Type: "cluster_status_change", ClusterID: clusterID, Status: newStatus})
+	}
 
 	// 同步 informer 缓存中的 node/pod 数量到数据库
-	if status == "healthy" {
+	if newStatus == "healthy" {
 		if cc := s.k8sManager.GetClusterClient(clusterID); cc != nil {
 			cc.SyncMu.RLock()
 			ready := cc.SyncReady

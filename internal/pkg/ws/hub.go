@@ -25,6 +25,7 @@ type ResourceChangeMessage struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 	Action    string `json:"action"` // create, update, delete
+	Status    string `json:"status,omitempty"` // healthy, unhealthy, offline (for cluster_status_change)
 }
 
 // Hub 管理 WebSocket 连接和广播

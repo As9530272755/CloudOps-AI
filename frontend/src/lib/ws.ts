@@ -1,10 +1,11 @@
 export interface ResourceChangeMessage {
   type: string
   cluster_id: number
-  kind: string
-  namespace: string
-  name: string
-  action: string
+  kind?: string
+  namespace?: string
+  name?: string
+  action?: string
+  status?: string // for cluster_status_change
 }
 
 type MessageHandler = (msg: ResourceChangeMessage) => void
@@ -65,9 +66,8 @@ class WsManager {
       this.ws.onmessage = (event) => {
         try {
           const msg: ResourceChangeMessage = JSON.parse(event.data)
-          if (msg.type === 'resource_change') {
-            this.handlers.forEach((h) => h(msg))
-          }
+          // 支持 resource_change 和 cluster_status_change 等多种消息类型
+          this.handlers.forEach((h) => h(msg))
         } catch {
           // ignore invalid message
         }
