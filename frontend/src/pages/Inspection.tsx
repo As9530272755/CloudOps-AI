@@ -85,6 +85,8 @@ export default function Inspection() {
   const [selectedJob, setSelectedJob] = useState<{ job: InspectionJob; results: InspectionResultItem[] } | null>(null)
   const [quickDialogOpen, setQuickDialogOpen] = useState(false)
   const [quickClusterIds, setQuickClusterIds] = useState<number[]>([])
+  const [taskDialogError, setTaskDialogError] = useState('')
+  const [quickDialogError, setQuickDialogError] = useState('')
 
   // 表单
   const [form, setForm] = useState<Partial<InspectionTask>>({
@@ -141,9 +143,10 @@ export default function Inspection() {
   const handleSaveTask = async () => {
     if (!form.name) return
     if (!form.cluster_ids || form.cluster_ids.length === 0) {
-      setError('请至少选择一个关联集群')
+      setTaskDialogError('请至少选择一个关联集群')
       return
     }
+    setTaskDialogError('')
     let schedule = form.schedule || ''
     let scheduleType = form.schedule_type || 'manual'
     if (scheduleType !== 'custom' && scheduleType !== 'manual') {
@@ -156,15 +159,16 @@ export default function Inspection() {
         ? await inspectionAPI.updateTask(editingTask.id, payload)
         : await inspectionAPI.createTask(payload)
       if (!res.success) {
-        setError(res.error || '保存失败')
+        setTaskDialogError(res.error || '保存失败')
         return
       }
       setTaskDialog(false)
       setEditingTask(null)
+      setTaskDialogError('')
       setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
       loadTasks()
     } catch (err: any) {
-      setError(err.message || '保存失败')
+      setTaskDialogError(err.message || '保存失败')
     }
   }
 
@@ -202,6 +206,11 @@ export default function Inspection() {
   }
 
   const handleConfirmQuickInspect = async () => {
+    if (quickClusterIds.length === 0) {
+      setQuickDialogError('请至少选择一个集群')
+      return
+    }
+    setQuickDialogError('')
     setQuickDialogOpen(false)
     setLoading(true)
     try {
@@ -298,6 +307,7 @@ export default function Inspection() {
                     startIcon={<AddIcon />}
                     onClick={() => {
                       setEditingTask(null)
+                      setTaskDialogError('')
                       setForm({ name: '', description: '', schedule: '', schedule_type: 'manual', timezone: 'Asia/Shanghai', enabled: true, retry_times: 0, cluster_ids: [] })
                       setTaskDialog(true)
                     }}
@@ -350,7 +360,7 @@ export default function Inspection() {
                             <IconButton size="small" color="primary" onClick={() => handleTrigger(task.id)}><RunIcon fontSize="small" /></IconButton>
                           </Tooltip>
                           <Tooltip title="编辑">
-                            <IconButton size="small" onClick={() => { setEditingTask(task); setForm(task); setTaskDialog(true); }}>
+                            <IconButton size="small" onClick={() => { setEditingTask(task); setTaskDialogError(''); setForm(task); setTaskDialog(true); }}>
                               <RefreshIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
@@ -449,6 +459,11 @@ export default function Inspection() {
       <Dialog open={quickDialogOpen} onClose={() => setQuickDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>选择要巡检的集群</DialogTitle>
         <DialogContent dividers>
+          {quickDialogError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {quickDialogError}
+            </Alert>
+          )}
           <FormControl fullWidth sx={{ mt: 1 }}>
             <InputLabel>关联集群</InputLabel>
             <Select
@@ -479,6 +494,11 @@ export default function Inspection() {
       <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>{editingTask ? '编辑巡检任务' : '新建巡检任务'}</DialogTitle>
         <DialogContent dividers>
+          {taskDialogError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {taskDialogError}
+            </Alert>
+          )}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField label="任务名称" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} fullWidth required />
             <TextField label="描述" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} fullWidth multiline rows={2} />

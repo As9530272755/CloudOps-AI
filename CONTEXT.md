@@ -2495,3 +2495,75 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 | admin | any | admin | ✅ 显示 |
 
 后端编译 ✅ 服务重启 ✅ 已推送 GitHub ✅
+
+
+---
+
+## 2026-04-20 巡检中心 Bug 修复
+
+### 提交 `86c3a87`
+**fix(inspection): prevent empty cluster_ids & show task_name in job list**
+
+#### 修复 1：空 cluster_ids 执行全部集群
+**问题**：创建/编辑巡检任务时未选择集群，`runJobWithTask` 默认执行所有活跃集群，导致误操作。
+
+**修复**：
+- `CreateTask` / `UpdateTask` Handler：请求 `cluster_ids` 为空时直接返回 400
+- `runJobWithTask`：空 `cluster_ids` 不再默认执行全部活跃集群，而是将 job 状态置为 `failed` 并记录日志
+- 前端 `handleSaveTask`：保存前校验 `cluster_ids` 非空，否则弹出错误提示
+
+#### 修复 2：执行记录显示 Job ID 不直观
+**问题**：执行记录列表显示 `#Job ID`，用户无法直观识别是哪个任务的执行记录。
+
+**修复**：
+- 后端 `ListJobs`：返回 `task_name` 字段，一键巡检（`task_id=0`）显示 `"一键巡检"`
+- 前端 `InspectionJob` 接口：增加 `task_name` 字段
+- 前端执行记录表格：列名 "Job ID" → "任务名称"，显示 `task_name` 或回退到 `任务 #task_id`
+
+#### 文件变更
+| 文件 | 变更 |
+|------|------|
+| `internal/api/handlers/inspection.go` | `CreateTask`/`UpdateTask` 增加 cluster_ids 校验；`ListJobs` 组装 `task_name` |
+| `internal/service/inspection_service.go` | `runJobWithTask` 空 cluster_ids 直接失败 |
+| `frontend/src/pages/Inspection.tsx` | 保存时校验 cluster_ids；表格显示 task_name |
+| `frontend/src/lib/inspection-api.ts` | `InspectionJob` 增加 `task_name` |
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+
+---
+
+### UI 规范：表单/弹窗内错误提示
+
+**原则**：与用户当前操作直接相关的校验错误、提交失败提示，必须显示在对应的操作弹窗/表单内部，禁止飘到页面顶部的全局 Alert。
+
+**原因**：全局 Alert 会被弹窗遮挡或覆盖，用户视线集中在弹窗内时看不到提示，体验极差。
+
+**实现方式**：
+- 每个弹窗独立维护一个 `xxxError` 状态（如 `taskDialogError`、`quickDialogError`）
+- 弹窗关闭时清空错误状态
+- 弹窗打开时（新建/编辑）清空历史错误
+- 仅在弹窗内部的 `DialogContent` 顶部渲染 `<Alert severity="error">`
+- 全局 `error` 状态保留给**非弹窗场景**（如页面初始加载失败、列表加载失败等）
+
+**已应用**：
+- `Inspection.tsx`：编辑任务弹窗 `taskDialogError`、一键巡检弹窗 `quickDialogError`
+
+---
+
+### 提交 `86c3a87` 修正（弹窗内错误提示）
+
+**问题**：`86c3a87` 中前端校验 `cluster_ids` 非空时使用了全局 `setError`，导致错误提示飘在页面顶部，被弹窗遮挡。
+
+**修复**：
+- `taskDialogError` / `setTaskDialogError`：编辑任务弹窗内部错误
+- `quickDialogError` / `setQuickDialogError`：一键巡检弹窗内部错误
+- 弹窗打开/关闭时清空对应错误状态
+- 校验失败时错误 Alert 渲染在 `DialogContent` 顶部
+
+**文件变更**
+| 文件 | 变更 |
+|------|------|
+| `frontend/src/pages/Inspection.tsx` | 弹窗内独立错误状态 + Alert 渲染 |
+
+前端编译 ✅
