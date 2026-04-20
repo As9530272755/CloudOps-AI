@@ -195,12 +195,21 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 
 	var result []SearchResult
 
+	// 解析 kindFilter（支持逗号分隔的多 kind）
+	var kindSet map[string]bool
+	if kindFilter != "" {
+		kindSet = make(map[string]bool)
+		for _, k := range strings.Split(kindFilter, ",") {
+			kindSet[strings.TrimSpace(k)] = true
+		}
+	}
+
 	// helper: append from store
 	appendFromStore := func(cc *ClusterClient, kind string, store cache.Store, matchFunc func(obj interface{}) (SearchResult, bool)) {
 		if store == nil {
 			return
 		}
-		if kindFilter != "" && kindFilter != kind {
+		if kindSet != nil && !kindSet[kind] {
 			return
 		}
 		for _, obj := range store.List() {

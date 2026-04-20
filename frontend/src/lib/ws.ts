@@ -9,13 +9,17 @@ export interface ResourceChangeMessage {
 }
 
 type MessageHandler = (msg: ResourceChangeMessage) => void
+type ConnectionState = 'connected' | 'disconnected' | 'connecting'
+type StateHandler = (state: ConnectionState) => void
 
 class WsManager {
   private ws: WebSocket | null = null
   private handlers: Set<MessageHandler> = new Set()
+  private stateHandlers: Set<StateHandler> = new Set()
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 3000
   private maxReconnectDelay = 30000
+  private connectionState: ConnectionState = 'disconnected'
 
   // 当前订阅参数
   private currentClusterID: number | null = null
@@ -49,17 +53,38 @@ class WsManager {
     return `ws://${window.location.host}/ws/k8s-events${qs ? '?' + qs : ''}`
   }
 
+  private setState(state: ConnectionState) {
+    if (this.connectionState === state) return
+    this.connectionState = state
+    this.stateHandlers.forEach((h) => h(state))
+  }
+
+  getConnectionState(): ConnectionState {
+    return this.connectionState
+  }
+
+  onConnectionStateChange(handler: StateHandler) {
+    this.stateHandlers.add(handler)
+    // 立即触发一次当前状态
+    handler(this.connectionState)
+    return () => {
+      this.stateHandlers.delete(handler)
+    }
+  }
+
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return
 
     const url = this.buildUrl()
     console.log('[WS] connecting to', url)
+    this.setState('connecting')
 
     try {
       this.ws = new WebSocket(url)
 
       this.ws.onopen = () => {
         console.log('[WS] connected')
+        this.setState('connected')
         this.reconnectDelay = 3000
       }
 
@@ -75,6 +100,7 @@ class WsManager {
 
       this.ws.onclose = () => {
         console.log('[WS] disconnected, reconnecting...')
+        this.setState('disconnected')
         this.scheduleReconnect()
       }
 
@@ -83,6 +109,7 @@ class WsManager {
         this.ws?.close()
       }
     } catch {
+      this.setState('disconnected')
       this.scheduleReconnect()
     }
   }
@@ -113,6 +140,7 @@ class WsManager {
     }
     this.ws?.close()
     this.ws = null
+    this.setState('disconnected')
   }
 }
 

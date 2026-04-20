@@ -1,4 +1,4 @@
-import { useState } from 'react'
+
 import { useSiteConfig } from '../../context/SiteConfigContext'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -42,6 +42,8 @@ import {
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
 import { usePermission } from '../../hooks/usePermission'
+import { useState, useEffect } from 'react'
+import { wsManager } from '../../lib/ws'
 
 const DRAWER_WIDTH = 260
 
@@ -79,6 +81,11 @@ export default function MainLayout() {
     navigate(path)
     if (isMobile) setOpen(false)
   }
+
+  const [wsState, setWsState] = useState(wsManager.getConnectionState())
+  useEffect(() => {
+    return wsManager.onConnectionStateChange(setWsState)
+  }, [])
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -344,6 +351,18 @@ export default function MainLayout() {
               boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
             }}
           >
+            <Tooltip title={wsState === 'connected' ? '实时推送正常' : wsState === 'connecting' ? '连接中...' : '实时推送断开'}>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: wsState === 'connected' ? '#4caf50' : wsState === 'connecting' ? '#ff9800' : '#f44336',
+                  boxShadow: `0 0 6px ${wsState === 'connected' ? '#4caf50' : wsState === 'connecting' ? '#ff9800' : '#f44336'}`,
+                  cursor: 'pointer',
+                }}
+              />
+            </Tooltip>
             <Tooltip title="展开侧边栏">
               <IconButton onClick={handleDrawerToggle} sx={{ color: 'text.primary' }}>
                 <MenuIcon fontSize="small" />

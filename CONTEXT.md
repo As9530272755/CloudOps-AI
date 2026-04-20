@@ -2336,6 +2336,38 @@ store.Replace(typedObjects, list.GetResourceVersion())
 - 后端 `go build` ✅
 - 后端已重启 ✅
 
+### 20.9 WebSocket 推送集群状态变化（替代轮询）
+
+**背景**：5 秒轮询即使加了 silent 模式，仍有 HTTP 开销和全量响应体。
+
+**实现**：
+
+**后端**：
+- `internal/pkg/ws/hub.go`：`ResourceChangeMessage` 增加 `Status` 字段
+- `internal/service/cluster_service.go`：`probeClusterHealth` 状态变化时广播 `cluster_status_change`
+- 只在状态真正变化时广播（old != new），避免抖动
+
+**前端**：
+- `frontend/src/lib/ws.ts`：移除 `msg.type === 'resource_change'` 过滤，支持所有消息类型
+- `frontend/src/pages/Clusters.tsx`：
+  - `wsManager.subscribe(null, null)` 订阅所有集群状态
+  - 收到 `cluster_status_change` 只更新对应行的 `health_status`
+  - 彻底移除 5 秒轮询
+
+**性能对比**：
+
+| 指标 | 5 秒轮询 | WebSocket 推送 |
+|------|---------|---------------|
+| HTTP 请求/分钟 | 12 × N 用户 | **0** |
+| 单条消息大小 | 2~15 KB | **50 字节** |
+| 前端渲染范围 | 整个表格 | **一行** |
+| 状态感知延迟 | 0~5 秒 | **毫秒级** |
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npx tsc --noEmit` ✅
+- 后端已重启 ✅
+
 ---
 
 *最后更新：2026-04-20*

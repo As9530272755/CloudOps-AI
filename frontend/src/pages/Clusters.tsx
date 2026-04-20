@@ -46,16 +46,33 @@ import {
 } from '@mui/icons-material'
 
 import { clusterAPI, Cluster, ClusterListParams, CreateClusterRequest, UpdateClusterRequest, TestAndProbeResult } from '../lib/cluster-api'
+import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
 import { wsManager, ResourceChangeMessage } from '../lib/ws'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { k8sAPI, SearchResourceItem, resourceLabels, resourceCategories } from '../lib/k8s-api'
 import { usePermission } from '../hooks/usePermission'
 
-// 状态颜色映射
+// 全局搜索资源类别映射（业务功能分类）
+const searchCategoryMap: Record<string, { label: string; resources: string[] }> = {
+  '': { label: '全部', resources: [] },
+  'loadbalance': { label: '负载均衡', resources: ['services', 'ingresses'] },
+  'workloads': { label: '工作负载', resources: ['pods', 'deployments', 'statefulsets', 'daemonsets', 'replicasets', 'jobs', 'cronjobs', 'horizontalpodautoscalers', 'poddisruptionbudgets', 'replicationcontrollers'] },
+  'network': { label: '网络', resources: ['endpoints', 'networkpolicies', 'endpointslices'] },
+  'storage': { label: '存储', resources: ['persistentvolumes', 'persistentvolumeclaims', 'storageclasses', 'volumeattachments', 'csidrivers', 'csinodes'] },
+  'config': { label: '配置', resources: ['configmaps', 'secrets', 'serviceaccounts', 'limitranges', 'resourcequotas', 'priorityclasses', 'leases'] },
+  'rbac': { label: '访问控制', resources: ['roles', 'rolebindings', 'clusterroles', 'clusterrolebindings', 'certificatesigningrequests'] },
+  'nodes': { label: '节点', resources: ['nodes', 'runtimeclasses'] },
+  'namespaces': { label: '命名空间', resources: ['namespaces'] },
+  'events': { label: '事件', resources: ['events'] },
+  'custom': { label: '自定义资源', resources: ['customresourcedefinitions'] },
+}
+
+// 状态颜色映射（连接状态）
 const statusColors: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
   healthy: 'success',
   warning: 'warning',
   error: 'error',
+  unhealthy: 'error',
+  offline: 'error',
   pending: 'default',
 }
 
@@ -63,6 +80,8 @@ const statusLabels: Record<string, string> = {
   healthy: '正常',
   warning: '警告',
   error: '异常',
+  unhealthy: '异常',
+  offline: '离线',
   pending: '检测中',
 }
 
@@ -132,6 +151,7 @@ export default function Clusters() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOptions, setSearchOptions] = useState<SearchResourceItem[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchCategoryFilter, setSearchCategoryFilter] = useState('')
   const [searchKindFilter, setSearchKindFilter] = useState('')
   const [searchNsFilter, setSearchNsFilter] = useState('')
   const [searchClusterFilter, setSearchClusterFilter] = useState<number | ''>('')
@@ -155,10 +175,15 @@ export default function Clusters() {
     }
     const timer = setTimeout(() => {
       setSearchLoading(true)
+      // 构建 kind 参数：优先用具体资源类型，其次用资源类别下的所有 kind
+      let kindParam = searchKindFilter
+      if (!kindParam && searchCategoryFilter) {
+        kindParam = searchCategoryMap[searchCategoryFilter].resources.join(',')
+      }
       k8sAPI.searchResources(
         searchQuery,
         50,
-        searchKindFilter,
+        kindParam,
         searchNsFilter,
         searchClusterFilter,
         searchLabelFilter
@@ -172,7 +197,7 @@ export default function Clusters() {
         .finally(() => setSearchLoading(false))
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchQuery, searchKindFilter, searchNsFilter, searchClusterFilter, searchLabelFilter])
+  }, [searchQuery, searchKindFilter, searchCategoryFilter, searchNsFilter, searchClusterFilter, searchLabelFilter])
 
   // 加载集群列表
   const loadClusters = async (silent = false) => {
@@ -488,6 +513,21 @@ export default function Clusters() {
               } as any}
             />
             <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>资源类别</InputLabel>
+              <Select
+                value={searchCategoryFilter}
+                label="资源类别"
+                onChange={(e) => {
+                  setSearchCategoryFilter(e.target.value as string)
+                  setSearchKindFilter('') // 切换类别时重置具体类型
+                }}
+              >
+                {Object.entries(searchCategoryMap).map(([k, v]) => (
+                  <MenuItem key={k} value={k}>{v.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 120 }}>
               <InputLabel>资源类型</InputLabel>
               <Select
                 value={searchKindFilter}
@@ -495,9 +535,14 @@ export default function Clusters() {
                 onChange={(e) => setSearchKindFilter(e.target.value as string)}
               >
                 <MenuItem value="">全部</MenuItem>
-                {Object.entries(resourceLabels).map(([k, v]) => (
-                  <MenuItem key={k} value={k}>{v}</MenuItem>
-                ))}
+                {Object.entries(resourceLabels)
+                  .filter(([k]) => {
+                    if (!searchCategoryFilter) return true
+                    return searchCategoryMap[searchCategoryFilter].resources.includes(k)
+                  })
+                  .map(([k, v]) => (
+                    <MenuItem key={k} value={k}>{v}</MenuItem>
+                  ))}
               </Select>
             </FormControl>
             <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -621,7 +666,7 @@ export default function Clusters() {
                     <TableCell>名称</TableCell>
                     {isPlatformAdmin && <TableCell>API Server</TableCell>}
                     <TableCell>版本</TableCell>
-                    <TableCell>状态</TableCell>
+                    <TableCell>连接状态</TableCell>
                     {isPlatformAdmin && <TableCell>节点/Pod</TableCell>}
                     <TableCell align="right">操作</TableCell>
                   </TableRow>
