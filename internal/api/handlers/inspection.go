@@ -122,6 +122,10 @@ func (h *InspectionHandler) CreateTask(c *gin.Context) {
 	if req.Timezone == "" {
 		req.Timezone = "Asia/Shanghai"
 	}
+	if len(req.ClusterIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请至少选择一个关联集群"})
+		return
+	}
 	task := toInspectionTask(req)
 	task.TenantID = c.GetUint("tenant_id")
 	if err := h.inspectionService.CreateTask(&task); err != nil {
@@ -170,6 +174,10 @@ func (h *InspectionHandler) UpdateTask(c *gin.Context) {
 		return
 	}
 	task := toInspectionTask(req)
+	if len(req.ClusterIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请至少选择一个关联集群"})
+		return
+	}
 	task.ID = uint(id)
 	if err := h.inspectionService.UpdateTask(&task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
@@ -233,7 +241,28 @@ func (h *InspectionHandler) ListJobs(c *gin.Context) {
 	var total int64
 	db.Model(&model.InspectionJob{}).Count(&total)
 	db.Offset((page - 1) * limit).Limit(limit).Find(&jobs)
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"items": jobs, "total": total, "page": page, "limit": limit}})
+
+	// 组装任务名称
+	type jobItem struct {
+		model.InspectionJob
+		TaskName string `json:"task_name"`
+	}
+	var items []jobItem
+	for _, j := range jobs {
+		item := jobItem{InspectionJob: j}
+		if j.TaskID == 0 {
+			item.TaskName = "一键巡检"
+		} else {
+			var task model.InspectionTask
+			if err := h.inspectionService.DB().Select("name").First(&task, j.TaskID).Error; err == nil {
+				item.TaskName = task.Name
+			} else {
+				item.TaskName = "未知任务"
+			}
+		}
+		items = append(items, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"items": items, "total": total, "page": page, "limit": limit}})
 }
 
 // GetJob 执行详情

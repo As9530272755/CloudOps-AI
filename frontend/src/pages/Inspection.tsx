@@ -140,6 +140,10 @@ export default function Inspection() {
 
   const handleSaveTask = async () => {
     if (!form.name) return
+    if (!form.cluster_ids || form.cluster_ids.length === 0) {
+      setError('请至少选择一个关联集群')
+      return
+    }
     let schedule = form.schedule || ''
     let scheduleType = form.schedule_type || 'manual'
     if (scheduleType !== 'custom' && scheduleType !== 'manual') {
@@ -384,7 +388,7 @@ export default function Inspection() {
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell>Job ID</TableCell>
+                          <TableCell>任务名称</TableCell>
                           <TableCell>触发方式</TableCell>
                           <TableCell>集群数</TableCell>
                           <TableCell>成功/失败</TableCell>
@@ -397,7 +401,7 @@ export default function Inspection() {
                       <TableBody>
                         {jobs.map(job => (
                           <TableRow key={job.id} hover>
-                            <TableCell>#{job.id}</TableCell>
+                            <TableCell sx={{ fontWeight: 600 }}>{job.task_name || `任务 #${job.task_id}`}</TableCell>
                             <TableCell>
                               <Chip label={job.trigger_type === 'manual' ? '手动' : '定时'} size="small" variant="outlined" />
                             </TableCell>

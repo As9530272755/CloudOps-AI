@@ -19,6 +19,7 @@ export interface InspectionTask {
 export interface InspectionJob {
   id: number
   task_id: number
+  task_name: string
   status: string
   trigger_type: string
   started_at: string

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -1558,12 +1559,9 @@ func (s *InspectionService) runJobWithTask(jobID uint, task model.InspectionTask
 	var clusterIDs []uint
 	_ = json.Unmarshal([]byte(task.ClusterIDs), &clusterIDs)
 	if len(clusterIDs) == 0 {
-		var clusters []model.Cluster
-		if err := s.db.Where("is_active = ?", true).Find(&clusters).Error; err == nil {
-			for _, c := range clusters {
-				clusterIDs = append(clusterIDs, c.ID)
-			}
-		}
+		s.db.Model(&model.InspectionJob{}).Where("id = ?", jobID).Update("status", "failed")
+		log.Printf("[inspection] job %d failed: no clusters associated with task %d", jobID, task.ID)
+		return
 	}
 
 	var wg sync.WaitGroup
