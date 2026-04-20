@@ -26,6 +26,7 @@ import { ConfigMapForm, configMapDefaultData } from './resource-forms/ConfigMapF
 import { SecretForm, secretDefaultData } from './resource-forms/SecretForm'
 import { PodForm, podDefaultData } from './resource-forms/PodForm'
 import { HorizontalPodAutoscalerForm, horizontalPodAutoscalerDefaultData } from './resource-forms/HorizontalPodAutoscalerForm'
+import { IngressForm, ingressDefaultData } from './resource-forms/IngressForm'
 import { NetworkPolicyForm, networkPolicyDefaultData } from './resource-forms/NetworkPolicyForm'
 import { PodDisruptionBudgetForm, podDisruptionBudgetDefaultData } from './resource-forms/PodDisruptionBudgetForm'
 import { EndpointSliceForm, endpointSliceDefaultData } from './resource-forms/EndpointSliceForm'
@@ -39,6 +40,24 @@ import { RuntimeClassForm, runtimeClassDefaultData } from './resource-forms/Runt
 import { VolumeAttachmentForm, volumeAttachmentDefaultData } from './resource-forms/VolumeAttachmentForm'
 import { CSIDriverForm, csiDriverDefaultData } from './resource-forms/CSIDriverForm'
 import { CSINodeForm, csiNodeDefaultData } from './resource-forms/CSINodeForm'
+import { StatefulSetForm, statefulSetDefaultData } from './resource-forms/StatefulSetForm'
+import { DaemonSetForm, daemonSetDefaultData } from './resource-forms/DaemonSetForm'
+import { ReplicaSetForm, replicaSetDefaultData } from './resource-forms/ReplicaSetForm'
+import { JobForm, jobDefaultData } from './resource-forms/JobForm'
+import { CronJobForm, cronJobDefaultData } from './resource-forms/CronJobForm'
+import { EndpointForm, endpointDefaultData } from './resource-forms/EndpointForm'
+import { PersistentVolumeForm, persistentVolumeDefaultData } from './resource-forms/PersistentVolumeForm'
+import { PersistentVolumeClaimForm, persistentVolumeClaimDefaultData } from './resource-forms/PersistentVolumeClaimForm'
+import { StorageClassForm, storageClassDefaultData } from './resource-forms/StorageClassForm'
+import { ServiceAccountForm, serviceAccountDefaultData } from './resource-forms/ServiceAccountForm'
+import { RoleForm, roleDefaultData } from './resource-forms/RoleForm'
+import { RoleBindingForm, roleBindingDefaultData } from './resource-forms/RoleBindingForm'
+import { ClusterRoleForm, clusterRoleDefaultData } from './resource-forms/ClusterRoleForm'
+import { ClusterRoleBindingForm, clusterRoleBindingDefaultData } from './resource-forms/ClusterRoleBindingForm'
+import { NamespaceForm, namespaceDefaultData } from './resource-forms/NamespaceForm'
+import { NodeForm, nodeDefaultData } from './resource-forms/NodeForm'
+import { EventForm, eventDefaultData } from './resource-forms/EventForm'
+import { CustomResourceDefinitionForm, customResourceDefinitionDefaultData } from './resource-forms/CustomResourceDefinitionForm'
 
 interface ResourceEditorDialogProps {
   open: boolean
@@ -66,6 +85,8 @@ function getDefaultFormData(kind: string, namespace: string): FormData {
       return { ...podDefaultData, ...base }
     case 'horizontalpodautoscalers':
       return { ...horizontalPodAutoscalerDefaultData, ...base }
+    case 'ingresses':
+      return { ...ingressDefaultData, ...base }
     case 'networkpolicies':
       return { ...networkPolicyDefaultData, ...base }
     case 'poddisruptionbudgets':
@@ -92,6 +113,42 @@ function getDefaultFormData(kind: string, namespace: string): FormData {
       return { ...csiDriverDefaultData, ...base }
     case 'csinodes':
       return { ...csiNodeDefaultData, ...base }
+    case 'statefulsets':
+      return { ...statefulSetDefaultData, ...base }
+    case 'daemonsets':
+      return { ...daemonSetDefaultData, ...base }
+    case 'replicasets':
+      return { ...replicaSetDefaultData, ...base }
+    case 'jobs':
+      return { ...jobDefaultData, ...base }
+    case 'cronjobs':
+      return { ...cronJobDefaultData, ...base }
+    case 'endpoints':
+      return { ...endpointDefaultData, ...base }
+    case 'persistentvolumes':
+      return { ...persistentVolumeDefaultData, ...base }
+    case 'persistentvolumeclaims':
+      return { ...persistentVolumeClaimDefaultData, ...base }
+    case 'storageclasses':
+      return { ...storageClassDefaultData, ...base }
+    case 'serviceaccounts':
+      return { ...serviceAccountDefaultData, ...base }
+    case 'roles':
+      return { ...roleDefaultData, ...base }
+    case 'rolebindings':
+      return { ...roleBindingDefaultData, ...base }
+    case 'clusterroles':
+      return { ...clusterRoleDefaultData, ...base }
+    case 'clusterrolebindings':
+      return { ...clusterRoleBindingDefaultData, ...base }
+    case 'namespaces':
+      return { ...namespaceDefaultData, ...base }
+    case 'nodes':
+      return { ...nodeDefaultData }
+    case 'events':
+      return { ...eventDefaultData, ...base }
+    case 'customresourcedefinitions':
+      return { ...customResourceDefinitionDefaultData }
     default:
       return { name: '', namespace }
   }
@@ -116,6 +173,8 @@ function renderForm(
       return <PodForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'horizontalpodautoscalers':
       return <HorizontalPodAutoscalerForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'ingresses':
+      return <IngressForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'networkpolicies':
       return <NetworkPolicyForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'poddisruptionbudgets':
@@ -142,6 +201,42 @@ function renderForm(
       return <CSIDriverForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
     case 'csinodes':
       return <CSINodeForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'statefulsets':
+      return <StatefulSetForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'daemonsets':
+      return <DaemonSetForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'replicasets':
+      return <ReplicaSetForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'jobs':
+      return <JobForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'cronjobs':
+      return <CronJobForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'endpoints':
+      return <EndpointForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'persistentvolumes':
+      return <PersistentVolumeForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'persistentvolumeclaims':
+      return <PersistentVolumeClaimForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'storageclasses':
+      return <StorageClassForm data={data as any} onChange={onChange} />
+    case 'serviceaccounts':
+      return <ServiceAccountForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'roles':
+      return <RoleForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'rolebindings':
+      return <RoleBindingForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'clusterroles':
+      return <ClusterRoleForm data={data as any} onChange={onChange} />
+    case 'clusterrolebindings':
+      return <ClusterRoleBindingForm data={data as any} onChange={onChange} />
+    case 'namespaces':
+      return <NamespaceForm data={data as any} onChange={onChange} />
+    case 'nodes':
+      return <NodeForm data={data as any} onChange={onChange} />
+    case 'events':
+      return <EventForm data={data as any} onChange={onChange} namespaceReadOnly={namespaceReadOnly} />
+    case 'customresourcedefinitions':
+      return <CustomResourceDefinitionForm data={data as any} onChange={onChange} />
     default:
       return null
   }

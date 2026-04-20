@@ -2,7 +2,13 @@ import { FormData } from '../../lib/yaml-helpers'
 
 export * from '../../lib/yaml-helpers'
 
+export * from './DeploymentForm'
+export * from './ServiceForm'
+export * from './ConfigMapForm'
+export * from './SecretForm'
+export * from './PodForm'
 export * from './HorizontalPodAutoscalerForm'
+export * from './IngressForm'
 export * from './NetworkPolicyForm'
 export * from './PodDisruptionBudgetForm'
 export * from './EndpointSliceForm'
@@ -16,6 +22,24 @@ export * from './RuntimeClassForm'
 export * from './VolumeAttachmentForm'
 export * from './CSIDriverForm'
 export * from './CSINodeForm'
+export * from './StatefulSetForm'
+export * from './DaemonSetForm'
+export * from './ReplicaSetForm'
+export * from './JobForm'
+export * from './CronJobForm'
+export * from './EndpointForm'
+export * from './PersistentVolumeForm'
+export * from './PersistentVolumeClaimForm'
+export * from './StorageClassForm'
+export * from './ServiceAccountForm'
+export * from './RoleForm'
+export * from './RoleBindingForm'
+export * from './ClusterRoleForm'
+export * from './ClusterRoleBindingForm'
+export * from './NamespaceForm'
+export * from './NodeForm'
+export * from './EventForm'
+export * from './CustomResourceDefinitionForm'
 
 // 表单组件类型
 export type FormComponentProps<T extends FormData = FormData> = {
@@ -32,6 +56,7 @@ export const supportedFormKinds = [
   'secrets',
   'pods',
   'horizontalpodautoscalers',
+  'ingresses',
   'networkpolicies',
   'poddisruptionbudgets',
   'endpointslices',
@@ -45,6 +70,24 @@ export const supportedFormKinds = [
   'volumeattachments',
   'csidrivers',
   'csinodes',
+  'statefulsets',
+  'daemonsets',
+  'replicasets',
+  'jobs',
+  'cronjobs',
+  'endpoints',
+  'persistentvolumes',
+  'persistentvolumeclaims',
+  'storageclasses',
+  'serviceaccounts',
+  'roles',
+  'rolebindings',
+  'clusterroles',
+  'clusterrolebindings',
+  'namespaces',
+  'nodes',
+  'events',
+  'customresourcedefinitions',
 ]
 
 export function isFormSupported(kind: string): boolean {
