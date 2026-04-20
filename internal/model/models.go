@@ -209,7 +209,7 @@ type ClusterMetadata struct {
 	PodCount       int        `gorm:"default:0" json:"pod_count"`
 	NamespaceCount int        `gorm:"default:0" json:"namespace_count"`
 	LastSyncedAt   *time.Time `json:"last_synced_at"`
-	HealthStatus   string     `gorm:"size:20;default:unknown" json:"health_status"` // healthy/unhealthy/offline/pending
+	HealthStatus   string     `gorm:"size:20;default:pending" json:"health_status"` // healthy/unhealthy/offline/pending
 	LogBackend     string     `gorm:"type:text" json:"log_backend,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 }
