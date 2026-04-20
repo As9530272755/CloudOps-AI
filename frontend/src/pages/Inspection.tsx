@@ -42,7 +42,7 @@ import {
   FlashOn as QuickIcon,
 } from '@mui/icons-material'
 
-import html2pdf from 'html2pdf.js'
+// html2pdf.js 改为动态导入，避免打包兼容性问题导致页面白屏
 import { inspectionAPI, InspectionTask, InspectionJob, InspectionResultItem } from '../lib/inspection-api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { clusterAPI, Cluster } from '../lib/cluster-api'
@@ -576,8 +576,9 @@ export default function Inspection() {
                                 }}>
                                   HTML
                                 </Button>
-                                <Button size="small" variant="outlined" onClick={() => {
+                                <Button size="small" variant="outlined" onClick={async () => {
                                   if (reportRef.current) {
+                                    const html2pdf = (await import('html2pdf.js')).default
                                     html2pdf().set({
                                       margin: 10,
                                       filename: `report-job${selectedJob.job.id}-cluster${r.cluster_id}.pdf`,

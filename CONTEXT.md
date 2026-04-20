@@ -2472,3 +2472,26 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 - `internal/api/handlers/ai_chat.go`：移除 `agentRuntimeProxy` 字段、`AgentChatStream` Handler、未使用的 `log` import
 
 后端编译 ✅ 服务重启 ✅
+
+### 提交 `4f21c15`
+**fix: probePermissionScope now checks both global and default NS permissions**
+
+#### 问题
+`probePermissionScope` 只探测 `default` namespace 的权限，导致全局 read-only 的 kubeconfig 被误判为 read-write，前端错误显示创建/编辑/删除按钮。
+
+#### 修复
+- `probePermissionScope`：同时探测全局权限（ClusterRole，Namespace=""）和 `default` namespace 权限（Role），取最严格的
+- `evaluatePermissionScope`：提取权限评估逻辑
+- `stricterPermissionScope`：返回两个权限范围中更严格的一个
+- `probeClusterHealth`：当集群状态为 healthy 且 `permission_scope` 为 `unknown` 或空时，自动补充探测
+- 探测失败时默认 `read-only`（安全保守策略）
+
+#### 权限判定规则
+| 全局权限 | default NS 权限 | 最终权限 | 前端按钮 |
+|---------|----------------|---------|---------|
+| read-only | read-write | **read-only** | ❌ 隐藏 |
+| read-write | read-only | **read-only** | ❌ 隐藏 |
+| read-write | read-write | read-write | ✅ 显示 |
+| admin | any | admin | ✅ 显示 |
+
+后端编译 ✅ 服务重启 ✅ 已推送 GitHub ✅

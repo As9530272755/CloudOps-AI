@@ -1492,7 +1492,7 @@ func (s *InspectionService) UpdateTask(task *model.InspectionTask) error {
 	return s.ReloadTask(*task)
 }
 
-// DeleteTask 删除任务
+// DeleteTask 删除任务（物理删除 + 级联删除执行记录）
 func (s *InspectionService) DeleteTask(id uint) error {
 	s.mu.Lock()
 	if entryID, ok := s.taskEntries[id]; ok {
@@ -1500,7 +1500,12 @@ func (s *InspectionService) DeleteTask(id uint) error {
 		delete(s.taskEntries, id)
 	}
 	s.mu.Unlock()
-	return s.db.Delete(&model.InspectionTask{}, id).Error
+	// 级联删除关联的巡检执行记录
+	if err := s.db.Where("task_id = ?", id).Delete(&model.InspectionJob{}).Error; err != nil {
+		return err
+	}
+	// 物理删除任务（避免同名任务冲突 + 释放数据）
+	return s.db.Unscoped().Delete(&model.InspectionTask{}, id).Error
 }
 
 // TriggerJob 手动触发巡检
