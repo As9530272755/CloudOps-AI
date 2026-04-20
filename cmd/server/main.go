@@ -77,7 +77,7 @@ func main() {
 	log.Println("✅ 仪表盘服务初始化完成")
 
 	// 创建巡检服务并启动调度器
-	inspectionService := service.NewInspectionService(db, k8sManager, dsService)
+	inspectionService := service.NewInspectionService(db, k8sManager, dsService, clusterService)
 	if err := inspectionService.StartScheduler(); err != nil {
 		log.Printf("⚠️ 巡检调度器启动警告: %v", err)
 	} else {

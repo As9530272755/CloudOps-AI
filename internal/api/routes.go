@@ -18,6 +18,7 @@ type Router struct {
 	authHandler          *handlers.AuthHandler
 	userHandler          *handlers.UserHandler
 	clusterHandler       *handlers.ClusterHandler
+	clusterService       *service.ClusterService
 	k8sHandler           *handlers.K8sHandler
 	dsHandler            *handlers.DatasourceHandler
 	dashboardHandler     *handlers.DashboardHandler
@@ -43,6 +44,7 @@ func NewRouter(jwtManager *auth.JWTManager, clusterService *service.ClusterServi
 		authHandler:          handlers.NewAuthHandler(jwtManager),
 		userHandler:          handlers.NewUserHandler(db),
 		clusterHandler:       handlers.NewClusterHandler(clusterService),
+		clusterService:       clusterService,
 		k8sHandler:           handlers.NewK8sHandler(k8sService, db),
 		dsHandler:            handlers.NewDatasourceHandler(dsService),
 		dashboardHandler:     handlers.NewDashboardHandler(dashboardService),
@@ -115,17 +117,30 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				clusters.POST("/test-and-probe", r.clusterHandler.TestAndProbeCluster)
 			}
 
-			// K8s 资源管理（需要 NS 权限校验）
-			protected.GET("/clusters/:id/namespaces", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetNamespaces)
-			protected.GET("/clusters/:id/stats", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetClusterStats)
-			protected.POST("/clusters/:id/refresh", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.RefreshCluster)
+			// K8s 资源管理（需要 NS 权限校验 + 集群状态校验）
+			k8sCluster := protected.Group("/clusters/:id")
+			k8sCluster.Use(middleware.ClusterStateMiddleware(r.clusterService))
+			{
+				k8sCluster.GET("/namespaces", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetNamespaces)
+				k8sCluster.GET("/stats", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetClusterStats)
+				k8sCluster.POST("/refresh", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.RefreshCluster)
+				k8sCluster.GET("/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.ListResources)
+				k8sCluster.GET("/resources/:kind/:name/yaml", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResourceYAML)
+				k8sCluster.GET("/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResource)
+				k8sCluster.POST("/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.CreateResource)
+				k8sCluster.PUT("/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.UpdateResource)
+				k8sCluster.DELETE("/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.DeleteResource)
+
+				// 网络追踪（同属集群操作）
+				k8sCluster.GET("/network/flows/topology", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetTopology)
+				k8sCluster.POST("/network/flows/enhance", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.EnhanceTopology)
+				k8sCluster.GET("/network/flows/traffic", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetPodTraffic)
+				k8sCluster.GET("/network/flows/list", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetFlowList)
+				k8sCluster.GET("/network/flows/timeseries", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetTimeseries)
+				k8sCluster.POST("/network/debug", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.CreateDebug)
+				k8sCluster.GET("/network/debug/logs", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetDebugLogs)
+			}
 			protected.GET("/search/resources", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.SearchResources)
-			protected.GET("/clusters/:id/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.ListResources)
-			protected.GET("/clusters/:id/resources/:kind/:name/yaml", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResourceYAML)
-			protected.GET("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResource)
-				protected.POST("/clusters/:id/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.CreateResource)
-				protected.PUT("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.UpdateResource)
-				protected.DELETE("/clusters/:id/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.DeleteResource)
 
 			// 数据源管理
 			ds := protected.Group("/datasources")
@@ -210,13 +225,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				nt.GET("/config", r.networkTraceHandler.GetConfig)
 				nt.PUT("/config", r.networkTraceHandler.UpdateConfig)
 			}
-			protected.GET("/clusters/:id/network/flows/topology", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetTopology)
-			protected.POST("/clusters/:id/network/flows/enhance", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.EnhanceTopology)
-			protected.GET("/clusters/:id/network/flows/traffic", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetPodTraffic)
-			protected.GET("/clusters/:id/network/flows/list", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetFlowList)
-			protected.GET("/clusters/:id/network/flows/timeseries", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetTimeseries)
-			protected.POST("/clusters/:id/network/debug", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.CreateDebug)
-			protected.GET("/clusters/:id/network/debug/logs", middleware.ModulePermissionMiddleware(r.db, "module:network:trace"), r.networkTraceHandler.GetDebugLogs)
+
 
 			// 日志管理
 			logs := protected.Group("/logs")

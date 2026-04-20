@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -21,17 +22,28 @@ import (
 	"github.com/cloudops/platform/internal/model"
 )
 
+// ClusterHealthState 集群健康状态（内存缓存）
+type ClusterHealthState struct {
+	Status        string
+	LastCheck     time.Time
+	FailCount     int
+	LastHeartbeat time.Time
+}
+
 // ClusterService 集群管理服务
 type ClusterService struct {
-	db         *gorm.DB
-	k8sManager *K8sManager
+	db          *gorm.DB
+	k8sManager  *K8sManager
+	healthCache map[uint]*ClusterHealthState
+	healthMu    sync.RWMutex
 }
 
 // NewClusterService 创建集群服务
 func NewClusterService(db *gorm.DB, k8sManager *K8sManager) *ClusterService {
 	return &ClusterService{
-		db:         db,
-		k8sManager: k8sManager,
+		db:          db,
+		k8sManager:  k8sManager,
+		healthCache: make(map[uint]*ClusterHealthState),
 	}
 }
 
@@ -281,6 +293,9 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 
 	s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Updates(metadata)
 
+	// 初始化内存健康缓存
+	s.recordHealthCheck(clusterID, true)
+
 	// 探测 kubeconfig 权限范围
 	scope := s.probePermissionScope(ctx, client)
 	s.db.Model(&model.Cluster{}).Where("id = ?", clusterID).Update("permission_scope", scope)
@@ -293,7 +308,51 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 		fmt.Sprintf("%d", clusterID), "", "success", "", duration)
 }
 
-// updateClusterHealth 更新集群健康状态
+// IsClusterHealthy 判断集群是否健康（内存查询，O(1)）
+func (s *ClusterService) IsClusterHealthy(clusterID uint) bool {
+	s.healthMu.RLock()
+	defer s.healthMu.RUnlock()
+	state, ok := s.healthCache[clusterID]
+	return ok && state.Status == "healthy"
+}
+
+// GetClusterHeartbeat 获取集群最后一次心跳时间
+func (s *ClusterService) GetClusterHeartbeat(clusterID uint) time.Time {
+	s.healthMu.RLock()
+	defer s.healthMu.RUnlock()
+	if state, ok := s.healthCache[clusterID]; ok {
+		return state.LastHeartbeat
+	}
+	return time.Time{}
+}
+
+// recordHealthCheck 记录健康检查结果到内存缓存
+func (s *ClusterService) recordHealthCheck(clusterID uint, healthy bool) {
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+
+	state, ok := s.healthCache[clusterID]
+	if !ok {
+		state = &ClusterHealthState{}
+		s.healthCache[clusterID] = state
+	}
+
+	state.LastCheck = time.Now()
+	if healthy {
+		state.Status = "healthy"
+		state.FailCount = 0
+		state.LastHeartbeat = time.Now()
+	} else {
+		state.FailCount++
+		if state.FailCount >= 3 {
+			state.Status = "offline"
+		} else {
+			state.Status = "unhealthy"
+		}
+	}
+}
+
+// updateClusterHealth 更新集群健康状态到数据库
 func (s *ClusterService) updateClusterHealth(clusterID uint, status string, errorMsg string) {
 	s.db.Model(&model.ClusterMetadata{}).Where("cluster_id = ?", clusterID).Update("health_status", status)
 }
@@ -337,10 +396,11 @@ func (s *ClusterService) probePermissionScope(ctx context.Context, client *kuber
 	return "read-only"
 }
 
-// StartHealthMonitor 启动集群健康检查（每 30 秒一次）
+// StartHealthMonitor 启动集群健康检查
+// 正常集群每 30 秒探测一次，异常集群每 5 秒探测一次，offline 集群每 60 秒探测一次
 func (s *ClusterService) StartHealthMonitor() {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			var list []model.Cluster
@@ -348,18 +408,41 @@ func (s *ClusterService) StartHealthMonitor() {
 				continue
 			}
 			for _, c := range list {
+				// 根据内存缓存状态决定探测间隔
+				s.healthMu.RLock()
+				state, ok := s.healthCache[c.ID]
+				s.healthMu.RUnlock()
+
+				var interval time.Duration
+				if !ok || state.Status == "healthy" {
+					interval = 30 * time.Second
+				} else if state.Status == "offline" {
+					interval = 60 * time.Second
+				} else {
+					interval = 5 * time.Second
+				}
+
+				if ok && time.Since(state.LastCheck) < interval {
+					continue // 跳过，未到探测时间
+				}
+
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				client, err := s.GetK8sClient(ctx, c.ID)
 				if err != nil {
 					cancel()
+					s.recordHealthCheck(c.ID, false)
 					s.updateClusterHealth(c.ID, "error", "")
 					continue
 				}
 				_, err = client.Discovery().ServerVersion()
 				cancel()
+
 				status := "error"
 				if err == nil {
 					status = "healthy"
+					s.recordHealthCheck(c.ID, true)
+				} else {
+					s.recordHealthCheck(c.ID, false)
 				}
 				s.updateClusterHealth(c.ID, status, "")
 

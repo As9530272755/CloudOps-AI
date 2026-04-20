@@ -16,22 +16,24 @@ import (
 
 // InspectionService 巡检服务
 type InspectionService struct {
-	db          *gorm.DB
-	k8sManager  *K8sManager
-	dsService   *DatasourceService
-	cron        *cron.Cron
-	taskEntries map[uint]cron.EntryID
-	mu          sync.Mutex
+	db             *gorm.DB
+	k8sManager     *K8sManager
+	dsService      *DatasourceService
+	clusterService *ClusterService
+	cron           *cron.Cron
+	taskEntries    map[uint]cron.EntryID
+	mu             sync.Mutex
 }
 
 // NewInspectionService 创建巡检服务
-func NewInspectionService(db *gorm.DB, k8sManager *K8sManager, dsService *DatasourceService) *InspectionService {
+func NewInspectionService(db *gorm.DB, k8sManager *K8sManager, dsService *DatasourceService, clusterService *ClusterService) *InspectionService {
 	s := &InspectionService{
-		db:          db,
-		k8sManager:  k8sManager,
-		dsService:   dsService,
-		cron:        cron.New(cron.WithSeconds(), cron.WithLocation(time.Local)),
-		taskEntries: make(map[uint]cron.EntryID),
+		db:             db,
+		k8sManager:     k8sManager,
+		dsService:      dsService,
+		clusterService: clusterService,
+		cron:           cron.New(cron.WithSeconds(), cron.WithLocation(time.Local)),
+		taskEntries:    make(map[uint]cron.EntryID),
 	}
 	return s
 }
@@ -185,6 +187,15 @@ func (s *InspectionService) inspectCluster(ctx context.Context, clusterID uint, 
 		Score:     100,
 		RiskLevel: "low",
 		Findings:  "[]",
+	}
+
+	// 实时连通性预检：集群 offline 时直接失败，不读 informer 旧缓存
+	if s.clusterService != nil && !s.clusterService.IsClusterHealthy(clusterID) {
+		res.Status = "failed"
+		res.ErrorMsg = "集群连接异常，无法执行巡检"
+		res.Score = 0
+		res.RiskLevel = "critical"
+		return res
 	}
 
 	cc := s.k8sManager.GetClusterClient(clusterID)

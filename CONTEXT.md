@@ -2192,6 +2192,129 @@ store.Replace(typedObjects, list.GetResourceVersion())
 | 自定义资源 | 1 | customresourcedefinitions |
 | **总计** | **39** | |
 
+### 20.6 新增 19 种资源的表单创建弹窗（补全 39 种）
+
+**背景**：20.4 已完成 14 种资源表单，但剩余 19 种资源（StatefulSet、DaemonSet、ReplicaSet、Job、CronJob、Endpoint、PV、PVC、StorageClass、ServiceAccount、Role、RoleBinding、ClusterRole、ClusterRoleBinding、Namespace、Node、Event、CRD、Ingress）仍只有 YAML 模式，不支持表单创建。
+
+**新建表单组件**（19 个）：
+
+| 资源类型 | 表单文件 | 关键字段 |
+|----------|----------|----------|
+| statefulsets | `StatefulSetForm.tsx` | serviceName, replicas, image, volumeClaimTemplates |
+| daemonsets | `DaemonSetForm.tsx` | image, nodeSelector, tolerations |
+| replicasets | `ReplicaSetForm.tsx` | image, replicas, selector |
+| jobs | `JobForm.tsx` | image, completions, parallelism, ttlSecondsAfterFinished |
+| cronjobs | `CronJobForm.tsx` | schedule, jobTemplate, suspend, concurrencyPolicy |
+| endpoints | `EndpointForm.tsx` | subsets (addresses, ports) |
+| persistentvolumes | `PersistentVolumeForm.tsx` | capacity, accessModes, storageClassName, hostPath |
+| persistentvolumeclaims | `PersistentVolumeClaimForm.tsx` | accessModes, storageClassName, resources.requests.storage |
+| storageclasses | `StorageClassForm.tsx` | provisioner, reclaimPolicy, volumeBindingMode |
+| serviceaccounts | `ServiceAccountForm.tsx` | automountServiceAccountToken |
+| roles | `RoleForm.tsx` | rules (apiGroups, resources, verbs) |
+| rolebindings | `RoleBindingForm.tsx` | roleRef, subjects |
+| clusterroles | `ClusterRoleForm.tsx` | rules (apiGroups, resources, verbs, nonResourceURLs) |
+| clusterrolebindings | `ClusterRoleBindingForm.tsx` | roleRef, subjects |
+| namespaces | `NamespaceForm.tsx` | labels |
+| nodes | `NodeForm.tsx` | labels, taints (key/effect/value) |
+| events | `EventForm.tsx` | reason, message, type, involvedObject |
+| customresourcedefinitions | `CustomResourceDefinitionForm.tsx` | group, versions, scope, names |
+| ingresses | `IngressForm.tsx` | rules (host, paths, serviceName, servicePort), tls |
+
+**修改文件**：
+
+- `frontend/src/components/resource-forms/index.ts`：
+  - 导出全部 19 个新表单组件
+  - 补全原有 5 个表单组件（Deployment、Service、ConfigMap、Secret、Pod）的导出
+  - `supportedFormKinds` 列表补全为 39 种资源
+
+- `frontend/src/lib/yaml-helpers.ts`：
+  - 补全 39 种资源的 `generateManifest` / `parseManifest` 双向转换逻辑
+  - 覆盖：工作负载 10 种 + 网络 5 种 + 存储 6 种 + 配置 8 种 + 访问控制 5 种 + 节点 2 种 + 命名空间 1 种 + 事件 1 种 + 自定义资源 1 种
+
+- `frontend/src/components/ResourceEditorDialog.tsx`：
+  - 补全全部 39 种表单组件的 `import`
+  - `getDefaultFormData` 补全 19 个新 case
+  - `renderForm` 补全 19 个新 case
+  - 原有 5 + 14 = 19 种 + 新增 19 种 = 39 种全部覆盖
+
+### 20.7 前端编译验证
+
+- `npx tsc --noEmit --skipLibCheck` ✅（0 错误）
+- `go build -o cloudops-backend ./cmd/server` ✅（0 错误）
+- 后端已重启并监听 `:9000` ✅
+
+---
+
+## 2026-04-20 集群连接状态时效性优化（三层防御）
+
+### 背景
+巡检报告 #23 显示 KS/KS-master 集群评分 100，但此时集群机器已关机。根因：巡检读 informer 旧缓存，未做实时连通性探测；全站各模块对 offline 集群的处理不一致。
+
+### 实施内容
+
+#### Step 1：健康检查 Monitor 优化
+
+**文件**：`internal/service/cluster_service.go`
+
+- 新增 `ClusterHealthState` 结构体 + `healthCache` 内存缓存（map + RWMutex）
+- 新增公共方法：
+  - `IsClusterHealthy(clusterID)` — O(1) 内存查询
+  - `GetClusterHeartbeat(clusterID)` — 获取最后一次心跳时间
+  - `recordHealthCheck(clusterID, healthy)` — 更新内存缓存（连续 3 次失败标记 offline）
+- `StartHealthMonitor` 改为自适应探测周期：
+  - 健康集群：30 秒
+  - 异常集群：5 秒
+  - offline 集群：60 秒
+- `testClusterConnection` 成功后同步初始化内存缓存
+
+#### Step 2：统一状态网关
+
+**新增文件**：`internal/api/middleware/cluster_state.go`
+
+- `ClusterStateMiddleware`：从 URL `:id` 提取 clusterID，调用 `IsClusterHealthy`
+- offline 集群直接返回 503：`{"error": "集群连接异常，请检查集群状态后重试", "code": "CLUSTER_OFFLINE"}`
+
+**修改文件**：`internal/api/routes.go`
+
+- Router 结构体新增 `clusterService` 字段
+- K8s 资源路由（`/clusters/:id/...`）统一放到 `k8sCluster` group，注册中间件
+- 网络追踪路由（`/clusters/:id/network/...`）同样纳入 group
+
+#### Step 3：巡检预检
+
+**文件**：`internal/service/inspection_service.go`
+
+- `InspectionService` 新增 `clusterService` 字段
+- `inspectCluster` 开头增加连通性预检：
+  ```go
+  if !s.clusterService.IsClusterHealthy(clusterID) {
+      return &model.InspectionResult{
+          Status: "failed",
+          ErrorMsg: "集群连接异常，无法执行巡检",
+          Score: 0,
+          RiskLevel: "critical",
+      }
+  }
+  ```
+
+**修改文件**：`cmd/server/main.go`
+
+- `NewInspectionService` 传入 `clusterService` 参数
+
+### 效果
+
+| 场景 | 优化前 | 优化后 |
+|------|--------|--------|
+| 关机集群巡检 | 读旧缓存，评分 100 | 预检失败，报告 `failed` |
+| 关机集群进详情页 | 显示旧 Pod/Deployment | 返回 503 "集群连接异常" |
+| 关机集群查日志/终端 | 可能卡住或报错 | 返回 503 "集群连接异常" |
+| 集群状态刷新延迟 | 30 秒 | 5 秒（异常时） |
+| 全站错误提示 | 不一致（timeout/空白/403） | 统一 "集群连接异常" |
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+
 ---
 
 *最后更新：2026-04-20*
