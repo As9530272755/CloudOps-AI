@@ -204,7 +204,7 @@ func (p *OpenClawProvider) ChatCompletionStream(ctx context.Context, messages []
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body))
+		return classifyAIError(fmt.Sprintf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body)))
 	}
 
 	// 如果返回的不是 SSE，则按普通 JSON 一次性读取

@@ -459,13 +459,15 @@ func (e *ESAdapter) buildQuery(req QueryRequest) map[string]interface{} {
 		})
 	}
 
-	// 命名空间过滤
+	// 命名空间过滤（同时查 text 和 keyword 子字段，兼容不同 mapping）
 	if ns, ok := req.Filters["namespace"]; ok && ns != "" {
 		must = append(must, map[string]interface{}{
 			"bool": map[string]interface{}{
 				"should": []map[string]interface{}{
 					{"term": map[string]interface{}{"kubernetes.namespace_name": ns}},
+					{"term": map[string]interface{}{"kubernetes.namespace_name.keyword": ns}},
 					{"term": map[string]interface{}{"namespace": ns}},
+					{"term": map[string]interface{}{"namespace.keyword": ns}},
 				},
 				"minimum_should_match": 1,
 			},

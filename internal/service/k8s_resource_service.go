@@ -53,7 +53,7 @@ func (s *K8sResourceService) SearchResources(ctx context.Context, keyword string
 }
 
 // ListResources 列出资源
-func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace, keyword string, page, limit int) ([]map[string]interface{}, int, error) {
+func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace, keyword, resourceType string, page, limit int) ([]map[string]interface{}, int, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil {
 		// 异步启动，不阻塞 HTTP 请求
@@ -69,7 +69,7 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	}
 
 	// Redis 缓存：多用户共享，减少 informer 内存扫描压力
-	cacheKey := fmt.Sprintf("k8s:list:%d:%s:%s:%s:%d:%d", clusterID, kind, namespace, keyword, page, limit)
+	cacheKey := fmt.Sprintf("k8s:list:%d:%s:%s:%s:%s:%d:%d", clusterID, kind, namespace, keyword, resourceType, page, limit)
 	if redis.Client != nil {
 		cached, err := redis.Client.Get(ctx, cacheKey).Result()
 		if err == nil && cached != "" {
@@ -94,9 +94,9 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	}
 
 	if clusterKinds[kind] {
-		items, total, err = cc.GetClusterResourceList(kind, keyword, page, limit)
+		items, total, err = cc.GetClusterResourceList(kind, keyword, resourceType, page, limit)
 	} else {
-		items, total, err = cc.GetNamespacedResourceList(kind, namespace, keyword, page, limit)
+		items, total, err = cc.GetNamespacedResourceList(kind, namespace, keyword, resourceType, page, limit)
 	}
 	if err != nil {
 		return nil, 0, err
@@ -556,6 +556,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"namespace":         v.Namespace,
 			"class":             className,
 			"hosts":             ingressHosts(v),
+			"lb_ip":             ingressLB(v),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Endpoints:
@@ -647,6 +648,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"type":              v.Type,
 			"reason":            v.Reason,
 			"object":            v.InvolvedObject.Name,
+			"resource_kind":     v.InvolvedObject.Kind,
 			"message":           v.Message,
 			"count":             v.Count,
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
@@ -900,6 +902,19 @@ func ingressHosts(ing *networkingv1.Ingress) []string {
 		hosts = append(hosts, rule.Host)
 	}
 	return hosts
+}
+
+func ingressLB(ing *networkingv1.Ingress) string {
+	var addrs []string
+	for _, ingress := range ing.Status.LoadBalancer.Ingress {
+		if ingress.IP != "" {
+			addrs = append(addrs, ingress.IP)
+		}
+		if ingress.Hostname != "" {
+			addrs = append(addrs, ingress.Hostname)
+		}
+	}
+	return strings.Join(addrs, ", ")
 }
 
 func pvClaim(pv *corev1.PersistentVolume) string {

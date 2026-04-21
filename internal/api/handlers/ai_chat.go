@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -138,7 +139,15 @@ func (h *AIChatHandler) ChatStream(c *gin.Context) {
 
 	if err != nil {
 		mu.Lock()
-		fmt.Fprintf(c.Writer, "data: {\"error\":%q}\n\n", err.Error())
+		var errCode string
+		var pe *ai.AIPlatformError
+		if errors.As(err, &pe) {
+			errCode = pe.Code
+		} else {
+			errCode = ai.AIErrorCodeUnknown
+		}
+		b, _ := json.Marshal(ai.StreamResponse{Error: err.Error(), ErrorCode: errCode})
+		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
 		flush()
 		mu.Unlock()
 		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
@@ -151,6 +160,70 @@ func (h *AIChatHandler) ChatStream(c *gin.Context) {
 	b, _ := json.Marshal(ai.StreamResponse{Done: true})
 	fmt.Fprintf(c.Writer, "data: %s\n\n", b)
 	flush()
+	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	flush()
+	mu.Unlock()
+}
+
+// AgentChatStream Agent 流式对话 (SSE)
+func (h *AIChatHandler) AgentChatStream(c *gin.Context) {
+	var req ChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if !h.checkSessionOwner(c, req.SessionID) {
+		return
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.WriteHeader(http.StatusOK)
+
+	var mu sync.Mutex
+	flush := func() {
+		if f, ok := c.Writer.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				mu.Lock()
+				b, _ := json.Marshal(service.AgentEvent{Type: "heartbeat"})
+				fmt.Fprintf(c.Writer, "data: %s\n\n", b)
+				flush()
+				mu.Unlock()
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	err := h.agentSvc.AgentChatStream(c.Request.Context(), req.PlatformID, req.SessionID, req.Messages, func(ev service.AgentEvent) {
+		mu.Lock()
+		b, _ := json.Marshal(ev)
+		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
+		flush()
+		mu.Unlock()
+	})
+	close(done)
+
+	if err != nil {
+		mu.Lock()
+		fmt.Fprintf(c.Writer, "data: {\"type\":\"error\",\"content\":%q}\n\n", err.Error())
+		flush()
+		mu.Unlock()
+	}
+
+	mu.Lock()
 	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 	flush()
 	mu.Unlock()

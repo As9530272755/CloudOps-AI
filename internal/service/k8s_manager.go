@@ -910,7 +910,7 @@ func (km *K8sManager) HealthCheck(clusterID uint) bool {
 }
 
 // GetNamespacedResourceList 统一获取命名空间级资源（从 Store 内存读取）
-func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string, keyword string, page, limit int) ([]interface{}, int, error) {
+func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string, keyword string, resourceType string, page, limit int) ([]interface{}, int, error) {
 	var store cache.Store
 	switch kind {
 	case "pods":
@@ -975,6 +975,18 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 	for _, obj := range list {
 		if ns := getNamespace(obj); namespace == "" || namespace == "all" || ns == namespace {
 			if keyword == "" || strings.Contains(strings.ToLower(getName(obj)), keywordLower) {
+				// Service 类型筛选
+				if kind == "services" && resourceType != "" {
+					if svc, ok := obj.(*corev1.Service); ok && string(svc.Spec.Type) != resourceType {
+						continue
+					}
+				}
+				// Event 资源类型筛选
+				if kind == "events" && resourceType != "" {
+					if evt, ok := obj.(*corev1.Event); ok && evt.InvolvedObject.Kind != resourceType {
+						continue
+					}
+				}
 				filtered = append(filtered, obj)
 			}
 		}
@@ -983,7 +995,7 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 }
 
 // GetClusterResourceList 统一获取集群级资源（从 Store 内存读取）
-func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, page, limit int) ([]interface{}, int, error) {
+func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, resourceType string, page, limit int) ([]interface{}, int, error) {
 	var store cache.Store
 	switch kind {
 	case "nodes":

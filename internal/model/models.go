@@ -160,15 +160,19 @@ type ClusterLogBackend struct {
 
 // ToConfig 转换为 LogBackendConfig
 func (b ClusterLogBackend) ToConfig() LogBackendConfig {
+	defaultAll := "k8s-es-logs-*"
+	if b.Type == "opensearch" {
+		defaultAll = "k8s-os-logs-*"
+	}
 	cfg := LogBackendConfig{
 		Type: b.Type,
 		URL:  b.URL,
 		IndexPatterns: map[string]string{
-			"all":     "k8s-es-logs-*",
+			"all":     defaultAll,
 			"ingress": "nginx-ingress-*",
-			"coredns": "k8s-es-logs-*",
-			"lb":      "k8s-es-logs-*",
-			"app":     "k8s-es-logs-*",
+			"coredns": defaultAll,
+			"lb":      defaultAll,
+			"app":     defaultAll,
 		},
 		Headers: map[string]string{},
 	}

@@ -734,12 +734,17 @@ function LogBackendSettings() {
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const getDefaultIndexPatterns = (type: string) => {
+    const prefix = type === 'opensearch' ? 'k8s-os-logs-*' : 'k8s-es-logs-*'
+    return { all: prefix, ingress: 'nginx-ingress-*', coredns: prefix, lb: prefix, app: prefix }
+  }
+
   const [form, setForm] = useState<LogBackendForm>({
     cluster_id: 0,
     name: '',
     type: 'elasticsearch',
     url: '',
-    index_patterns: { all: 'k8s-es-logs-*', ingress: 'nginx-ingress-*', coredns: 'k8s-es-logs-*', lb: 'k8s-es-logs-*', app: 'k8s-es-logs-*' },
+    index_patterns: getDefaultIndexPatterns('elasticsearch'),
     username: '',
     password: '',
   })
@@ -791,7 +796,7 @@ function LogBackendSettings() {
       name: '',
       type: 'elasticsearch',
       url: '',
-      index_patterns: { all: 'k8s-es-logs-*', ingress: 'nginx-ingress-*', coredns: 'k8s-es-logs-*', lb: 'k8s-es-logs-*', app: 'k8s-es-logs-*' },
+      index_patterns: getDefaultIndexPatterns('elasticsearch'),
       username: '',
       password: '',
     })
@@ -812,11 +817,11 @@ function LogBackendSettings() {
       type: b.type,
       url: b.url,
       index_patterns: {
-        all: b.index_patterns?.all || 'k8s-es-logs-*',
+        all: b.index_patterns?.all || getDefaultIndexPatterns(b.type).all,
         ingress: b.index_patterns?.ingress || 'nginx-ingress-*',
-        coredns: b.index_patterns?.coredns || 'k8s-es-logs-*',
-        lb: b.index_patterns?.lb || 'k8s-es-logs-*',
-        app: b.index_patterns?.app || 'k8s-es-logs-*',
+        coredns: b.index_patterns?.coredns || getDefaultIndexPatterns(b.type).all,
+        lb: b.index_patterns?.lb || getDefaultIndexPatterns(b.type).all,
+        app: b.index_patterns?.app || getDefaultIndexPatterns(b.type).all,
       },
       username: b.username || '',
       password: b.password || '',

@@ -2395,7 +2395,7 @@ store.Replace(typedObjects, list.GetResourceVersion())
 
 ---
 
-*最后更新：2026-04-20*
+*最后更新：2026-04-21*
 
 ---
 
@@ -2798,3 +2798,117 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 - GitHub `main` 分支：待推送
 - 后端 & 前端编译通过 ✅
 - 服务稳定运行 ✅
+
+---
+
+
+## 2026-04-21 开发记录
+
+### 一、事件页面：资源类型筛选 + resource_kind 列
+
+**需求**：事件（Events）列表需要按资源类型（Pod、Deployment、Service 等）筛选，且表格展示资源类型列。
+
+**实现**：
+- **后端 `k8s_manager.go`**：
+  - `GetNamespacedResourceList` 增加 `resourceType` 参数
+  - `kind == "events"` 时，按 `evt.InvolvedObject.Kind` 过滤
+- **后端 `k8s_resource_service.go`**：
+  - `convertToSummary` 对 Event 资源新增 `resource_kind` 字段（`v.InvolvedObject.Kind`）
+  - `ListResources` 透传 `resourceType` 参数
+- **后端 `k8s.go`**：handler 透传 `resourceType` query 参数
+- **前端 `ClusterDetail.tsx`**：
+  - events 子页面顶部资源类型筛选，从 `TextField` 改为 `Select` 下拉框
+  - 选项从当前事件列表的 `resource_kind` 动态提取（自动覆盖 Repository 等 CRD 类型）
+  - 表格列新增 `resource_kind`
+- **前端 `k8s-api.ts`**：`listResources` 方法新增 `resourceType` 参数
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 二、Service 类型筛选修复
+
+**问题**：Service 列表页选择类型（ClusterIP/NodePort/LoadBalancer）后，切换回"全部"不生效。
+
+**根因**：`loadResources` 中 `typeFilter` 被闭包捕获旧值，导致筛选逻辑始终使用上一次的值。
+
+**修复**：
+- `frontend/src/pages/ClusterDetail.tsx`：`loadResources` 增加 `typeFilterOverride` 参数，显式传入当前筛选值
+- 调用 `loadResources` 时传入 `typeFilter` 当前状态
+
+前端编译 ✅
+
+---
+
+### 三、OpenSearch 日志查询修复
+
+**问题 1：默认索引前缀不匹配**
+- OpenSearch 实际索引为 `k8s-os-logs-*`（日级别），但系统默认配置为 `k8s-es-logs-*`
+- 导致 OpenSearch 后端查询返回 0 条结果
+
+**修复**：
+- `internal/model/models.go`：`ToConfig()` 根据 `Type` 区分默认索引前缀
+  - `opensearch` → `k8s-os-logs-*`
+  - `elasticsearch` → `k8s-es-logs-*`
+- `frontend/src/pages/Settings.tsx`：前端新建/编辑日志后端时同样根据类型区分默认索引
+
+**问题 2：namespace 字段兼容性**
+- 不同采集器（fluent-bit / fluentd / filebeat）写入的 namespace 字段名不同
+- 有的用 `kubernetes.namespace_name`，有的用 `namespace`，且可能带 `.keyword` 子字段
+
+**修复**：
+- `internal/pkg/log/es_adapter.go`：`buildQuery` 中 namespace 过滤使用 `bool.should` 同时匹配 4 个字段：
+  - `kubernetes.namespace_name`
+  - `kubernetes.namespace_name.keyword`
+  - `namespace`
+  - `namespace.keyword`
+
+API 验证：OpenSearch 15 分钟全量日志返回 **51,737 条** ✅
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 四、AI 助手 SSE 流式传输可靠性优化
+
+**背景**：`fetch` + `ReadableStream` 在部分浏览器/网络环境下不稳定，流中断后无错误提示。
+
+**实现**：
+- **XMLHttpRequest 替代 fetch**：
+  - `frontend/src/lib/ai-chat-api.ts`：`chatStream` 和 `agentChatStream` 均改为 `XMLHttpRequest` + `onprogress`，利用 `responseText` 增量读取，逐行解析 SSE 格式
+  - `internal/api/handlers/ai_chat.go`：新增 `AgentChatStream` handler，注册路由 `POST /api/v1/ai/agent/chat/stream`
+- **动态超时**：
+  - `frontend/src/pages/AI.tsx`：发送消息时读取当前 AI 平台的 `config_json.timeout` 配置
+  - `STREAM_MAX_MS = timeout × 1000`，`CONTENT_IDLE_MS = max(30s, timeout × 1000 - 10s)`
+  - 不同平台自动适配：Ollama 默认 600s，OpenClaw/Hermes 默认 300s
+- **Context 长度超限错误识别**：
+  - `internal/pkg/ai/provider.go`：`StreamResponse` 新增 `ErrorCode` 字段（`context_exceeded` | `timeout` | `network` | `rate_limit` | `unknown`）；新增 `IsContextExceededError()` 匹配 10+ 种关键词
+  - `internal/pkg/ai/openclaw.go`：HTTP 非 200 时解析响应体，调用 `IsContextExceededError` 分类，匹配成功发送 `error_code: "context_exceeded"`
+  - `internal/pkg/ai/ollama.go`：**修复 bug**：流式 NDJSON 响应中 `error` 字段此前被静默忽略，现在正确识别并返回
+  - `frontend/src/pages/AI.tsx`：收到 `error_code === 'context_exceeded'` 显示精准提示
+  - `internal/service/agent_service.go`：`AgentEvent` 新增 `ErrorCode` 字段透传错误分类
+- **兜底轮询**：
+  - `frontend/src/pages/AI.tsx` `runWatchdog`：SSE 流每 5 秒兜底检查 `getMessages`，AI 完成后自动展示结果
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 五、Ingress LB IP 显示
+
+**需求**：Ingress 列表展示 LoadBalancer 分配的 IP 或 Hostname。
+
+**实现**：
+- **后端 `k8s_resource_service.go`**：`convertToSummary` 对 `*networkingv1.Ingress` 提取 `status.loadBalancer.ingress[].ip` 或 `hostname`，返回 `lb_ip` 字段
+- **前端 `ClusterDetail.tsx`**：`getColumns` 中 ingresses 表格新增 `lb_ip` 列
+
+**根因说明**：
+- K8s Ingress 的 `status.loadBalancer.ingress` 由 Ingress Controller 自动同步（从 Ingress Controller Service 的 `EXTERNAL-IP` 获取）
+- 私有化环境需 MetalLB 等方案提供 LoadBalancer IP
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+*最后更新：2026-04-21*
+

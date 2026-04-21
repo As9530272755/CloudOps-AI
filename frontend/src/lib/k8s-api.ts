@@ -97,7 +97,8 @@ export const k8sAPI = {
     namespace: string = '',
     page: number = 1,
     limit: number = 20,
-    keyword: string = ''
+    keyword: string = '',
+    resourceType: string = ''
   ) => {
     const params = new URLSearchParams()
     if (namespace && namespace !== 'all') {
@@ -105,6 +106,9 @@ export const k8sAPI = {
     }
     if (keyword && keyword.trim()) {
       params.set('keyword', keyword.trim())
+    }
+    if (resourceType) {
+      params.set('type', resourceType)
     }
     params.set('page', String(page))
     params.set('limit', String(limit))
@@ -269,8 +273,8 @@ export const resourceCategories = [
 ]
 
 export const resourceLabels: Record<string, string> = {
-  nodes: '节点',
-  namespaces: '命名空间',
+  nodes: 'Node',
+  namespaces: 'Namespace',
   pods: 'Pod',
   deployments: 'Deployment',
   statefulsets: 'StatefulSet',

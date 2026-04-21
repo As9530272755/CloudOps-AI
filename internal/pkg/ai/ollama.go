@@ -195,7 +195,7 @@ func (p *OllamaProvider) ChatCompletionStream(ctx context.Context, messages []Me
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Ollama API 返回状态码 %d: %s", resp.StatusCode, string(body))
+		return classifyAIError(fmt.Sprintf("Ollama API 返回状态码 %d: %s", resp.StatusCode, string(body)))
 	}
 
 	var finalToolCalls []ToolCall
@@ -219,10 +219,14 @@ func (p *OllamaProvider) ChatCompletionStream(ctx context.Context, messages []Me
 				Content   string          `json:"content"`
 				ToolCalls []ollamaToolCall `json:"tool_calls"`
 			} `json:"message"`
-			Done bool `json:"done"`
+			Done  bool   `json:"done"`
+			Error string `json:"error"`
 		}
 		if err := json.Unmarshal(line, &result); err != nil {
 			continue
+		}
+		if result.Error != "" {
+			return classifyAIError(fmt.Sprintf("Ollama API 错误: %s", result.Error))
 		}
 		if len(result.Message.ToolCalls) > 0 {
 			finalToolCalls = append(finalToolCalls, convertOllamaToolCalls(result.Message.ToolCalls)...)

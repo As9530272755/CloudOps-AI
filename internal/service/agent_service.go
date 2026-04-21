@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,12 +16,13 @@ import (
 
 // AgentEvent Agent 执行过程中的事件
 type AgentEvent struct {
-	Type    string `json:"type"` // text | tool_start | tool_end | error | done
-	Content string `json:"content,omitempty"`
-	Tool    string `json:"tool,omitempty"`
-	Input   string `json:"input,omitempty"`
-	Output  string `json:"output,omitempty"`
-	Done    bool   `json:"done,omitempty"`
+	Type      string `json:"type"` // text | tool_start | tool_end | error | done
+	Content   string `json:"content,omitempty"`
+	ErrorCode string `json:"error_code,omitempty"`
+	Tool      string `json:"tool,omitempty"`
+	Input     string `json:"input,omitempty"`
+	Output    string `json:"output,omitempty"`
+	Done      bool   `json:"done,omitempty"`
 }
 
 // AgentService AI Agent 服务
@@ -37,11 +39,19 @@ func NewAgentService(platformSvc *AIPlatformService, sessionSvc *AIChatSessionSe
 	return &AgentService{platformSvc: platformSvc, sessionSvc: sessionSvc, db: db, k8sSvc: k8sSvc, logSvc: logSvc}
 }
 
+func extractAIErrorCode(err error) string {
+	var pe *ai.AIPlatformError
+	if errors.As(err, &pe) {
+		return pe.Code
+	}
+	return ai.AIErrorCodeUnknown
+}
+
 // AgentChatStream 执行 Agent 流式对话
 func (s *AgentService) AgentChatStream(ctx context.Context, platformID, sessionID string, messages []ai.Message, onEvent func(AgentEvent)) error {
 	provider, err := s.platformSvc.NewProviderByID(platformID)
 	if err != nil {
-		onEvent(AgentEvent{Type: "error", Content: err.Error()})
+		onEvent(AgentEvent{Type: "error", Content: err.Error(), ErrorCode: extractAIErrorCode(err)})
 		onEvent(AgentEvent{Type: "done", Done: true})
 		return err
 	}
@@ -59,7 +69,7 @@ func (s *AgentService) AgentChatStream(ctx context.Context, platformID, sessionI
 	for i := 0; i < 5; i++ {
 		res, err := provider.ChatCompletion(ctx, truncateMessages(messages, provider.MaxHistoryMessages()), tools)
 		if err != nil {
-			onEvent(AgentEvent{Type: "error", Content: err.Error()})
+			onEvent(AgentEvent{Type: "error", Content: err.Error(), ErrorCode: extractAIErrorCode(err)})
 			onEvent(AgentEvent{Type: "done", Done: true})
 			return err
 		}
@@ -283,7 +293,7 @@ func (s *AgentService) execTool(ctx context.Context, tc ai.ToolCall) (string, er
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
 			return "", fmt.Errorf("参数解析失败: %w", err)
 		}
-		pods, total, err := s.k8sSvc.ListResources(ctx, a.ClusterID, "pods", a.Namespace, "", 1, 50)
+		pods, total, err := s.k8sSvc.ListResources(ctx, a.ClusterID, "pods", a.Namespace, "", "", 1, 50)
 		if err != nil {
 			return "", err
 		}

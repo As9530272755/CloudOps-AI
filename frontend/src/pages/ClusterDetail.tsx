@@ -140,6 +140,7 @@ export default function ClusterDetail() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [keyword, setKeyword] = useState('')
+  const [resourceTypeFilter, setResourceTypeFilter] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
@@ -252,7 +253,7 @@ export default function ClusterDetail() {
   }
 
   // 加载资源列表
-  const loadResources = async (kind: string, currentPage = page, search = keyword, silent = false) => {
+  const loadResources = async (kind: string, currentPage = page, search = keyword, silent = false, typeFilterOverride?: string) => {
     if (!kind) return
     if (silent) {
       setSyncing(true)
@@ -262,7 +263,9 @@ export default function ClusterDetail() {
     setError('')
     try {
       const ns = namespacedResources.has(kind) ? selectedNamespace : ''
-      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search)
+      const supportsTypeFilter = kind === 'services' || kind === 'events'
+      const typeFilter = supportsTypeFilter ? (typeFilterOverride !== undefined ? typeFilterOverride : resourceTypeFilter) : ''
+      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search, typeFilter)
       if (result.success && result.data) {
         setItems(result.data.items)
         setTotal(result.data.total)
@@ -546,7 +549,7 @@ export default function ClusterDetail() {
       case 'services':
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'type', label: '类型' }, { key: 'cluster_ip', label: 'ClusterIP' }]
       case 'ingresses':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hosts', label: '域名' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hosts', label: '域名' }, { key: 'lb_ip', label: 'LB IP' }]
       case 'persistentvolumes':
         return [...common, { key: 'status', label: '状态' }, { key: 'capacity', label: '容量' }, { key: 'claim', label: '声明' }]
       case 'persistentvolumeclaims':
@@ -555,6 +558,7 @@ export default function ClusterDetail() {
         return [
           { key: 'type', label: '类型' },
           { key: 'reason', label: '原因' },
+          { key: 'resource_kind', label: '资源类型' },
           { key: 'object', label: '对象' },
           { key: 'message', label: '消息' },
           { key: 'count', label: '次数' },
@@ -711,6 +715,7 @@ export default function ClusterDetail() {
                           setActiveResource(key)
                           setPage(1)
                           setKeyword('')
+                          setResourceTypeFilter('')
                           loadResources(key, 1, '')
                         }
                       }}
@@ -729,7 +734,7 @@ export default function ClusterDetail() {
             <Box>
               {/* 子资源 Tabs */}
               {category.resources.length > 1 && (
-                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
+                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); setResourceTypeFilter(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
                   {category.resources.filter(r => hasResourcePermission(r, permissions)).map(r => (
                     <Tab key={r} value={r} label={resourceLabels[r] || r} sx={{ textTransform: 'none' }} />
                   ))}
@@ -766,6 +771,49 @@ export default function ClusterDetail() {
                         {nsError}
                       </Typography>
                     )}
+                  </FormControl>
+                )}
+                {activeResource === 'services' && (
+                  <FormControl size="small" sx={{ minWidth: 140 }}>
+                    <InputLabel>服务类型</InputLabel>
+                    <Select
+                      value={resourceTypeFilter}
+                      label="服务类型"
+                      onChange={(e) => {
+                        const next = e.target.value as string
+                        setResourceTypeFilter(next)
+                        setPage(1)
+                        loadResources(activeResource, 1, keyword, false, next)
+                      }}
+                    >
+                      <MenuItem value="">全部</MenuItem>
+                      {['ClusterIP', 'NodePort', 'LoadBalancer', 'ExternalName'].map(type => (
+                        <MenuItem key={type} value={type}>{type}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+                {activeResource === 'events' && (
+                  <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <InputLabel>资源类型</InputLabel>
+                    <Select
+                      value={resourceTypeFilter}
+                      label="资源类型"
+                      onChange={(e) => {
+                        const next = e.target.value as string
+                        setResourceTypeFilter(next)
+                        setPage(1)
+                        loadResources(activeResource, 1, keyword, false, next)
+                      }}
+                    >
+                      <MenuItem value="">全部</MenuItem>
+                      {Array.from(new Set([
+                        ...items.filter((r: any) => r.resource_kind).map((r: any) => r.resource_kind as string),
+                        resourceTypeFilter
+                      ].filter(Boolean))).sort().map(kind => (
+                        <MenuItem key={kind} value={kind}>{kind}</MenuItem>
+                      ))}
+                    </Select>
                   </FormControl>
                 )}
                 <TextField

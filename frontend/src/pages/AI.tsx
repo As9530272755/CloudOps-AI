@@ -959,14 +959,79 @@ export default function AI() {
     const sendStartAt = Date.now()
     let lastContentAt = Date.now()
 
-    const STREAM_MAX_MS = 600_000
-    const CONTENT_IDLE_MS = 300_000
+    // 根据当前 AI 平台的 timeout 配置动态设置超时
+    const currentPlat = platforms.find((p) => p.id === currentPlatformId)
+    let platformTimeout = 300
+    if (currentPlat?.config_json) {
+      try {
+        const cfg = JSON.parse(currentPlat.config_json)
+        if (cfg.timeout && cfg.timeout > 0) {
+          platformTimeout = cfg.timeout
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+    const STREAM_MAX_MS = platformTimeout * 1000
+    const CONTENT_IDLE_MS = Math.max(30_000, platformTimeout * 1000 - 10_000)
 
     const runWatchdog = () => {
       if (hasEnded) return
       const now = Date.now()
       const idle = now - lastContentAt
       const total = now - sendStartAt
+
+      // 每 5 秒主动从数据库拉取一次，作为 SSE 的兜底
+      if (idle >= 5000 && !hasEnded) {
+        aiSessionAPI.getMessages(mySessionId).then((res) => {
+          if (hasEnded || mySessionId !== currentSessionIdRef.current) return
+          if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+            const dbMsgs = res.data as any[]
+            const lastDbMsg = dbMsgs[dbMsgs.length - 1]
+            if (lastDbMsg.role === 'assistant' && lastDbMsg.content) {
+              hasEnded = true
+              if (timerRef.current) {
+                window.clearTimeout(timerRef.current)
+                timerRef.current = null
+              }
+              abort()
+              try {
+                streamingMsgRef.current?.finalize()
+              } catch (e) {
+                // ignore finalize errors
+              }
+              setMessages((prev) => {
+                const copy = [...prev]
+                const idx = copy.findIndex((m) => m.id === assistantMsg.id)
+                if (idx >= 0) {
+                  copy[idx] = { ...copy[idx], content: lastDbMsg.content, loading: false }
+                } else {
+                  copy.push({
+                    id: generateId(),
+                    role: 'assistant',
+                    content: lastDbMsg.content,
+                    loading: false,
+                    timestamp: Date.now(),
+                  })
+                }
+                return copy
+              })
+              setStreaming(false)
+              streamingContentRef.current = ''
+              streamingMsgRef.current = null
+              const pending = pendingRepliesRef.current[mySessionId]
+              if (pending) {
+                pending.loading = false
+                pending.content = lastDbMsg.content
+                pending.error = undefined
+                savePending()
+                forceUpdateSidebar()
+              }
+            }
+          }
+        })
+      }
+
       if (idle > CONTENT_IDLE_MS || total > STREAM_MAX_MS) {
         hasEnded = true
         abort()

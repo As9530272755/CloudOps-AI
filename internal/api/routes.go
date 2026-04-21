@@ -213,6 +213,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			// AI 对话
 			protected.POST("/ai/chat", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.Chat)
 			protected.POST("/ai/chat/stream", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.ChatStream)
+			protected.POST("/ai/agent/chat/stream", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.AgentChatStream)
 
 			protected.POST("/ai/chat/task", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.CreateTask)
 			protected.GET("/ai/chat/task/:id", middleware.AIPermissionMiddleware(r.db, "ai:chat"), r.aiChatHandler.GetTask)
