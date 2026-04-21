@@ -55,7 +55,6 @@ Options:
     --jwt-secret <secret>     JWT 密钥 (默认: 自动生成)
     --frontend-port <port>    前端端口 (默认: 18000)
     --backend-port <port>     后端端口 (默认: 9000)
-    --agent-port <port>       Agent Runtime 端口 (默认: 19000)
     -y, --yes                 自动确认，无需交互
     -h, --help                显示帮助
 
@@ -112,10 +111,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --backend-port)
             BACKEND_PORT="$2"
-            shift 2
-            ;;
-        --agent-port)
-            AGENT_PORT="$2"
             shift 2
             ;;
         -y|--yes)
@@ -327,8 +322,6 @@ mkdir -p "${INSTALL_DIR}/config"
 mkdir -p "${INSTALL_DIR}/logs"
 mkdir -p "${INSTALL_DIR}/data"
 mkdir -p "${INSTALL_DIR}/frontend"
-mkdir -p "${INSTALL_DIR}/agent-runtime"
-
 # 后端二进制
 if [[ -f "${PROJECT_ROOT}/bin/cloudops-backend" ]]; then
     cp "${PROJECT_ROOT}/bin/cloudops-backend" "${INSTALL_DIR}/"
@@ -345,18 +338,6 @@ if [[ -d "${PROJECT_ROOT}/frontend/dist" ]]; then
     log_info "前端静态文件已部署"
 else
     log_warn "未找到前端构建产物"
-fi
-
-# Agent Runtime
-if [[ -d "${PROJECT_ROOT}/agent-runtime/dist" ]]; then
-    cp -r "${PROJECT_ROOT}/agent-runtime/dist" "${INSTALL_DIR}/agent-runtime/"
-    cp "${PROJECT_ROOT}/agent-runtime/package.json" "${INSTALL_DIR}/agent-runtime/" 2>/dev/null || true
-    if [[ -d "${PROJECT_ROOT}/agent-runtime/node_modules" ]]; then
-        cp -r "${PROJECT_ROOT}/agent-runtime/node_modules" "${INSTALL_DIR}/agent-runtime/"
-    fi
-    log_info "Agent Runtime 已部署"
-else
-    log_warn "未找到 Agent Runtime 构建产物"
 fi
 
 # 创建必要的目录

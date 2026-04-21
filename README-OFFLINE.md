@@ -15,7 +15,6 @@ cloudops-offline-package/
 │   └── cloudops-backend          # Go 静态二进制
 ├── frontend/
 │   └── dist/                     # 前端构建产物
-├── agent-runtime/
 │   ├── dist/                     # Agent 编译产物
 │   ├── node_modules/             # Node 运行时依赖
 │   ├── package.json
@@ -24,7 +23,6 @@ cloudops-offline-package/
 │   └── config.yaml.template      # 配置模板
 ├── systemd/
 │   ├── cloudops-backend.service
-│   ├── cloudops-agent.service
 │   └── cloudops-frontend.service
 └── deps/                         # 系统级离线依赖（需预打包）
     ├── ubuntu/
@@ -75,12 +73,9 @@ go build -o bin/cloudops-backend ./cmd/server
 # 确保前端已构建
 cd frontend && npm run build && cd ..
 
-# 确保 Agent Runtime 已构建
-cd agent-runtime && npm run build && cd ..
-
 # 打包整个离线包
 tar czf cloudops-offline-package.tar.gz \
-  scripts/ bin/ frontend/dist/ agent-runtime/ \
+  scripts/ bin/ frontend/dist/ \
   config/ systemd/ deps/
 ```
 
@@ -125,7 +120,6 @@ chmod +x scripts/*.sh
 ```bash
 # 查看服务状态
 systemctl status cloudops-backend
-systemctl status cloudops-agent
 systemctl status cloudops-frontend
 
 # 健康检查
@@ -141,10 +135,10 @@ journalctl -u cloudops-backend -f
 
 ```bash
 # 启动所有服务
-systemctl start cloudops-backend cloudops-agent cloudops-frontend
+systemctl start cloudops-backend cloudops-frontend
 
 # 停止所有服务
-systemctl stop cloudops-backend cloudops-agent cloudops-frontend
+systemctl stop cloudops-backend cloudops-frontend
 
 # 重启后端
 systemctl restart cloudops-backend

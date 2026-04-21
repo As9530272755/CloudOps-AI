@@ -25,7 +25,6 @@
 **说明**：
 - 后端 `cloudops-backend` 是单一静态二进制，无外部 Go 模块依赖。
 - 前端 `frontend/dist/` 是纯静态文件，可用 Nginx/Vite preview/任意 Web Server 托管。
-- Agent Runtime 是 Node.js 服务，依赖 `agent-runtime/node_modules`。
 - AI 推理如需完全离线，需在内网部署 **Ollama**；如内网可访问外部 OpenClaw，则只需配置地址。
 
 ---
@@ -50,12 +49,6 @@ cloudops-offline-package/
 │   └── cloudops-backend              # 编译好的 Linux 二进制（见 3.2）
 ├── frontend/
 │   └── dist/                         # npm run build 产物（见 3.3）
-├── agent-runtime/
-│   ├── dist/                         # tsc 编译产物
-│   ├── node_modules/                 # npm ci --production 产物
-│   ├── package.json
-│   ├── package-lock.json
-│   └── tsconfig.json
 ├── config/
 │   └── config.yaml                   # 根据离线环境修改后的配置
 ├── scripts/
@@ -99,20 +92,6 @@ npm run build
 
 cp -r dist/ ../cloudops-offline-package/frontend/
 ```
-
-### 3.4 构建 Agent Runtime
-
-```bash
-cd /data/projects/cloudops-v2/agent-runtime
-npm install
-npm run build          # 通常配置为 tsc 编译到 dist/
-
-cp -r dist/ package.json package-lock.json tsconfig.json \
-  ../cloudops-offline-package/agent-runtime/
-cp -r node_modules/ ../cloudops-offline-package/agent-runtime/
-```
-
-> 如 `node_modules` 过大，可先用 `npm prune --production` 移除开发依赖再复制。
 
 ### 3.5 准备数据库与缓存的离线安装包
 
@@ -271,7 +250,6 @@ EOF
 mkdir -p /opt/cloudops/app
 cp /opt/cloudops/bin/cloudops-backend /opt/cloudops/app/
 cp -r /opt/cloudops/frontend/dist /opt/cloudops/app/frontend
-cp -r /opt/cloudops/agent-runtime /opt/cloudops/app/agent-runtime
 cp /opt/cloudops/config/config.yaml /opt/cloudops/app/
 ```
 
@@ -347,27 +325,12 @@ server {
 }
 ```
 
-### 6.3 启动 Agent Runtime
-
-```bash
-cd /opt/cloudops/app/agent-runtime
-nohup node dist/server.js --port 19000 > agent-runtime.log 2>&1 &
-```
-
-验证：
-
-```bash
-curl http://127.0.0.1:19000/health
-# 预期返回健康状态
-```
-
 ### 6.4 启动顺序总结
 
 1. PostgreSQL
 2. Redis（如使用）
 3. CloudOps Backend（:9000）
-4. Agent Runtime（:19000）
-5. Frontend（:18000）
+4. Frontend（:18000）
 
 ---
 
@@ -390,11 +353,6 @@ cd /opt/cloudops/app
 nohup ./cloudops-backend > backend.log 2>&1 &
 sleep 2
 
-echo "Starting Agent Runtime..."
-cd /opt/cloudops/app/agent-runtime
-nohup node dist/server.js --port 19000 > agent-runtime.log 2>&1 &
-sleep 1
-
 echo "Starting Frontend..."
 cd /opt/cloudops/app/frontend/dist
 nohup npx vite preview --port 18000 --host > frontend.log 2>&1 &
@@ -408,7 +366,6 @@ echo "All services started."
 #!/bin/bash
 pkill -f "cloudops-backend"
 pkill -f "vite preview"
-pkill -f "agent-runtime/dist/server.js"
 systemctl stop redis
 systemctl stop postgresql-15
 echo "All services stopped."
@@ -459,7 +416,6 @@ ai:
 | 检查项 | 验证命令 / 操作 |
 |---|---|
 | 后端健康 | `curl http://127.0.0.1:9000/health` |
-| Agent Runtime 健康 | `curl http://127.0.0.1:19000/health` |
 | 前端可访问 | 浏览器打开 `http://<服务器IP>:18000` |
 | 登录功能 | 使用 `admin / admin` 登录 |
 | 集群列表 | 添加第一个 K8s 集群，确认能拉取 Namespace |
@@ -481,14 +437,10 @@ ai:
 - 确认前端服务端口 18000 未被占用
 - 如用 Nginx，检查 `try_files` 配置是否正确
 
-### Q3：Agent Runtime 启动失败 `Cannot find module`
-- 确认 `agent-runtime/node_modules` 已完整复制到目标服务器
-- 确认目标服务器 Node.js 版本 ≥ 18
-
 ### Q4：如何升级到新版本？
 1. 停止所有服务
 2. 备份 `config.yaml` 和数据库
-3. 替换新的 `cloudops-backend`、`frontend/dist`、`agent-runtime/dist`
+3. 替换新的 `cloudops-backend`、`frontend/dist`
 4. 如数据库模型有变更，后端启动时会自动 `AutoMigrate`
 5. 重新启动服务
 

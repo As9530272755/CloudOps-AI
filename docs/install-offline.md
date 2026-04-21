@@ -10,7 +10,7 @@
 
 - 安装系统依赖（PostgreSQL / Redis / Node.js）
 - 初始化数据库（自动创建用户、数据库、授权）
-- 部署后端、前端、Agent Runtime
+- 部署后端、前端
 - 生成安全密钥（JWT + AES）
 - 创建 systemd 服务（开机自启、故障重启）
 - 启动并验证所有服务
@@ -89,11 +89,6 @@ npm install --registry=https://registry.npmmirror.com
 npm run build
 cd ..
 
-# 构建 Agent Runtime
-cd agent-runtime
-npm install
-npm run build
-cd ..
 ```
 
 ### 3.3 打包完整离线包
@@ -107,10 +102,6 @@ tar czf cloudops-offline-package.tar.gz \
   scripts/prepare-deps.sh \
   bin/cloudops-backend \
   frontend/dist/ \
-  agent-runtime/dist/ \
-  agent-runtime/node_modules/ \
-  agent-runtime/package.json \
-  agent-runtime/package-lock.json \
   config/config.yaml.template \
   systemd/ \
   deps/ \
@@ -118,7 +109,7 @@ tar czf cloudops-offline-package.tar.gz \
   docs/install-offline.md
 ```
 
-> **包大小预估**：约 300~400MB（主要包含 agent-runtime/node_modules ~210MB + 后端二进制 ~56MB）
+> **包大小预估**：约 50~100MB（主要包含后端二进制 ~56MB + 前端构建产物）
 
 ### 3.4 复制到离线服务器
 
@@ -178,9 +169,9 @@ chmod +x scripts/*.sh
 1. **安装系统依赖**：dpkg/rpm 安装 PostgreSQL、Redis；解压 Node.js 预编译二进制到 `/opt/cloudops/runtime/`
 2. **初始化数据库**：创建 `cloudops` 用户和数据库，授权 `ALL PRIVILEGES`
 3. **创建运行用户**：`useradd cloudops`（非 root 运行，安全最佳实践）
-4. **部署应用文件**：复制后端二进制、前端 dist、Agent Runtime 到安装目录
+4. **部署应用文件**：复制后端二进制、前端 dist 到安装目录
 5. **生成配置文件**：基于模板自动生成 `config.yaml`，填充数据库密码、JWT 密钥、AES 密钥
-6. **创建 systemd 服务**：`cloudops-backend`、`cloudops-agent`、`cloudops-frontend`
+6. **创建 systemd 服务**：`cloudops-backend`、`cloudops-frontend`
 7. **设置文件权限**：`chown -R cloudops:cloudops /opt/cloudops`
 8. **启动服务**：systemctl start，并执行健康检查
 
@@ -210,8 +201,8 @@ chmod +x scripts/*.sh
 环境变量: /opt/cloudops/.env
 
 服务管理:
-  启动: systemctl start cloudops-backend cloudops-agent cloudops-frontend
-  停止: systemctl stop cloudops-backend cloudops-agent cloudops-frontend
+  启动: systemctl start cloudops-backend cloudops-frontend
+  停止: systemctl stop cloudops-backend cloudops-frontend
   状态: systemctl status cloudops-backend
   日志: journalctl -u cloudops-backend -f
 
@@ -229,17 +220,16 @@ chmod +x scripts/*.sh
 
 ```bash
 # 启动所有服务
-systemctl start cloudops-backend cloudops-agent cloudops-frontend
+systemctl start cloudops-backend cloudops-frontend
 
 # 停止所有服务
-systemctl stop cloudops-backend cloudops-agent cloudops-frontend
+systemctl stop cloudops-backend cloudops-frontend
 
 # 重启后端
 systemctl restart cloudops-backend
 
 # 查看状态
 systemctl status cloudops-backend
-systemctl status cloudops-agent
 systemctl status cloudops-frontend
 ```
 
@@ -254,9 +244,6 @@ journalctl -u cloudops-backend -n 100
 
 # 查看前端日志
 journalctl -u cloudops-frontend -f
-
-# 查看 Agent 日志
-journalctl -u cloudops-agent -f
 ```
 
 ### 5.3 开机自启
@@ -264,7 +251,6 @@ journalctl -u cloudops-agent -f
 安装脚本已自动执行：
 ```bash
 systemctl enable cloudops-backend
-systemctl enable cloudops-agent
 systemctl enable cloudops-frontend
 ```
 
@@ -274,7 +260,7 @@ systemctl enable cloudops-frontend
 
 ### 6.1 full 模式（推荐生产环境）
 
-**架构**：PostgreSQL + Redis + CloudOps Backend + Agent Runtime + Frontend
+**架构**：PostgreSQL + Redis + CloudOps Backend + Frontend
 
 **特点**：
 - 数据库使用 PostgreSQL，支持高并发、事务完整
@@ -286,7 +272,6 @@ systemctl enable cloudops-frontend
 |------|------|------|
 | CloudOps Backend | 9000 | Go 后端 API |
 | CloudOps Frontend | 18000 | 前端页面 |
-| Agent Runtime | 19000 | Node.js AI Agent |
 | PostgreSQL | 5432 | 主数据库 |
 | Redis | 6379 | 缓存 |
 
@@ -295,7 +280,6 @@ systemctl enable cloudops-frontend
 |------|------|------|
 | CloudOps Backend | 9000 | Go 后端 API |
 | CloudOps Frontend | 18000 | 前端页面 |
-| Agent Runtime | 19000 | Node.js AI Agent |
 
 ---
 
@@ -425,7 +409,7 @@ cat /opt/cloudops/.env
 
 ### 10.3 运行用户隔离
 
-后端、前端、Agent Runtime 均以专用用户 `cloudops` 运行：
+后端、前端均以专用用户 `cloudops` 运行：
 - `useradd -r -s /bin/false cloudops`
 - 非 root 权限，降低安全风险
 - 沙盒终端功能即使存在逃逸，也无法破坏系统关键文件

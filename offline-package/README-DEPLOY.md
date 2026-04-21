@@ -8,8 +8,6 @@
 │   └── cloudops-backend          # Go 后端二进制（已编译，静态链接）
 ├── frontend/
 │   └── dist/                     # 前端构建产物（纯静态文件）
-├── agent-runtime/
-│   ├── dist/                     # Agent Runtime 编译产物
 │   ├── node_modules/             # Node.js 运行时依赖（离线必需）
 │   ├── package.json
 │   └── package-lock.json
@@ -28,7 +26,7 @@
 - 依赖:
   - PostgreSQL 14+
   - Redis 6+（可选）
-  - Node.js 18+（运行 Agent Runtime）
+  - Node.js 18+（运行前端预览服务）
 
 ## 快速启动
 
@@ -51,5 +49,4 @@
 ## 日志查看
 
 - `backend.log` — 后端日志
-- `agent-runtime.log` — Agent Runtime 日志
 - `frontend.log` — 前端服务日志

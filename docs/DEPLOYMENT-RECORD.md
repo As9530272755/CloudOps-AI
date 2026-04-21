@@ -134,16 +134,6 @@ go build -o cloudops-backend ./cmd/server
 
 **编译输出**：`cloudops-backend`（56MB 静态链接二进制）
 
-### 4.2 Agent Runtime 编译
-
-```bash
-cd agent-runtime
-npm install
-npm run build
-```
-
-**输出**：`agent-runtime/dist/server.js`
-
 ### 4.3 前端编译
 
 ```bash
@@ -188,14 +178,6 @@ curl http://127.0.0.1:9000/health
 - ✅ 默认租户 `default` 创建
 - ✅ 默认管理员 `admin/admin` 创建
 - ✅ Redis 连接成功
-- ✅ Agent Runtime 自动启动在 http://127.0.0.1:19000
-
-### 5.2 启动 Agent Runtime（也可由后端自动启动）
-
-```bash
-cd agent-runtime
-nohup node dist/server.js --port 19000 > agent-runtime.log 2>&1 &
-```
 
 ### 5.3 启动前端
 
@@ -217,14 +199,10 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18000
 ### 6.1 打包结构
 
 ```bash
-mkdir -p offline-package/{bin,frontend,agent-runtime,config}
+mkdir -p offline-package/{bin,frontend,config}
 
 cp cloudops-backend offline-package/bin/
 cp -r frontend/dist offline-package/frontend/
-cp -r agent-runtime/dist offline-package/agent-runtime/
-cp agent-runtime/package.json offline-package/agent-runtime/
-cp agent-runtime/package-lock.json offline-package/agent-runtime/
-cp -r agent-runtime/node_modules offline-package/agent-runtime/    # 211MB，离线必需
 cp config/config.yaml offline-package/config/
 ```
 
@@ -246,8 +224,6 @@ nohup ./bin/cloudops-backend > backend.log 2>&1 &
 sleep 3
 curl -s http://127.0.0.1:9000/health >/dev/null && echo "Backend OK"
 
-nohup node agent-runtime/dist/server.js --port 19000 > agent-runtime.log 2>&1 &
-
 nohup npx --yes vite preview --port 18000 --host > frontend.log 2>&1 &
 sleep 2
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18000 | grep -q 200 && echo "Frontend OK"
@@ -257,7 +233,6 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18000 | grep -q 200 && e
 ```bash
 #!/bin/bash
 pkill -f "cloudops-backend" || true
-pkill -f "agent-runtime/dist/server.js" || true
 pkill -f "vite preview" || true
 ```
 
@@ -267,7 +242,6 @@ pkill -f "vite preview" || true
 offline-package/
 ├── bin/              56 MB   (cloudops-backend)
 ├── frontend/         3.9 MB  (dist 静态文件)
-├── agent-runtime/    211 MB  (dist + node_modules)
 ├── config/           8 KB    (config.yaml)
 ├── start-all.sh      4 KB
 ├── stop-all.sh       4 KB
@@ -338,7 +312,6 @@ npm install --registry=https://registry.npmmirror.com
 |------|-----|------|
 | 前端 | http://<服务器IP>:18000 | 浏览器直接访问 |
 | 后端 API | http://<服务器IP>:9000 | 健康检查 /health |
-| Agent | http://127.0.0.1:19000 | 仅本地访问 |
 
 **默认账号**：`admin / admin`
 
