@@ -2922,3 +2922,31 @@ API 验证：OpenSearch 15 分钟全量日志返回 **51,737 条** ✅
 
 *最后更新：2026-04-21*
 
+
+---
+
+## 2026-04-21 修复 probePermissionScope 误判 admin 为 read-only
+
+**问题**：KS-MASTER 集群使用 admin kubeconfig，但前端不显示创建/编辑/删除按钮。数据库中 `permission_scope` 为 `read-only`。
+
+**根因**：`probePermissionScope` 同时探测全局权限（`Namespace=""`）和 default namespace 权限：
+- `SelfSubjectRulesReview` 不支持 `Namespace=""`，返回 `no namespace on request`
+- 此时 `globalResult` 非 nil 但 `ResourceRules` 为空，`evaluatePermissionScope` 误判为 `read-only`
+- `stricterPermissionScope("read-only", "admin")` 返回 `read-only`，覆盖了 default namespace 的正确结果
+
+**修复**：
+- `internal/service/cluster_service.go` `probePermissionScope`：
+  - 去掉不支持的全局探测（`Namespace=""`）
+  - 只保留 `default` namespace 探测，逻辑简化为：探测失败 → `read-only`，成功 → `evaluatePermissionScope(result)`
+- `probeClusterHealth` 中补充探测条件：从 `(unknown || 空值)` 扩展为 `(unknown || 空值 || read-only)`，确保已误判的集群会被重新探测
+
+**验证**：
+- 手动运行修复后的 `probePermissionScope`：`probe result: admin` ✅
+- 数据库更新：KS → `admin`，KS-MASTER → `admin`，YH 保持 `read-only`
+
+后端编译 ✅ 服务重启 ✅
+
+---
+
+*最后更新：2026-04-21*
+

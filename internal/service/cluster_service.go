@@ -359,33 +359,20 @@ func (s *ClusterService) updateClusterHealth(clusterID uint, status string, erro
 }
 
 // probePermissionScope 探测 kubeconfig 的权限范围
-// 同时探测全局权限（ClusterRole）和 default namespace 权限（Role），取最严格的
+// 通过 SelfSubjectRulesReview 在 default namespace 下探测，判断是否有读写权限
 func (s *ClusterService) probePermissionScope(ctx context.Context, client *kubernetes.Clientset) string {
-	// 1. 探测全局权限（ClusterRole，Namespace 为空字符串）
-	globalReview := &authorizationv1.SelfSubjectRulesReview{
-		Spec: authorizationv1.SelfSubjectRulesReviewSpec{
-			Namespace: "",
-		},
-	}
-	globalResult, globalErr := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, globalReview, metav1.CreateOptions{})
-	globalScope := evaluatePermissionScope(globalResult)
-
-	// 2. 探测 default namespace 权限（Role）
-	nsReview := &authorizationv1.SelfSubjectRulesReview{
+	// SelfSubjectRulesReview 不支持 Namespace=""（会返回 no namespace on request）
+	// 统一在 default namespace 下探测即可判断整体权限范围
+	review := &authorizationv1.SelfSubjectRulesReview{
 		Spec: authorizationv1.SelfSubjectRulesReviewSpec{
 			Namespace: "default",
 		},
 	}
-	nsResult, nsErr := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, nsReview, metav1.CreateOptions{})
-	nsScope := evaluatePermissionScope(nsResult)
-
-	// 3. 两个探测都失败，默认 read-only（安全保守）
-	if globalErr != nil && nsErr != nil {
+	result, err := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, review, metav1.CreateOptions{})
+	if err != nil {
 		return "read-only"
 	}
-
-	// 4. 取最严格的权限
-	return stricterPermissionScope(globalScope, nsScope)
+	return evaluatePermissionScope(result)
 }
 
 // evaluatePermissionScope 从 SelfSubjectRulesReview 结果中评估权限范围
@@ -550,7 +537,7 @@ func (s *ClusterService) probeClusterHealth(clusterID uint) {
 		// 补充探测 permission_scope（仅 unknown 或空值时）
 		var cluster model.Cluster
 		if err := s.db.Where("id = ?", clusterID).First(&cluster).Error; err == nil {
-			if cluster.PermissionScope == "unknown" || cluster.PermissionScope == "" {
+			if cluster.PermissionScope == "unknown" || cluster.PermissionScope == "" || cluster.PermissionScope == "read-only" {
 				if client, err := s.GetK8sClient(context.Background(), clusterID); err == nil {
 					scope := s.probePermissionScope(context.Background(), client)
 					s.db.Model(&model.Cluster{}).Where("id = ?", clusterID).Update("permission_scope", scope)
