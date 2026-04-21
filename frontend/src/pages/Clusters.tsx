@@ -137,7 +137,9 @@ export default function Clusters() {
   const [probeLoading, setProbeLoading] = useState(false)
   const [probeResult, setProbeResult] = useState<TestAndProbeResult | null>(null)
   const [selectedProbeLabel, setSelectedProbeLabel] = useState('')
+  const [canSave, setCanSave] = useState(false)
   const [error, setError] = useState('')
+  const [dialogError, setDialogError] = useState('')
   const [filters, setFilters] = useState<ClusterListParams>({
     keyword: '',
     status: '',
@@ -244,6 +246,8 @@ export default function Clusters() {
   const resetForm = () => {
     setEditingId(null)
     setAuthType('kubeconfig')
+    setCanSave(false)
+    setDialogError('')
     setFormData({
       name: '',
       display_name: '',
@@ -259,11 +263,15 @@ export default function Clusters() {
 
   const handleOpenCreate = () => {
     resetForm()
+    setCanSave(false)
+    setDialogError('')
     setOpenDialog(true)
   }
 
   const handleOpenEdit = (cluster: Cluster) => {
     setEditingId(cluster.id)
+    setCanSave(true)
+    setDialogError('')
     setFormData({
       name: cluster.name,
       display_name: cluster.display_name || '',
@@ -298,6 +306,7 @@ export default function Clusters() {
         const result = await clusterAPI.createCluster({
           ...formData,
           auth_type: authType,
+          permission_scope: probeResult?.permission_scope || '',
         })
         if (result.success) {
           setOpenDialog(false)
@@ -306,23 +315,23 @@ export default function Clusters() {
         }
       }
     } catch (err: any) {
-      setError(err.message || (editingId ? '更新集群失败' : '创建集群失败'))
+      setDialogError(err.message || (editingId ? '更新集群失败' : '创建集群失败'))
     }
   }
 
   const handleTestAndProbe = async () => {
     if (!editingId) {
       if (authType === 'kubeconfig' && !formData.kubeconfig?.trim()) {
-        setError('请先填写 Kubeconfig')
+        setDialogError('请先填写 Kubeconfig')
         return
       }
       if (authType === 'token' && (!formData.server?.trim() || !formData.token?.trim())) {
-        setError('请先填写 API Server 地址和 Token')
+        setDialogError('请先填写 API Server 地址和 Token')
         return
       }
     }
     setProbeLoading(true)
-    setError('')
+    setDialogError('')
     try {
       const payload: CreateClusterRequest = {
         ...formData,
@@ -332,16 +341,19 @@ export default function Clusters() {
       if (result.success && result.data) {
         setProbeResult(result.data)
         setSelectedProbeLabel('')
+        setCanSave(true)
         setProbeOpen(true)
         // 自动回填集群名称建议
         if (result.data.cluster_name_from_context && !formData.name) {
           setFormData((prev) => ({ ...prev, name: result.data!.cluster_name_from_context }))
         }
       } else {
-        setError(result.error || '探测失败')
+        setCanSave(false)
+        setDialogError(result.error || '探测失败')
       }
     } catch (err: any) {
-      setError(err.message || '请求异常')
+      setCanSave(false)
+      setDialogError(err.message || '请求异常')
     } finally {
       setProbeLoading(false)
     }
@@ -755,6 +767,11 @@ export default function Clusters() {
           {editingId ? '编辑 Kubernetes 集群' : '添加 Kubernetes 集群'}
         </DialogTitle>
         <DialogContent>
+          {dialogError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {dialogError}
+            </Alert>
+          )}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             {/* 认证方式选择 */}
             <FormControl fullWidth>
@@ -877,7 +894,7 @@ export default function Clusters() {
           >
             取消
           </Button>
-          <Button onClick={handleSave} variant="contained">
+          <Button onClick={handleSave} variant="contained" disabled={!editingId && !canSave}>
             {editingId ? '保存' : '确定添加'}
           </Button>
         </DialogActions>
@@ -895,6 +912,12 @@ export default function Clusters() {
                 </Alert>
               ) : (
                 <Alert severity="error">集群连接失败</Alert>
+              )}
+
+              {probeResult.connected && (
+                <Alert severity={probeResult.permission_scope === 'admin' || probeResult.permission_scope === 'read-write' ? 'info' : 'warning'}>
+                  权限范围：{probeResult.permission_scope === 'admin' ? '管理员（可创建/编辑/删除资源）' : probeResult.permission_scope === 'read-write' ? '读写（可创建/编辑资源）' : '只读（仅可查看资源）'}
+                </Alert>
               )}
 
               {probeResult.message && (

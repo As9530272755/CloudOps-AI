@@ -30,6 +30,7 @@ export interface CreateClusterRequest {
   kubeconfig?: string
   token?: string
   server?: string
+  permission_scope?: string
 }
 
 export interface UpdateClusterRequest {
@@ -50,6 +51,7 @@ export interface TestAndProbeResult {
   kubernetes_version: string
   cluster_name_from_context: string
   suggested_labels: ProbeLabelSuggestion[]
+  permission_scope: string
   message?: string
 }
 

@@ -741,18 +741,19 @@ go build -o /tmp/cloudops-backend-test ./cmd/server/main.go  # OK
 
 ## 开发规范（必须遵守）
 
-> **每完成一个功能开发或修复一个 BUG，必须立即执行以下两步（禁止攒到一天结束再统一提交）：**
+> **每完成一个功能开发或修复一个 BUG，必须立即将开发记录追加写入 `CONTEXT.md`**（按日期编号，记录修改范围、影响、关键文件）
 >
-> 1. **将本次开发记录追加写入 `CONTEXT.md`**（按日期编号，记录修改范围、影响、关键文件）
-> 2. **提交代码并推送至 GitHub**，确保远程仓库与本地同步
+> **Git 提交规则**：
+> - **Git 提交由用户指定**，AI 助手不自动执行 `git commit` / `git push`
+> - 用户说"提交"时才执行提交和推送
+> - 用户未要求提交时，仅记录 `CONTEXT.md`
 >
 > **核心原则**：
-> - 一个功能 / 一个修复 → 一条记录 → 一次 Git 提交 → 一次 GitHub 推送
-> - 禁止多个功能合并到一次提交中（除非它们是同一功能的不同文件）
-> - 禁止只改代码不写记录，或写了记录不推送
+> - 一个功能 / 一个修复 → 一条 CONTEXT.md 记录
+> - 禁止只改代码不写记录
 > - 上下文中断会导致后续开发效率急剧下降
 >
-> **提交格式建议**：
+> **提交格式建议**（用户要求提交时参考）：
 > ```
 > feat(<scope>): <功能描述>
 > fix(<scope>): <bug描述>
@@ -2976,3 +2977,292 @@ API 验证：OpenSearch 15 分钟全量日志返回 **51,737 条** ✅
 
 *最后更新：2026-04-21*
 
+
+---
+
+## 2026-04-21 集群添加流程改造：测试连接后判断权限并控制保存按钮
+
+**需求**：添加集群时必须先测试连接，根据 kubeconfig 权限动态判断是否有读写权限，有权限才允许保存，同时前端显示增删改按钮。
+
+**实现**：
+
+#### 后端
+
+1. **`TestAndProbeResult` 新增 `PermissionScope`**（`internal/service/cluster_service.go`）
+   - 测试连接成功后调用 `probePermissionScope(ctx, client)` 探测权限
+   - 返回 `admin` / `read-write` / `read-only`
+
+2. **`CreateClusterRequest` 新增 `PermissionScope`**（`internal/service/cluster_service.go`）
+   - `CreateCluster` 创建集群时直接写入 `PermissionScope`，避免异步探测延迟
+
+#### 前端
+
+1. **保存按钮默认禁用**（`frontend/src/pages/Clusters.tsx`）
+   - 新增 `canSave` state，添加集群弹窗打开时重置为 `false`
+   - 保存按钮 `disabled={!editingId && !canSave}`
+
+2. **测试连接成功后启用保存**（`frontend/src/pages/Clusters.tsx` `handleTestAndProbe`）
+   - 测试成功：`setCanSave(true)`
+   - 测试失败或异常：`setCanSave(false)`
+
+3. **探测结果弹窗显示权限信息**
+   - 连接成功后展示权限范围 Alert
+   - `admin` → 蓝色 info："管理员（可创建/编辑/删除资源）"
+   - `read-write` → 蓝色 info："读写（可创建/编辑资源）"
+   - `read-only` → 黄色 warning："只读（仅可查看资源）"
+
+4. **创建集群传递权限**（`handleSave`）
+   - `permission_scope: probeResult?.permission_scope || ''`
+
+后端编译 ✅ 前端编译 ✅ 前端构建 ✅ 后端重启 ✅
+
+---
+
+*最后更新：2026-04-21*
+
+
+---
+
+## 2026-04-21 修复 evaluatePermissionScope 误判 authentication.k8s.io 为读写
+
+**问题**：YH1 集群使用只读 ServiceAccount（`global-reader`），`SelfSubjectRulesReview` 被误判为 `read-write`。
+
+**根因**：K8s `SelfSubjectRulesReview` 返回了 `authentication.k8s.io` 组的 `selfsubjectreviews` 规则，verbs 包含 `create`——这是所有用户默认拥有的权限自查 API（查看自身身份信息），不代表能操作 Pod/Deployment 等资源。上一提交只跳过了 `authorization.k8s.io`，遗漏了 `authentication.k8s.io`。
+
+**修复**：`internal/service/cluster_service.go` `evaluatePermissionScope`：
+- 跳过条件从 `authorization.k8s.io` 扩展为 `authorization.k8s.io || authentication.k8s.io`
+
+**验证**：
+- YH1（只读 ServiceAccount）→ `read-only` ✅
+- KS（只读）→ `read-only` ✅
+- KS-MASTER（admin）→ `admin` ✅
+
+后端编译 ✅ 服务重启 ✅
+
+---
+
+*最后更新：2026-04-21*
+
+
+---
+
+## 2026-04-21 修复添加集群弹窗：错误提示位置 + 保存按钮状态
+
+**问题 1**：添加集群时 400 错误显示在页面顶部全局 Alert，被弹窗遮挡，用户看不到。
+
+**问题 2**：添加 YH-R 集群后再次打开添加弹窗，"确定添加"按钮默认可点击，无需测试连接。
+
+**修复**：
+
+1. **分离错误状态**（`frontend/src/pages/Clusters.tsx`）
+   - 新增 `dialogError` state 专门用于弹窗内错误
+   - 页面级错误（加载列表、删除失败）保留 `error`
+   - 弹窗级错误（创建/更新失败、Kubeconfig 未填、探测失败）改为 `dialogError`
+
+2. **错误提示移到弹窗内部**
+   - 在添加/编辑弹窗的 `DialogContent` 顶部渲染 `<Alert severity="error">{dialogError}</Alert>`
+   - 页面顶部 `error` Alert 保留给非弹窗场景
+
+3. **修复 `canSave` 重置逻辑**
+   - `handleOpenCreate`：重置 `canSave(false)` + `dialogError('')`
+   - `handleOpenEdit`：设置 `canSave(true)` + `dialogError('')`（编辑模式无需测试）
+   - `resetForm`：重置 `canSave(false)` + `dialogError('')`
+
+前端编译 ✅ 前端构建 ✅ 后端运行中 ✅
+
+---
+
+*最后更新：2026-04-21*
+
+
+---
+
+## 2026-04-21 修复 cluster_log_backends 数据丢失 + 添加软删除
+
+### 问题诊断
+
+**现象**：用户在 Settings → 日志后端 中已配置 ES/OS 两种日志后端，刷新浏览器后配置消失。
+
+**数据库核查结果**：
+
+| 表名 | 记录数 | 软删除 | 状态 |
+|------|--------|--------|------|
+| clusters | 3 | ✅ | 正常 |
+| cluster_secrets | 3 | ❌ | 正常 |
+| cluster_metadata | 3 | ❌ | 正常 |
+| **cluster_log_backends** | **0** | **❌** | **⚠️ 数据丢失** |
+| data_sources | 2 | ✅ | 正常 |
+| ai_platforms | 3 | ❌ | 正常 |
+| system_settings | 1 | ❌ | 正常 |
+| users | 2 | ✅ | 正常 |
+| namespace_grants | 0 | ❌ | 正常（未配置授权）|
+| tenants | 1 | ✅ | 正常 |
+
+**关键发现**：
+1. `cluster_log_backends` 表 `n_dead_tup = 32`，说明曾有数据被**物理删除**
+2. 代码中**不存在**自动清空该表的逻辑（无定时任务、无触发器、无安装脚本清理）
+3. 可能的删除路径：
+   - `DeleteCluster` 级联删除 `cluster_log_backends`（集群删除时连带清除）
+   - `DeleteLogBackend` 前端/API 调用（用户手动删除）
+   - 直接 SQL 操作（外部工具/psql）
+4. PostgreSQL `log_statement = none`，无数据库级操作日志可回溯
+5. CONTEXT.md 历史记录：4/15-4/19 之间该表已被清空过一次（原因未查明）
+
+### 修复措施
+
+#### 1. 添加软删除（核心防护）
+
+**文件**：`internal/model/models.go`
+- `ClusterLogBackend` 新增 `DeletedAt gorm.DeletedAt` 字段
+- 此后 `db.Delete()` 变为**软删除**（标记 deleted_at），数据不再物理消失
+
+#### 2. 级联删除保持物理删除（一致性）
+
+**文件**：`internal/service/cluster_service.go`
+- `DeleteCluster` 中 `Delete(&model.ClusterLogBackend{})` 改为 `Unscoped().Delete(...)`
+- 原因：集群已被 `Unscoped().Delete` **物理删除**，关联日志后端记录也应彻底清理（集群已不存在，保留无意义）
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+- 数据库 AutoMigrate 自动添加 `deleted_at` 列 + 索引 ✅
+
+### 待办
+- 需用户手动重新添加日志后端配置（历史数据已物理删除，无法恢复）
+- 建议后续为关键操作添加审计日志（谁、何时、删除了什么）
+
+---
+
+*最后更新：2026-04-21*
+
+---
+
+## 2026-04-21 日志后端与集群生命周期解耦
+
+### 需求
+日志管理是独立模块，删除集群时不应级联删除日志后端配置。同理，AI 对接、数据源对接、用户管理均为独立模块。
+
+### 诊断
+
+`DeleteCluster` 原级联删除范围：
+- `cluster_secrets` — 物理删除 ✅（集群专属，合理）
+- `cluster_metadata` — 物理删除 ✅（集群专属，合理）
+- `cluster_permissions` — 物理删除 ✅（用户对集群的权限，集群没了权限自然消失）
+- `cluster_log_backends` — 物理删除 ❌（用户要求独立保留）
+- 巡检任务 — 仅从 `cluster_ids` 中移除已删集群ID，空则禁用 ⚠️（待用户确认是否也需独立）
+
+其他独立模块确认不受影响：
+- `data_sources` — 无级联删除 ✅
+- `ai_platforms` — 无级联删除 ✅
+- `users` / `tenants` — 无级联删除 ✅
+
+### 修改内容
+
+#### 1. 模型添加 `tenant_id` + 软删除
+
+`internal/model/models.go`：
+- `ClusterLogBackend` 新增 `TenantID uint` 字段
+- 已有 `DeletedAt gorm.DeletedAt`（前一提交已添加）
+
+#### 2. 查询改为按 `tenant_id` 直接过滤
+
+`internal/service/log_service.go` `ListLogBackends`：
+- 原过滤：`cluster_id IN (SELECT id FROM clusters WHERE tenant_id = ?)`（依赖 clusters 表）
+- 新过滤：`tenant_id = ?`（日志后端自身携带租户信息，与 clusters 表解耦）
+
+#### 3. 创建时自动写入 `tenant_id`
+
+`internal/api/handlers/log.go` `CreateLogBackend`：
+- 优先从所选集群的 `tenant_id` 继承
+-  fallback 到当前登录用户的 `tenant_id`
+
+#### 4. 删除集群不再级联删除日志后端
+
+`internal/service/cluster_service.go` `DeleteCluster`：
+- 移除 `s.db.Where("cluster_id = ?").Delete(&model.ClusterLogBackend{})`
+- 注释更新为"日志后端为独立模块，不级联删除"
+
+### 效果
+
+| 操作 | 修复前 | 修复后 |
+|------|--------|--------|
+| 删除集群 | 级联物理删除关联日志后端 | **不删除日志后端**，配置独立保留 |
+| 删除日志后端（前端按钮） | 物理删除 | **软删除**（`deleted_at` 标记） |
+| 查询日志后端 | 依赖 `clusters` 表做 tenant 过滤 | **直接按 `tenant_id` 过滤**，与集群生命周期无关 |
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+- 数据库 AutoMigrate 自动添加 `tenant_id` 列 + 索引 ✅
+
+### 待办
+- 需用户手动重新添加日志后端配置（历史数据已物理删除，无法恢复）
+- 巡检模块是否需要同样独立？当前删除集群时只会更新巡检任务的 `cluster_ids`（移除已删集群），不会删除任务本身
+
+---
+
+*最后更新：2026-04-21*
+
+---
+
+## 2026-04-21 AI 助手与 Hermes Agent Session 绑定
+
+### 问题
+CloudOps AI 助手对接 Hermes Agent 时，每次发送消息都会在 Hermes 中开启一个新会话，导致上下文无法绑定。截图显示 Hermes 会话列表中出现大量独立会话。
+
+### 根因分析
+
+**Hermes Session 机制**（通过分析 `/root/.hermes/hermes-agent/gateway/platforms/api_server.py`）：
+- `/v1/chat/completions` 端点**只识别 HTTP Header `X-Hermes-Session-Id`** 来实现 session 延续
+- 如果没有该 header，Hermes 会自行派生新的 session ID（`api-<hash>`）
+- 响应会在 header `X-Hermes-Session-Id` 中返回实际使用的 session ID
+- 需要配置 `API_SERVER_KEY`，否则带该 header 的请求会被 403 拒绝
+
+**CloudOps 当前问题**：
+- `openclaw.go` 发送的是 `X-Session-ID` 和 `X-Conversation-ID` header
+- Hermes **不认识**这些 header，每次都创建新会话
+- 用户明确要求**不修改 `openclaw.go`**（避免影响 OpenClaw 平台）
+
+### 解决方案：新建独立 `hermes.go` Provider
+
+#### 1. 新建 `internal/pkg/ai/hermes.go`
+
+- `HermesProvider` 独立实现，与 `OpenClawProvider` 完全解耦
+- 发送 `X-Hermes-Session-Id` header 绑定会话
+- 读取 response header `X-Hermes-Session-Id` 并更新 `p.SessionID`
+- 保留 body 中的 `session_id`/`conversation_id`/`user`（兼容性）
+- 支持流式（SSE）和非流式两种模式
+
+#### 2. 修改 `internal/pkg/ai/factory.go`
+
+- `PlatformConfig` 新增 `Hermes HermesDetail` 字段
+- `NewProvider` 中 `case "openai":` 使用 `NewHermesProvider`
+- `SupportedProviders()` 更新 Hermes 描述
+
+#### 3. 修改 `internal/service/ai_platform_service.go`
+
+- `NewProviderByID` 中 `case "openai":` 独立解析 `ai.HermesDetail`
+- `buildConfigJSON` 中 `case "openai":` 独立序列化 `ai.HermesDetail`
+
+### 效果
+
+| Provider 类型 | 使用文件 | Session Header | 影响范围 |
+|--------------|----------|---------------|---------|
+| `openclaw` | `openclaw.go` | `X-Session-ID` | OpenClaw 平台，不变 |
+| `openai` | `hermes.go` ✅ | `X-Hermes-Session-Id` | Hermes 平台，session 绑定 |
+| `ollama` | `ollama.go` | — | Ollama，不变 |
+
+### 环境确认
+- Hermes `API_SERVER_KEY=cloudops-hermes-key` 已配置 ✅
+- CloudOps 中 Hermes 平台 token 已配置为 `cloudops-hermes-key` ✅
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+
+### 待验证
+- 前端 AI 助手选择 Hermes 平台发送消息后，检查 `/root/.hermes/sessions/` 是否只生成一个 session 文件（或同一个 session 被复用）
+
+---
+
+*最后更新：2026-04-21*

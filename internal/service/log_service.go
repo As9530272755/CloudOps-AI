@@ -68,7 +68,7 @@ func (s *LogService) ListLogBackends(clusterID uint, tenantID uint, userID uint)
 		query = query.Where("cluster_id = ?", clusterID)
 	}
 	if tenantID > 0 {
-		query = query.Where("cluster_id IN (?)", s.db.Model(&model.Cluster{}).Where("tenant_id = ?", tenantID).Select("id"))
+		query = query.Where("tenant_id = ?", tenantID)
 	}
 
 	// namespace 级角色：只返回授权集群的日志后端
@@ -92,6 +92,15 @@ func (s *LogService) GetLogBackend(id uint) (model.ClusterLogBackend, error) {
 
 func (s *LogService) CreateLogBackend(b *model.ClusterLogBackend) error {
 	return s.db.Create(b).Error
+}
+
+// GetClusterTenantID 获取集群所属租户
+func (s *LogService) GetClusterTenantID(clusterID uint) (uint, error) {
+	var cluster model.Cluster
+	if err := s.db.Select("tenant_id").First(&cluster, clusterID).Error; err != nil {
+		return 0, err
+	}
+	return cluster.TenantID, nil
 }
 
 func (s *LogService) UpdateLogBackend(id uint, b *model.ClusterLogBackend) error {

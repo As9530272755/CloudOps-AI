@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -59,6 +60,7 @@ type CreateClusterRequest struct {
 	KubeConfig        string `json:"kubeconfig,omitempty"`
 	Token             string `json:"token,omitempty"`
 	Server            string `json:"server,omitempty"`
+	PermissionScope   string `json:"permission_scope,omitempty"`
 }
 
 // CreateCluster 创建集群
@@ -105,6 +107,7 @@ func (s *ClusterService) CreateCluster(ctx context.Context, userID uint, tenantI
 		ClusterLabelValue: req.ClusterLabelValue,
 		Server:            server,
 		IsActive:          true,
+		PermissionScope:   req.PermissionScope,
 	}
 
 	if err := s.db.Create(cluster).Error; err != nil {
@@ -203,11 +206,10 @@ func (s *ClusterService) DeleteCluster(ctx context.Context, userID uint, tenantI
 		return err
 	}
 
-	// 物理删除关联数据
+	// 物理删除关联数据（日志后端为独立模块，不级联删除）
 	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterSecret{})
 	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterMetadata{})
 	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterPermission{})
-	s.db.Where("cluster_id = ?", clusterID).Delete(&model.ClusterLogBackend{})
 
 	// 物理删除集群（避免软删除导致唯一索引冲突）
 	if err := s.db.Unscoped().Delete(&model.Cluster{}, clusterID).Error; err != nil {
@@ -361,6 +363,7 @@ func (s *ClusterService) updateClusterHealth(clusterID uint, status string, erro
 // probePermissionScope 探测 kubeconfig 的权限范围
 // 通过 SelfSubjectRulesReview 在 default namespace 下探测，判断是否有读写权限
 func (s *ClusterService) probePermissionScope(ctx context.Context, client *kubernetes.Clientset) string {
+	log.Println("[probePermissionScope] starting...")
 	// SelfSubjectRulesReview 不支持 Namespace=""（会返回 no namespace on request）
 	// 统一在 default namespace 下探测即可判断整体权限范围
 	review := &authorizationv1.SelfSubjectRulesReview{
@@ -369,10 +372,13 @@ func (s *ClusterService) probePermissionScope(ctx context.Context, client *kuber
 		},
 	}
 	result, err := client.AuthorizationV1().SelfSubjectRulesReviews().Create(ctx, review, metav1.CreateOptions{})
+	log.Printf("[probePermissionScope] SSR result: err=%v, rules=%d", err, len(result.Status.ResourceRules))
 	if err != nil {
 		return "read-only"
 	}
-	return evaluatePermissionScope(result)
+	scope := evaluatePermissionScope(result)
+	log.Printf("[probePermissionScope] evaluated scope: %s", scope)
+	return scope
 }
 
 // evaluatePermissionScope 从 SelfSubjectRulesReview 结果中评估权限范围
@@ -383,9 +389,9 @@ func evaluatePermissionScope(result *authorizationv1.SelfSubjectRulesReview) str
 	hasWrite := false
 	hasDelete := false
 	for _, rule := range result.Status.ResourceRules {
-		// 跳过权限自查 API（authorization.k8s.io），所有用户默认都有 create 权限
+		// 跳过权限自查 API，所有用户默认都有 create 权限
 		// 不代表能实际操作 Pod/Deployment 等资源
-		if containsString(rule.APIGroups, "authorization.k8s.io") {
+		if containsString(rule.APIGroups, "authorization.k8s.io") || containsString(rule.APIGroups, "authentication.k8s.io") {
 			continue
 		}
 		for _, verb := range rule.Verbs {
@@ -649,6 +655,7 @@ type TestAndProbeResult struct {
 	KubernetesVersion   string                 `json:"kubernetes_version"`
 	ClusterNameFromCtx  string                 `json:"cluster_name_from_context"`
 	SuggestedLabels     []ProbeLabelSuggestion `json:"suggested_labels"`
+	PermissionScope     string                 `json:"permission_scope"`
 	Message             string                 `json:"message,omitempty"`
 }
 
@@ -696,7 +703,10 @@ func (s *ClusterService) TestAndProbeCluster(ctx context.Context, req *CreateClu
 	result.Connected = true
 	result.KubernetesVersion = version.GitVersion
 
-	// 3. 探测 Prometheus CRD
+	// 3. 探测 kubeconfig 权限范围
+	result.PermissionScope = s.probePermissionScope(ctx, client)
+
+	// 4. 探测 Prometheus CRD
 	dynClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		result.Message = "创建动态客户端失败，跳过监控探测"

@@ -201,7 +201,7 @@ func (s *AIPlatformService) NewProviderByID(id string) (ai.Provider, error) {
 			Provider: "ollama",
 			Ollama:   detail,
 		}, timeout)
-	case "openclaw", "openai":
+	case "openclaw":
 		var detail ai.OpenClawDetail
 		if err := json.Unmarshal([]byte(p.ConfigJSON), &detail); err != nil {
 			return nil, fmt.Errorf("解析配置失败: %w", err)
@@ -213,6 +213,19 @@ func (s *AIPlatformService) NewProviderByID(id string) (ai.Provider, error) {
 		return ai.NewProvider(ai.PlatformConfig{
 			Provider: "openclaw",
 			OpenClaw: detail,
+		}, timeout)
+	case "openai":
+		var detail ai.HermesDetail
+		if err := json.Unmarshal([]byte(p.ConfigJSON), &detail); err != nil {
+			return nil, fmt.Errorf("解析配置失败: %w", err)
+		}
+		timeout = time.Duration(detail.Timeout) * time.Second
+		if detail.Timeout <= 0 {
+			timeout = 300 * time.Second
+		}
+		return ai.NewProvider(ai.PlatformConfig{
+			Provider: "openai",
+			Hermes:   detail,
 		}, timeout)
 	default:
 		return nil, fmt.Errorf("不支持的 Provider 类型: %s", p.ProviderType)
@@ -258,8 +271,17 @@ func (s *AIPlatformService) buildConfigJSON(providerType string, cfg PlatformFor
 			MaxHistoryMessages: cfg.MaxHistoryMessages,
 		}
 		cfgJSON, err = json.Marshal(detail)
-	case "openclaw", "openai":
+	case "openclaw":
 		detail := ai.OpenClawDetail{
+			URL:                cfg.URL,
+			Token:              cfg.Token,
+			Model:              cfg.Model,
+			Timeout:            cfg.Timeout,
+			MaxHistoryMessages: cfg.MaxHistoryMessages,
+		}
+		cfgJSON, err = json.Marshal(detail)
+	case "openai":
+		detail := ai.HermesDetail{
 			URL:                cfg.URL,
 			Token:              cfg.Token,
 			Model:              cfg.Model,

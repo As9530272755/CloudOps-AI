@@ -294,6 +294,18 @@ func (h *LogHandler) CreateLogBackend(c *gin.Context) {
 		b, _ := json.Marshal(req.Headers)
 		req.ClusterLogBackend.Headers = string(b)
 	}
+	// 写入租户ID（从集群继承或从上下文获取）
+	var tenantID uint
+	if req.ClusterID > 0 {
+		if tid, err := h.logService.GetClusterTenantID(req.ClusterID); err == nil {
+			tenantID = tid
+		}
+	}
+	if tenantID == 0 {
+		tenantID = c.GetUint("tenant_id")
+	}
+	req.ClusterLogBackend.TenantID = tenantID
+
 	if err := h.logService.CreateLogBackend(&req.ClusterLogBackend); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return

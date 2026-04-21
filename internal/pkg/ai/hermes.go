@@ -1,0 +1,319 @@
+package ai
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// HermesDetail Hermes 配置细节
+type HermesDetail struct {
+	URL                string `json:"url"`
+	Token              string `json:"token"`
+	Model              string `json:"model"`
+	Timeout            int    `json:"timeout"`             // 秒，默认 300
+	MaxHistoryMessages int    `json:"max_history_messages"` // 默认 10
+}
+
+// HermesProvider Hermes / OpenAI 兼容 Provider（支持 X-Hermes-Session-Id session 绑定）
+type HermesProvider struct {
+	BaseURL            string
+	APIKey             string
+	Model              string
+	SessionID          string
+	maxHistoryMessages int
+	client             *http.Client
+}
+
+// NewHermesProvider 创建 Hermes Provider
+func NewHermesProvider(baseURL, apiKey, model string, timeout time.Duration, maxHistoryMessages int) *HermesProvider {
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if model == "" {
+		model = "hermes"
+	}
+	if maxHistoryMessages <= 0 {
+		maxHistoryMessages = 10
+	}
+	return &HermesProvider{
+		BaseURL:            baseURL,
+		APIKey:             apiKey,
+		Model:              model,
+		maxHistoryMessages: maxHistoryMessages,
+		client:             &http.Client{Timeout: timeout},
+	}
+}
+
+func (p *HermesProvider) Name() string {
+	return "hermes"
+}
+
+func (p *HermesProvider) SetSessionID(id string) {
+	p.SessionID = id
+}
+
+func (p *HermesProvider) MaxHistoryMessages() int {
+	return p.maxHistoryMessages
+}
+
+func (p *HermesProvider) setAuth(req *http.Request) {
+	if p.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
+}
+
+func (p *HermesProvider) normalizeModel() string {
+	if p.Model == "" {
+		return "hermes"
+	}
+	return p.Model
+}
+
+func (p *HermesProvider) ChatCompletion(ctx context.Context, messages []Message, tools []Tool) (*CompletionResult, error) {
+	payload := map[string]interface{}{
+		"model":    p.normalizeModel(),
+		"messages": toOpenAIMessages(messages),
+	}
+	if len(tools) > 0 {
+		payload["tools"] = tools
+	}
+	if p.SessionID != "" {
+		payload["session_id"] = p.SessionID
+		payload["conversation_id"] = p.SessionID
+		payload["user"] = p.SessionID
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/v1/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Hermes 通过 X-Hermes-Session-Id header 实现 session 绑定
+	if p.SessionID != "" {
+		req.Header.Set("X-Hermes-Session-Id", p.SessionID)
+	}
+	p.setAuth(req)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body))
+	}
+
+	// 读取 Hermes 返回的 session ID（response header 优先级高于 body）
+	if hdrSID := resp.Header.Get("X-Hermes-Session-Id"); hdrSID != "" {
+		p.SessionID = hdrSID
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content   string     `json:"content"`
+				ToolCalls []ToolCall `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	if result.SessionID != "" && p.SessionID == "" {
+		p.SessionID = result.SessionID
+	}
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("AI 返回空结果")
+	}
+	return &CompletionResult{
+		Content:   result.Choices[0].Message.Content,
+		ToolCalls: result.Choices[0].Message.ToolCalls,
+	}, nil
+}
+
+func (p *HermesProvider) ChatCompletionStream(ctx context.Context, messages []Message, tools []Tool, onChunk func(StreamResponse)) error {
+	payload := map[string]interface{}{
+		"model":    p.normalizeModel(),
+		"messages": toOpenAIMessages(messages),
+		"stream":   true,
+	}
+	if len(tools) > 0 {
+		payload["tools"] = tools
+	}
+	if p.SessionID != "" {
+		payload["session_id"] = p.SessionID
+		payload["conversation_id"] = p.SessionID
+		payload["user"] = p.SessionID
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/v1/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	// Hermes 通过 X-Hermes-Session-Id header 实现 session 绑定
+	if p.SessionID != "" {
+		req.Header.Set("X-Hermes-Session-Id", p.SessionID)
+	}
+	p.setAuth(req)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return classifyAIError(fmt.Sprintf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body)))
+	}
+
+	// 读取 Hermes 返回的 session ID（SSE response header）
+	if hdrSID := resp.Header.Get("X-Hermes-Session-Id"); hdrSID != "" {
+		p.SessionID = hdrSID
+	}
+
+	// 如果返回的不是 SSE，则按普通 JSON 一次性读取
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/event-stream") {
+		body, _ := io.ReadAll(resp.Body)
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
+				} `json:"message"`
+			} `json:"choices"`
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal(body, &result); err == nil {
+			if result.SessionID != "" && p.SessionID == "" {
+				p.SessionID = result.SessionID
+			}
+			tcs := []ToolCall{}
+			if len(result.Choices) > 0 {
+				tcs = result.Choices[0].Message.ToolCalls
+			}
+			onChunk(StreamResponse{Content: result.Choices[0].Message.Content, ToolCalls: tcs})
+		}
+		onChunk(StreamResponse{Done: true})
+		return nil
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			onChunk(StreamResponse{Done: true})
+			break
+		}
+
+		var result struct {
+			Choices []struct {
+				Delta struct {
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
+				} `json:"delta"`
+				Message struct {
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
+				} `json:"message"`
+			} `json:"choices"`
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal([]byte(data), &result); err != nil {
+			continue
+		}
+		if result.SessionID != "" && p.SessionID == "" {
+			p.SessionID = result.SessionID
+		}
+		if len(result.Choices) > 0 {
+			content := result.Choices[0].Delta.Content
+			tcs := result.Choices[0].Delta.ToolCalls
+			if content == "" {
+				content = result.Choices[0].Message.Content
+			}
+			if len(tcs) == 0 {
+				tcs = result.Choices[0].Message.ToolCalls
+			}
+			onChunk(StreamResponse{Content: content, ToolCalls: tcs})
+		}
+	}
+	onChunk(StreamResponse{Done: true})
+	return nil
+}
+
+func (p *HermesProvider) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	p.setAuth(req)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("AI 平台 API 返回状态码 %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		if m.ID != "" {
+			models = append(models, m.ID)
+		}
+	}
+	return models, nil
+}
+
+func (p *HermesProvider) HealthCheck(ctx context.Context) error {
+	_, err := p.ListModels(ctx)
+	return err
+}

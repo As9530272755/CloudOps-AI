@@ -142,17 +142,19 @@ type LogBackendConfig struct {
 
 // ClusterLogBackend 集群日志后端（支持一个集群多套后端）
 type ClusterLogBackend struct {
-	ID              uint              `gorm:"primaryKey" json:"id"`
-	ClusterID       uint              `gorm:"index;not null" json:"cluster_id"`
-	Name            string            `gorm:"size:100;not null" json:"name"` // 用户自定义名称，如 "KS-OS-日志"
-	Type            string            `gorm:"size:50;not null" json:"type"`  // elasticsearch | opensearch | loki
-	URL             string            `gorm:"size:512;not null" json:"url"`
-	IndexPatterns   string            `gorm:"type:text" json:"-"`            // JSON 序列化后的索引模式
-	Headers         string            `gorm:"type:text" json:"-"`            // JSON 序列化后的请求头
-	Status        string     `gorm:"size:32;default:'unknown'" json:"status"`
-	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID              uint           `gorm:"primaryKey" json:"id"`
+	TenantID        uint           `gorm:"index;not null" json:"tenant_id"`
+	ClusterID       uint           `gorm:"index;not null" json:"cluster_id"`
+	Name            string         `gorm:"size:100;not null" json:"name"` // 用户自定义名称，如 "KS-OS-日志"
+	Type            string         `gorm:"size:50;not null" json:"type"`  // elasticsearch | opensearch | loki
+	URL             string         `gorm:"size:512;not null" json:"url"`
+	IndexPatterns   string         `gorm:"type:text" json:"-"`            // JSON 序列化后的索引模式
+	Headers         string         `gorm:"type:text" json:"-"`            // JSON 序列化后的请求头
+	Status        string         `gorm:"size:32;default:'unknown'" json:"status"`
+	LastCheckedAt *time.Time     `json:"last_checked_at,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
 	// 以下字段仅在 API 响应中使用
 	IndexPatternsMap map[string]string `json:"index_patterns,omitempty" gorm:"-"`
 	HeadersMap       map[string]string `json:"headers,omitempty" gorm:"-"`
