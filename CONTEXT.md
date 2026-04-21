@@ -2950,3 +2950,29 @@ API 验证：OpenSearch 15 分钟全量日志返回 **51,737 条** ✅
 
 *最后更新：2026-04-21*
 
+
+---
+
+## 2026-04-21 修复 evaluatePermissionScope 误判只读权限为 read-write
+
+**问题**：上一提交修复了 `probePermissionScope` 的 `Namespace=""` 探测失败问题，但 KS（只读 kubeconfig）被误判为 `read-write`。
+
+**根因**：`SelfSubjectRulesReview` 返回的规则中，`authorization.k8s.io` 组的 `selfsubjectaccessreviews` / `selfsubjectrulesreviews` 带有 `create` verb——这是 K8s **默认授予所有用户**的权限自查 API，不代表能创建 Pod/Deployment 等资源。`evaluatePermissionScope` 将 `create` 计入 `hasWrite`，导致只读 kubeconfig 被误判为 `read-write`。
+
+**修复**：
+- `internal/service/cluster_service.go` `evaluatePermissionScope`：
+  - 新增 `containsString` 辅助函数
+  - 遍历 `ResourceRules` 时跳过 `authorization.k8s.io` apiGroup 的规则
+- `probePermissionScope` 保持上一提交简化后的逻辑（只探测 default namespace）
+
+**验证**：
+- KS-MASTER（admin）→ `admin` ✅
+- KS（只读）→ `read-only` ✅
+- YH（只读）→ `read-only` ✅
+
+后端编译 ✅ 服务重启 ✅
+
+---
+
+*最后更新：2026-04-21*
+

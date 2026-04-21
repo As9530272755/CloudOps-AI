@@ -383,6 +383,11 @@ func evaluatePermissionScope(result *authorizationv1.SelfSubjectRulesReview) str
 	hasWrite := false
 	hasDelete := false
 	for _, rule := range result.Status.ResourceRules {
+		// 跳过权限自查 API（authorization.k8s.io），所有用户默认都有 create 权限
+		// 不代表能实际操作 Pod/Deployment 等资源
+		if containsString(rule.APIGroups, "authorization.k8s.io") {
+			continue
+		}
 		for _, verb := range rule.Verbs {
 			if verb == "*" {
 				return "admin"
@@ -402,6 +407,16 @@ func evaluatePermissionScope(result *authorizationv1.SelfSubjectRulesReview) str
 		return "read-write"
 	}
 	return "read-only"
+}
+
+// containsString 检查字符串切片中是否包含指定值
+func containsString(slice []string, target string) bool {
+	for _, s := range slice {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }
 
 // stricterPermissionScope 返回两个权限范围中更严格的一个
