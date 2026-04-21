@@ -1759,7 +1759,21 @@ export function generateManifest(kind: string, data: FormData): any {
       return limitRangeFormToManifest(data as LimitRangeFormData)
     case 'resourcequotas':
       return resourceQuotaFormToManifest(data as ResourceQuotaFormData)
+    case 'leases':
+      return leaseFormToManifest(data as LeaseFormData)
+    case 'statefulsets':
+      return statefulSetFormToManifest(data as StatefulSetFormData)
+    case 'daemonsets':
       return daemonSetFormToManifest(data as DaemonSetFormData)
+    case 'replicasets':
+      return replicaSetFormToManifest(data as ReplicaSetFormData)
+    case 'jobs':
+      return jobFormToManifest(data as JobFormData)
+    case 'cronjobs':
+      return cronJobFormToManifest(data as CronJobFormData)
+    case 'endpoints':
+      return endpointFormToManifest(data as EndpointFormData)
+    case 'persistentvolumes':
       return persistentVolumeFormToManifest(data as PersistentVolumeFormData)
     case 'persistentvolumeclaims':
       return persistentVolumeClaimFormToManifest(data as PersistentVolumeClaimFormData)
@@ -1828,7 +1842,21 @@ export function parseManifest(kind: string, manifest: any): FormData | null {
       return manifestToJobForm(manifest)
     case 'cronjobs':
       return manifestToCronJobForm(manifest)
+    case 'endpoints':
+      return manifestToEndpointForm(manifest)
+    case 'persistentvolumes':
+      return manifestToPersistentVolumeForm(manifest)
+    case 'persistentvolumeclaims':
       return manifestToPersistentVolumeClaimForm(manifest)
+    case 'storageclasses':
+      return manifestToStorageClassForm(manifest)
+    case 'serviceaccounts':
+      return manifestToServiceAccountForm(manifest)
+    case 'roles':
+      return manifestToRoleForm(manifest)
+    case 'rolebindings':
+      return manifestToRoleBindingForm(manifest)
+    case 'clusterroles':
       return manifestToClusterRoleForm(manifest)
     case 'clusterrolebindings':
       return manifestToClusterRoleBindingForm(manifest)
