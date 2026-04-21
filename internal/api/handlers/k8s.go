@@ -204,6 +204,34 @@ func (h *K8sHandler) GetResource(c *gin.Context) {
 	})
 }
 
+// GetCRDCustomResources 获取 CRD 下的 Custom Resource 实例列表
+// GET /api/v1/clusters/:id/crds/:name/customresources?namespace=
+func (h *K8sHandler) GetCRDCustomResources(c *gin.Context) {
+	clusterID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid cluster id"})
+		return
+	}
+
+	crdName := c.Param("name")
+	namespace := c.Query("namespace")
+
+	items, err := h.k8sService.GetCRDCustomResources(c.Request.Context(), uint(clusterID), crdName, namespace)
+	if err != nil {
+		if err.Error() == "CRD 未找到" {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    items,
+	})
+}
+
 // GetNamespaces 获取命名空间列表（按权限过滤）
 // GET /api/v1/clusters/:id/namespaces
 func (h *K8sHandler) GetNamespaces(c *gin.Context) {

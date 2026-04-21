@@ -126,6 +126,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				k8sCluster.GET("/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.ListResources)
 				k8sCluster.GET("/resources/:kind/:name/yaml", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResourceYAML)
 				k8sCluster.GET("/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetResource)
+				k8sCluster.GET("/crds/:name/customresources", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetCRDCustomResources)
 				k8sCluster.POST("/resources/:kind", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.CreateResource)
 				k8sCluster.PUT("/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.UpdateResource)
 				k8sCluster.DELETE("/resources/:kind/:name", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.DeleteResource)

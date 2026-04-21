@@ -188,6 +188,20 @@ export const k8sAPI = {
     })
     return response.data
   },
+
+  // 获取 CRD 下的 Custom Resource 实例列表
+  getCRDCustomResources: async (
+    clusterId: number,
+    crdName: string,
+    namespace?: string
+  ) => {
+    const params = new URLSearchParams()
+    if (namespace && namespace !== 'all') {
+      params.set('namespace', namespace)
+    }
+    const response = await api.get(`/clusters/${clusterId}/crds/${crdName}/customresources?${params.toString()}`)
+    return response.data
+  },
 }
 
 // 资源类型定义
@@ -250,7 +264,7 @@ export const resourceCategories = [
     key: 'custom',
     label: '自定义资源',
     icon: 'Extension',
-    resources: ['customresourcedefinitions'],
+    resources: ['customresourcedefinitions', 'servicemonitors'],
   },
 ]
 
@@ -287,4 +301,5 @@ export const resourceLabels: Record<string, string> = {
   limitranges: 'LimitRange',
   resourcequotas: 'ResourceQuota',
   leases: 'Lease',
+  servicemonitors: 'ServiceMonitor',
 }

@@ -2713,3 +2713,88 @@ Agent Runtime（Node.js 子进程，监听 19000）在 `668382f` 中已禁用启
 - 改用 `nohup ./cloudops-backend &` 手动启动
 
 后端当前以 nohup 方式运行，PID 稳定。
+
+---
+
+## 2026-04-21 上午开发记录
+
+### 一、ServiceMonitor 资源支持（完整链路）
+
+**需求**：在集群管理模块中增加 Prometheus Operator 的 `ServiceMonitor` CRD 资源支持。
+
+**实现**：
+- **后端 `k8s_manager.go`**：
+  - `ClusterClient` 新增 `ServiceMonitorStore cache.Store`
+  - `createClusterClient` 中通过 `dynamicinformer.NewFilteredDynamicInformer` 注册 ServiceMonitor Informer（GVR: `monitoring.coreos.com/v1/servicemonitors`）
+  - `GetNamespacedResourceList` / `GetResourceByName` / `getNamespace` / `getName` 均增加 `servicemonitors` case
+- **后端 `k8s_resource_service.go`**：
+  - `kindToGVK` 映射 `monitoring.coreos.com/v1/ServiceMonitor`
+  - `GetClusterStats` 管理员/namespace 用户统计增加 `servicemonitors`
+  - `convertToSummary` 增加 `*unstructured.Unstructured` case
+  - `getStoreByKind` 增加 `servicemonitors` case
+  - `convertUnstructuredToTyped` 对 scheme 未注册类型（CRD）直接返回原 unstructured，避免 panic
+- **后端 `k8s_manager.go` `SearchGlobalResources`**：新增 `servicemonitors` 的 `appendFromStore` 调用，支持全局搜索
+- **前端 `k8s-api.ts`**：
+  - `resourceCategories.custom.resources` 添加 `servicemonitors`
+  - `resourceLabels` 添加 `servicemonitors: 'ServiceMonitor'`
+- **前端 `ClusterDetail.tsx`**：
+  - `singularMap` 添加 `servicemonitors: 'servicemonitor'`
+  - `namespacedResources` 添加 `'servicemonitors'`
+  - `getColumns` 增加 `servicemonitors` case（名称 + 命名空间）
+- **前端 `Clusters.tsx`**：`searchCategoryMap['custom'].resources` 添加 `servicemonitors`，修复全局搜索下拉框不显示 ServiceMonitor 的问题
+
+**修复**：`cmd/check-logs/main.go` 中 `NewK8sManager` 参数不匹配（附带修复）。
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 二、CRD 页面增加 CR 列表信息展示
+
+**需求**：在 CustomResourceDefinition（CRD）页面中，增加该 CRD 下实际创建的 Custom Resource（CR）实例列表展示。
+
+**实现**：
+- **后端 `k8s_resource_service.go`**：新增 `GetCRDCustomResources(ctx, clusterID, crdName, namespace)`
+  - 从 `CRDStore` 获取 CRD 定义
+  - 解析 GVR：`Group` = `crd.Spec.Group`，`Resource` = `crd.Spec.Names.Plural`，`Version` = 第一个 `Served=true` 的 version
+  - 根据 CRD scope 决定调用方式：
+    - Cluster-scoped：`client.Resource(gvr).List(...)`
+    - Namespace-scoped：`client.Resource(gvr).Namespace(namespace).List(...)`（namespace 为空则查询全部）
+  - 返回每个 CR 的摘要：name, namespace, creationTimestamp
+- **后端 `k8s.go`**：新增 `GetCRDCustomResources` handler
+- **后端 `routes.go`**：注册路由 `GET /api/v1/clusters/:id/crds/:name/customresources?namespace=`
+- **前端 `k8s-api.ts`**：新增 `getCRDCustomResources(clusterId, crdName, namespace?)`
+- **前端 `ClusterDetail.tsx`**：
+  - CRD 表格操作列增加"查看CR实例"按钮（所有有集群查看权限的用户可见，不只是 admin/read-write）
+  - 新增 CR 实例列表弹窗：
+    - 标题：`{CRD名称} 的实例列表`
+    - Namespaced CRD 显示 namespace 下拉选择框（"全部命名空间" + 集群 namespace 列表）
+    - 表格列：名称、命名空间、创建时间
+    - 空状态：暂无实例
+  - 新增 state：`crListOpen`, `crListItems`, `crListLoading`, `selectedCRD`, `crListNamespace`
+
+**API 验证**：
+- `alertmanagers.monitoring.coreos.com` → 1 个实例 ✅
+- `prometheuses.monitoring.coreos.com` → 1 个实例 ✅
+- `servicemonitors.monitoring.coreos.com` + `namespace=tools` → 5 个实例 ✅
+
+后端编译 ✅ 前端编译 ✅ 服务重启 ✅
+
+---
+
+### 三、文案优化
+
+| 位置 | 修改前 | 修改后 |
+|---|---|---|
+| CRD 状态 Chip | `Established` / `Not Established` | **已注册** / **注册中** |
+| CRD 操作按钮 | 查看实例 | **查看CR实例** |
+
+前端编译 ✅
+
+---
+
+### 四、今日上午代码状态
+
+- GitHub `main` 分支：待推送
+- 后端 & 前端编译通过 ✅
+- 服务稳定运行 ✅

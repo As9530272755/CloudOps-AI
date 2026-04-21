@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/cloudops/platform/internal/pkg/config"
-	"github.com/cloudops/platform/internal/pkg/crypto"
 	"github.com/cloudops/platform/internal/pkg/database"
 	"github.com/cloudops/platform/internal/service"
 	corev1 "k8s.io/api/core/v1"
@@ -31,8 +30,7 @@ func main() {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
 
-	encryptor := crypto.NewAES256Encrypt(cfg.Security.JWT.Secret)
-	k8sManager := service.NewK8sManager(db, encryptor)
+	k8sManager := service.NewK8sManager(db)
 
 	fmt.Println("正在连接集群: yh ...")
 	if err := k8sManager.StartCluster(context.Background(), 2); err != nil {

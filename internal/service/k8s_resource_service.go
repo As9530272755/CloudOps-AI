@@ -146,6 +146,8 @@ func kindToGVK(kind string) schema.GroupVersionKind {
 		return schema.GroupVersionKind{Group: "discovery.k8s.io", Version: "v1", Kind: "EndpointSlice"}
 	case "leases":
 		return schema.GroupVersionKind{Group: "coordination.k8s.io", Version: "v1", Kind: "Lease"}
+	case "servicemonitors":
+		return schema.GroupVersionKind{Group: "monitoring.coreos.com", Version: "v1", Kind: "ServiceMonitor"}
 	default:
 		return schema.GroupVersionKind{}
 	}
@@ -247,6 +249,83 @@ func (s *K8sResourceService) GetResource(ctx context.Context, clusterID uint, ki
 	return convertToDetail(obj), nil
 }
 
+// GetCRDCustomResources 获取指定 CRD 下的 Custom Resource 实例列表
+func (s *K8sResourceService) GetCRDCustomResources(ctx context.Context, clusterID uint, crdName string, namespace string) ([]map[string]interface{}, error) {
+	cc := s.k8sManager.GetClusterClient(clusterID)
+	if cc == nil {
+		go s.k8sManager.StartCluster(context.Background(), clusterID)
+		return nil, fmt.Errorf("集群缓存正在重建，请 5-10 秒后重试")
+	}
+
+	cc.SyncMu.RLock()
+	ready := cc.SyncReady
+	cc.SyncMu.RUnlock()
+	if !ready {
+		return nil, fmt.Errorf("集群缓存正在同步，请稍后重试")
+	}
+
+	// 从 CRDStore 获取 CRD 定义
+	obj, exists, err := cc.CRDStore.GetByKey(crdName)
+	if err != nil {
+		return nil, fmt.Errorf("查询 CRD 失败: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("CRD 未找到")
+	}
+
+	crd, ok := obj.(*v1.CustomResourceDefinition)
+	if !ok {
+		return nil, fmt.Errorf("CRD 类型错误")
+	}
+
+	// 解析 GVR
+	group := crd.Spec.Group
+	resource := crd.Spec.Names.Plural
+	var version string
+	for _, v := range crd.Spec.Versions {
+		if v.Served {
+			version = v.Name
+			break
+		}
+	}
+	if version == "" {
+		return nil, fmt.Errorf("CRD 没有可用的 served version")
+	}
+
+	gvr := schema.GroupVersionResource{Group: group, Version: version, Resource: resource}
+
+	// 获取 dynamic client
+	client, err := s.getDynamicClient(clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 根据 scope 查询
+	var list *unstructured.UnstructuredList
+	if crd.Spec.Scope == v1.NamespaceScoped {
+		if namespace != "" && namespace != "all" {
+			list, err = client.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+		} else {
+			list, err = client.Resource(gvr).List(ctx, metav1.ListOptions{})
+		}
+	} else {
+		list, err = client.Resource(gvr).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("查询 CR 列表失败: %w", err)
+	}
+
+	items := make([]map[string]interface{}, 0, len(list.Items))
+	for _, item := range list.Items {
+		items = append(items, map[string]interface{}{
+			"name":              item.GetName(),
+			"namespace":         item.GetNamespace(),
+			"creationTimestamp": item.GetCreationTimestamp().Format(time.RFC3339),
+		})
+	}
+	return items, nil
+}
+
 // GetNamespaces 获取命名空间列表
 func (s *K8sResourceService) GetNamespaces(ctx context.Context, clusterID uint) ([]string, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
@@ -324,6 +403,7 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 			"limitranges":               len(cc.LimitRangeStore.List()),
 			"resourcequotas":            len(cc.ResourceQuotaStore.List()),
 			"leases":                    len(cc.LeaseStore.List()),
+		"servicemonitors":           len(cc.ServiceMonitorStore.List()),
 		}, nil
 	}
 
@@ -354,6 +434,7 @@ func (s *K8sResourceService) GetClusterStats(ctx context.Context, clusterID uint
 		"limitranges":      countStoreByNamespaces(cc.LimitRangeStore, allowedSet),
 		"resourcequotas":   countStoreByNamespaces(cc.ResourceQuotaStore, allowedSet),
 		"leases":           countStoreByNamespaces(cc.LeaseStore, allowedSet),
+		"servicemonitors":  countStoreByNamespaces(cc.ServiceMonitorStore, allowedSet),
 	}, nil
 }
 
@@ -680,6 +761,12 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"holder_identity":   v.Spec.HolderIdentity,
 			"renew_time":        renewTime,
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
+		}
+	case *unstructured.Unstructured:
+		return map[string]interface{}{
+			"name":              v.GetName(),
+			"namespace":         v.GetNamespace(),
+			"creationTimestamp": v.GetCreationTimestamp().Format(time.RFC3339),
 		}
 	default:
 		return map[string]interface{}{"kind": "unknown"}
@@ -1139,6 +1226,8 @@ func getStoreByKind(cc *ClusterClient, kind string) cache.Store {
 		return cc.ResourceQuotaStore
 	case "leases":
 		return cc.LeaseStore
+	case "servicemonitors":
+		return cc.ServiceMonitorStore
 	default:
 		return nil
 	}
@@ -1164,7 +1253,8 @@ func convertUnstructuredToTyped(obj *unstructured.Unstructured) (interface{}, er
 
 	typedObj, err := scheme.Scheme.New(gvk)
 	if err != nil {
-		return nil, err
+		// scheme 中未注册的类型（如 CRD）直接返回 unstructured
+		return obj, nil
 	}
 
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, typedObj); err != nil {

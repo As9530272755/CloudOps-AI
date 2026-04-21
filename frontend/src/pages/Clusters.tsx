@@ -63,7 +63,7 @@ const searchCategoryMap: Record<string, { label: string; resources: string[] }> 
   'nodes': { label: '节点', resources: ['nodes'] },
   'namespaces': { label: '命名空间', resources: ['namespaces'] },
   'events': { label: '事件', resources: ['events'] },
-  'custom': { label: '自定义资源', resources: ['customresourcedefinitions'] },
+  'custom': { label: '自定义资源', resources: ['customresourcedefinitions', 'servicemonitors'] },
 }
 
 // 状态颜色映射（连接状态）

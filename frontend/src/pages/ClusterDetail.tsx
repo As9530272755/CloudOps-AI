@@ -90,6 +90,7 @@ const singularMap: Record<string, string> = {
   limitranges: 'limitrange',
   resourcequotas: 'resourcequota',
   leases: 'lease',
+  servicemonitors: 'servicemonitor',
 }
 
 function hasResourcePermission(resource: string, permissions: string[]): boolean {
@@ -107,6 +108,7 @@ const namespacedResources = new Set([
   'roles', 'rolebindings', 'events',
   'horizontalpodautoscalers', 'networkpolicies', 'poddisruptionbudgets', 'endpointslices',
   'replicationcontrollers', 'limitranges', 'resourcequotas', 'leases',
+  'servicemonitors',
 ])
 
 // 资源状态颜色映射（通用）
@@ -154,6 +156,13 @@ export default function ClusterDetail() {
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
   const [editorYaml, setEditorYaml] = useState('')
   const preRef = useRef<HTMLPreElement>(null)
+
+  // CRD Custom Resource 列表弹窗状态
+  const [crListOpen, setCrListOpen] = useState(false)
+  const [crListItems, setCrListItems] = useState<any[]>([])
+  const [crListLoading, setCrListLoading] = useState(false)
+  const [selectedCRD, setSelectedCRD] = useState<any>(null)
+  const [crListNamespace, setCrListNamespace] = useState('all')
 
   // 权限数据
   const { permissions } = usePermission()
@@ -355,6 +364,27 @@ export default function ClusterDetail() {
     setDetailOpen(true)
   }
 
+  // 查看 CRD 下的 Custom Resource 实例列表
+  const viewCRList = async (crdItem: any) => {
+    setSelectedCRD(crdItem)
+    setCrListOpen(true)
+    setCrListLoading(true)
+    setCrListItems([])
+    try {
+      const ns = crdItem.scope === 'Namespaced' ? crListNamespace : undefined
+      const result = await k8sAPI.getCRDCustomResources(id, crdItem.name, ns)
+      if (result.success && result.data) {
+        setCrListItems(result.data)
+      } else {
+        setSnackbar({ open: true, message: result.error || '加载实例列表失败', severity: 'error' })
+      }
+    } catch (err: any) {
+      setSnackbar({ open: true, message: err.response?.data?.error || '加载实例列表失败', severity: 'error' })
+    } finally {
+      setCrListLoading(false)
+    }
+  }
+
   // 加载YAML
   const loadYaml = async () => {
     if (!detailItem) return
@@ -553,6 +583,8 @@ export default function ClusterDetail() {
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hard', label: '配额限制' }]
       case 'leases':
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'holderIdentity', label: '持有者' }]
+      case 'servicemonitors':
+        return [...common, { key: 'namespace', label: '命名空间' }]
       default:
         return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }]
     }
@@ -578,7 +610,7 @@ export default function ClusterDetail() {
       return value.join(', ')
     }
     if (key === 'established') {
-      return <Chip label={value ? 'Established' : 'Not Established'} color={value ? 'success' : 'default'} size="small" sx={{ borderRadius: '6px' }} />
+      return <Chip label={value ? '已注册' : '注册中'} color={value ? 'success' : 'default'} size="small" sx={{ borderRadius: '6px' }} />
     }
     return String(value ?? '-')
   }
@@ -797,7 +829,7 @@ export default function ClusterDetail() {
                         {getColumns(activeResource).map(col => (
                           <TableCell key={col.key} sx={{ fontWeight: 600 }}>{col.label}</TableCell>
                         ))}
-                        {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') && (
+                        {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write' || activeResource === 'customresourcedefinitions') && (
                           <TableCell sx={{ fontWeight: 600 }} align="right">操作</TableCell>
                         )}
                       </TableRow>
@@ -808,42 +840,51 @@ export default function ClusterDetail() {
                           {getColumns(activeResource).map(col => (
                             <TableCell key={col.key}>{renderCell(item, col.key)}</TableCell>
                           ))}
-                          {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') && (
+                          {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write' || activeResource === 'customresourcedefinitions') && (
                             <TableCell align="right">
                               <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                                <Button
-                                  size="small"
-                                  onClick={async () => {
-                                    setDetailItem(item)
-                                    setEditorMode('edit')
-                                    setYamlLoading(true)
-                                    try {
-                                      const result = await k8sAPI.getResourceYAML(id, activeResource, item.name, item.namespace)
-                                      if (result.success && result.data) {
-                                        setEditorYaml(result.data)
-                                        setEditorOpen(true)
-                                      } else {
-                                        setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
-                                      }
-                                    } catch {
-                                      setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
-                                    } finally {
-                                      setYamlLoading(false)
-                                    }
-                                  }}
-                                >
-                                  编辑
-                                </Button>
-                                <Button
-                                  size="small"
-                                  color="error"
-                                  onClick={() => {
-                                    setDeleteTarget(item)
-                                    setDeleteConfirmOpen(true)
-                                  }}
-                                >
-                                  删除
-                                </Button>
+                                {activeResource === 'customresourcedefinitions' && (
+                                  <Button size="small" variant="outlined" onClick={() => viewCRList(item)}>
+                                    查看CR实例
+                                  </Button>
+                                )}
+                                {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write') && (
+                                  <>
+                                    <Button
+                                      size="small"
+                                      onClick={async () => {
+                                        setDetailItem(item)
+                                        setEditorMode('edit')
+                                        setYamlLoading(true)
+                                        try {
+                                          const result = await k8sAPI.getResourceYAML(id, activeResource, item.name, item.namespace)
+                                          if (result.success && result.data) {
+                                            setEditorYaml(result.data)
+                                            setEditorOpen(true)
+                                          } else {
+                                            setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
+                                          }
+                                        } catch {
+                                          setSnackbar({ open: true, message: '加载 YAML 失败', severity: 'error' })
+                                        } finally {
+                                          setYamlLoading(false)
+                                        }
+                                      }}
+                                    >
+                                      编辑
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      color="error"
+                                      onClick={() => {
+                                        setDeleteTarget(item)
+                                        setDeleteConfirmOpen(true)
+                                      }}
+                                    >
+                                      删除
+                                    </Button>
+                                  </>
+                                )}
                               </Box>
                             </TableCell>
                           )}
@@ -1051,6 +1092,84 @@ export default function ClusterDetail() {
           <Button variant="contained" color="error" onClick={handleDeleteResource} sx={{ textTransform: 'none' }}>
             确认删除
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* CRD Custom Resource 实例列表弹窗 */}
+      <Dialog open={crListOpen} onClose={() => setCrListOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>
+          {selectedCRD?.name} 的实例列表
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedCRD?.scope === 'Namespaced' && (
+            <Box sx={{ mb: 2 }}>
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel>命名空间</InputLabel>
+                <Select
+                  value={crListNamespace}
+                  label="命名空间"
+                  onChange={async (e) => {
+                    const ns = e.target.value as string
+                    setCrListNamespace(ns)
+                    if (selectedCRD) {
+                      setCrListLoading(true)
+                      try {
+                        const result = await k8sAPI.getCRDCustomResources(id, selectedCRD.name, ns)
+                        if (result.success && result.data) {
+                          setCrListItems(result.data)
+                        }
+                      } catch (err: any) {
+                        setSnackbar({ open: true, message: err.response?.data?.error || '加载失败', severity: 'error' })
+                      } finally {
+                        setCrListLoading(false)
+                      }
+                    }
+                  }}
+                >
+                  <MenuItem value="all">全部命名空间</MenuItem>
+                  {namespaces.map(ns => (
+                    <MenuItem key={ns} value={ns}>{ns}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+          {crListLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>名称</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>命名空间</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>创建时间</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {crListItems.map((item, idx) => (
+                    <TableRow key={idx} hover>
+                      <TableCell>{item.name}</TableCell>
+                      <TableCell>{item.namespace || '-'}</TableCell>
+                      <TableCell>{item.creationTimestamp}</TableCell>
+                    </TableRow>
+                  ))}
+                  {crListItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                        暂无实例
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setCrListOpen(false)} sx={{ textTransform: 'none' }}>关闭</Button>
         </DialogActions>
       </Dialog>
 

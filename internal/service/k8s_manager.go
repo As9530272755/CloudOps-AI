@@ -19,6 +19,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -26,6 +27,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextensionsinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
@@ -84,6 +87,7 @@ type ClusterClient struct {
 	ResourceQuotaStore   cache.Store
 	LeaseStore           cache.Store
 	CRDStore             cache.Store
+	ServiceMonitorStore  cache.Store
 }
 
 // K8sManager K8s客户端与Informer管理器
@@ -444,6 +448,19 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 		if len(result) >= limit {
 			break
 		}
+		appendFromStore(cc, "servicemonitors", cc.ServiceMonitorStore, func(obj interface{}) (SearchResult, bool) {
+			v, ok := obj.(*unstructured.Unstructured)
+			if !ok {
+				return SearchResult{}, false
+			}
+			if strings.Contains(strings.ToLower(v.GetName()), kwordLower) {
+				return SearchResult{ClusterID: id, ClusterName: clusterName, Kind: "servicemonitors", Namespace: v.GetNamespace(), Name: v.GetName(), Status: "", Labels: copyLabels(v.GetLabels())}, true
+			}
+			return SearchResult{}, false
+		})
+		if len(result) >= limit {
+			break
+		}
 	}
 
 	return result, nil
@@ -674,6 +691,15 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	cc.LeaseStore = factory.Coordination().V1().Leases().Informer().GetStore()
 	cc.CRDStore = apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetStore()
 
+	// ServiceMonitor (CRD via dynamic informer)
+	var serviceMonitorInformer cache.SharedIndexInformer
+	if dynamicClient != nil {
+		smGVR := schema.GroupVersionResource{Group: "monitoring.coreos.com", Version: "v1", Resource: "servicemonitors"}
+		smInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, smGVR, "", 0, cache.Indexers{}, nil)
+		cc.ServiceMonitorStore = smInformer.Informer().GetStore()
+		serviceMonitorInformer = smInformer.Informer()
+	}
+
 	// 为所有 informer 注册事件处理器，资源变化时广播 WebSocket
 	addResourceEventHandler(factory.Core().V1().Nodes().Informer(), clusterID, "nodes", cc)
 	addResourceEventHandler(factory.Core().V1().Namespaces().Informer(), clusterID, "namespaces", cc)
@@ -707,6 +733,10 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	addResourceEventHandler(factory.Core().V1().ResourceQuotas().Informer(), clusterID, "resourcequotas", cc)
 	addResourceEventHandler(factory.Coordination().V1().Leases().Informer(), clusterID, "leases", cc)
 	addResourceEventHandler(apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer(), clusterID, "customresourcedefinitions", cc)
+	if serviceMonitorInformer != nil {
+		addResourceEventHandler(serviceMonitorInformer, clusterID, "servicemonitors", cc)
+		go serviceMonitorInformer.Run(stopCh)
+	}
 
 	factory.Start(stopCh)
 	apiextFactory.Start(stopCh)
@@ -744,6 +774,9 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 		factory.Core().V1().ResourceQuotas().Informer().HasSynced,
 		factory.Coordination().V1().Leases().Informer().HasSynced,
 		apiextFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced,
+	}
+	if serviceMonitorInformer != nil {
+		synced = append(synced, serviceMonitorInformer.HasSynced)
 	}
 
 	ctxSync, cancel := context.WithTimeout(ctx, 120*time.Second)
@@ -930,6 +963,8 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 		store = cc.ResourceQuotaStore
 	case "leases":
 		store = cc.LeaseStore
+	case "servicemonitors":
+		store = cc.ServiceMonitorStore
 	default:
 		return nil, 0, fmt.Errorf("unsupported namespaced resource kind: %s", kind)
 	}
@@ -1035,6 +1070,8 @@ func getNamespace(obj interface{}) string {
 		return v.Namespace
 	case *coordinationv1.Lease:
 		return v.Namespace
+	case *unstructured.Unstructured:
+		return v.GetNamespace()
 	default:
 		return ""
 	}
@@ -1107,6 +1144,8 @@ func getName(obj interface{}) string {
 		return v.Name
 	case *coordinationv1.Lease:
 		return v.Name
+	case *unstructured.Unstructured:
+		return v.GetName()
 	default:
 		return ""
 	}
@@ -1237,6 +1276,9 @@ func (cc *ClusterClient) GetResourceByName(kind, namespace, name string) (interf
 		key = namespace + "/" + name
 	case "leases":
 		store = cc.LeaseStore
+		key = namespace + "/" + name
+	case "servicemonitors":
+		store = cc.ServiceMonitorStore
 		key = namespace + "/" + name
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", kind)
