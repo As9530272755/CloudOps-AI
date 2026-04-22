@@ -3354,3 +3354,252 @@ Agent Runtime（Node.js 子进程，端口 19000）已于 2026-04-19 在 `cmd/se
 ---
 
 *最后更新：2026-04-21*
+
+---
+
+## 2026-04-22 集群资源列表：标签展示与标签过滤
+
+### 需求
+集群内节点页面及所有资源类型页面，支持显示每个资源的 Labels，且支持按 Label 过滤。
+
+### 后端修改
+
+#### 1. `internal/service/k8s_manager.go`
+- 新增 `getLabels(obj interface{}) map[string]string`：利用 `metav1.Object` 接口统一提取所有 K8s 对象标签
+- 新增 `parseLabelSelector(selector string) map[string]string`：解析标签选择器字符串，支持 `key=value`（精确匹配）和 `key`（仅要求存在）两种格式，多个条件用空格或逗号分隔（AND 关系）
+- 新增 `matchLabels(obj interface{}, selector map[string]string) bool`：判断对象标签是否满足选择器
+- `GetNamespacedResourceList` / `GetClusterResourceList` 新增 `labelSelector string` 参数，在内存过滤阶段加入 Label 匹配逻辑
+
+#### 2. `internal/service/k8s_resource_service.go`
+- `ListResources` 新增 `labelSelector` 参数，缓存 key 同步包含该参数
+- `convertToSummary`：为全部 33 种资源类型统一注入 `"labels"` 字段（利用 `getLabels` 辅助函数）
+- `agent_service.go` 同步修正 `ListResources` 调用参数
+
+#### 3. `internal/api/handlers/k8s.go`
+- `ListResources` handler 新增读取 `label_selector` query 参数并透传至 Service 层
+
+### 前端修改
+
+#### 1. `frontend/src/lib/k8s-api.ts`
+- `getResources` 新增 `labelSelector` 参数，URL 中透传 `label_selector`
+
+#### 2. `frontend/src/pages/ClusterDetail.tsx`
+- **新增 Label 筛选状态**：`labelSelector` + `labelSelectorRef`
+- **新增 Label 筛选输入框**：位于资源名称搜索框旁边，placeholder 为 "标签筛选，如 app=nginx"
+- **新增 Label 筛选 debounce**：300ms 延迟后自动触发 `loadResources`
+- **`getColumns`**：全部 33 种资源类型表格均新增 `labels` 列
+- **`renderCell`**：新增 `labels` 渲染逻辑：
+  - 最多展示前 2 个标签 Chip（`key=value` 格式）
+  - 超出显示 `+N` Chip，悬浮提示完整标签列表
+  - 无标签时显示 `-`
+- **切换资源类型/概览卡片时自动清空** `labelSelector`，避免跨类型标签不匹配导致空结果
+
+### 效果
+| 功能 | 说明 |
+|------|------|
+| 标签展示 | 所有资源表格（Pod/Node/Deployment/Service/CRD 等）均展示 Labels 列 |
+| 标签过滤 | 输入 `app=nginx` 只显示匹配资源；输入 `app` 只要求标签存在 |
+| 多条件过滤 | 支持 `app=nginx,env=prod` 或 `app=nginx env=prod`（AND） |
+| 过滤位置 | 后端 informer 内存过滤，性能 O(n)，响应毫秒级 |
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npx tsc --noEmit` ✅
+- 后端已重启 ✅
+
+---
+
+*最后更新：2026-04-22*
+
+---
+
+## 2026-04-22 修复资源列表排序被打乱问题
+
+### 问题
+集群详情页中，每次 WebSocket 推送新数据或前端轮询刷新后，资源列表（如 Node、Pod 等）的排序会随机打乱，用户体验差。
+
+### 根因
+`k8s_manager.go` 中 `GetNamespacedResourceList` / `GetClusterResourceList` 直接从 informer cache store 的 `List()` 读取数据。cache store 底层为 `ThreadSafeStore`，其内部索引顺序会在写操作（Create/Update/Delete）后发生变化。WebSocket 推送触发的 `syncObjectToStore` 会改变 store 内部顺序，导致下次 `List()` 返回的切片顺序不同。
+
+### 修复
+`internal/service/k8s_manager.go`：
+- import 新增 `"sort"`
+- `GetNamespacedResourceList`：过滤完成后、分页前，对 `filtered` 切片按资源名称做稳定排序
+- `GetClusterResourceList`：过滤完成后、分页前，对 `result` 切片按资源名称做稳定排序
+
+```go
+sort.Slice(filtered, func(i, j int) bool {
+    return getName(filtered[i]) < getName(filtered[j])
+})
+```
+
+### 效果
+- 所有资源类型（Pod/Node/Deployment/Service/CRD 等）均按 **名称字母升序** 固定排列
+- WebSocket 实时推送、轮询刷新、手动刷新均不再打乱排序
+- 翻页、筛选（namespace/keyword/label/type）后排序保持一致
+
+### 编译状态
+- 后端 `go build` ✅
+- 后端已重启 ✅
+
+---
+
+*最后更新：2026-04-22*
+
+---
+
+## 2026-04-22 集群节点页面：物理资源与使用率展示 + 表头排序
+
+### 需求
+集群内节点（Node）页面需要展示物理 CPU、物理内存、CPU 使用率、内存使用率，并支持通过 UI 点击表头排序。
+
+### 后端修改
+
+#### 1. `internal/service/k8s_resource_service.go`
+- `convertToSummary` Node case 新增字段：
+  - `cpu` — 物理 CPU 核数（如 "4.0"）
+  - `memory` — 物理内存人类可读格式（如 "32.0 GiB"）
+- 新增 `getNodeMetricsMap` 函数：通过 `DynamicClient` 调用 `metrics.k8s.io/v1beta1/nodes` 获取 metrics-server 数据
+- `ListResources` 中 kind == "nodes" 时，结合 informer 缓存的 `*corev1.Node` Capacity 与 metrics-server Usage，计算并注入：
+  - `cpu_usage` — CPU 使用率百分比（float64，如 15.3）
+  - `memory_usage` — 内存使用率百分比（float64，如 42.1）
+- 新增 `formatBytes` 辅助函数：字节数 → TiB/GiB/MiB/KiB/B
+- import 新增 `"k8s.io/apimachinery/pkg/api/resource"`
+
+**Metrics 计算逻辑：**
+```
+cpu_percent = metrics_cpu_millicores / capacity_cpu_millicores * 100
+memory_percent = metrics_memory_bytes / capacity_memory_bytes * 100
+```
+
+若集群未部署 metrics-server，使用率字段不存在，前端渲染为 `-`。
+
+### 前端修改
+
+#### 1. `frontend/src/pages/ClusterDetail.tsx`
+- `getColumns` Node case 新增 4 列：`cpu` / `memory` / `cpu_usage` / `memory_usage`
+- 新增 `sortConfig` state：`{ key: string; direction: 'asc' | 'desc' } | null`
+- 新增 `sortedItems` useMemo：根据 `sortConfig` 对当前页 items 做客户端排序
+  - 数字类型直接比较
+  - 字符串类型忽略大小写比较
+  - null 值始终排在末尾
+- 新增 `handleSort` 函数：点击表头切换排序状态（asc → desc → 取消）
+- 表头 `TableCell` 增加点击事件和排序箭头图标（`ArrowUpward` / `ArrowDownward`）
+- `renderCell` 新增使用率进度条渲染：
+  - 低负载（≤50%）→ 绿色
+  - 中负载（50%~80%）→ 橙色
+  - 高负载（>80%）→ 红色
+  - 带平滑过渡动画
+- 切换资源类型 Tab 时自动清空 `sortConfig`
+
+### 效果
+| 列 | 示例值 | 说明 |
+|----|--------|------|
+| CPU | 4.0 | 物理 CPU 核数 |
+| 内存 | 32.0 GiB | 物理内存容量 |
+| CPU使用率 | 15.3% 绿色进度条 | 实时使用率 |
+| 内存使用率 | 42.1% 绿色进度条 | 实时使用率 |
+
+- 点击任意表头即可按该列升序/降序排列
+- 所有资源类型的表格均支持排序（不仅限于 Node）
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npx tsc --noEmit` ✅
+- 后端已重启 ✅
+
+---
+
+*最后更新：2026-04-22*
+
+---
+
+## 2026-04-22 工作负载 Pod 页面：内存使用量展示 + 排序
+
+### 需求
+Pod 列表页面需要展示内存限制（Limit）和实际内存使用量，并支持表头排序。
+
+### 后端修改
+
+#### 1. `internal/service/k8s_resource_service.go`
+- `convertToSummary` Pod case 新增字段：
+  - `memory_limit` — 所有容器的 `Resources.Limits.Memory()` 总和，格式化人类可读（如 `512 MiB`），未设置则显示 `-`
+- 新增 `getPodMetricsMap` 函数：通过 `DynamicClient` 调用 `metrics.k8s.io/v1beta1/pods` 获取 Pod 级别 metrics
+  - 支持按 namespace 过滤（减少请求量）
+  - 汇总每个 Pod 下所有容器的 `usage.memory`
+- `ListResources` 中 kind == `"pods"` 时，合并 metrics 数据：
+  - `memory_usage` — 格式化后的使用量字符串（如 `128 MiB`）
+  - `memory_usage_bytes` — 原始字节数（int64，供前端排序用）
+
+### 前端修改
+
+#### 1. `frontend/src/pages/ClusterDetail.tsx`
+- `getColumns` Pod case 新增 2 列：`memory_limit` / `memory_usage`
+- `renderCell` 修正：Node 的 `cpu_usage`/`memory_usage` 进度条渲染增加 `typeof value === 'number'` 判断，避免 Pod 的格式化字符串被误解析为百分比
+
+### 效果
+| 列 | 示例值 | 说明 |
+|----|--------|------|
+| 内存限制 | `512 MiB` / `-` | Pod 所有容器的 memory limit 总和 |
+| 内存使用 | `128 MiB` | metrics-server 采集的实际使用量 |
+
+- 点击「内存限制」或「内存使用」表头可按该列升序/降序排序
+- 若集群未部署 metrics-server，「内存使用」列显示 `-`
+
+### 编译状态
+- 后端 `go build` ✅
+- 前端 `npx tsc --noEmit` ✅
+- 后端已重启 ✅
+
+---
+
+*最后更新：2026-04-22*
+
+---
+
+## 2026-04-22 表头排序图标 UX 优化：默认显示可排序提示
+
+### 问题
+用户反馈：表头排序默认状态下没有任何图标提示，用户无法直观知道哪些列支持排序，必须点击后才能发现。
+
+### 修复
+`frontend/src/pages/ClusterDetail.tsx`：
+- 引入 MUI 原生 `TableSortLabel` 组件替换自定义的 Box + 箭头图标实现
+- 移除不再使用的 `ArrowUpward` / `ArrowDownward` icon import
+- 效果：
+  - **未排序时**：每列表头右侧显示灰色箭头图标（提示可点击排序）
+  - **悬停时**：箭头变为深色，明确反馈可交互
+  - **排序后**：箭头变为彩色并指向对应方向（↑ 升序 / ↓ 降序）
+
+### 编译状态
+- 前端 `npx tsc --noEmit` ✅
+
+---
+
+*最后更新：2026-04-22*
+
+---
+
+## 2026-04-22 表头排序图标默认常显
+
+### 问题
+用户要求排序图标默认就要显示出来，而不是鼠标悬停时才出现。
+
+### 修复
+`frontend/src/pages/ClusterDetail.tsx`：
+- 覆盖 `TableSortLabel` 的 `.MuiTableSortLabel-icon` 样式：
+  - 未排序时 `opacity: 0.4` — 灰色箭头始终可见
+  - 排序后 `opacity: 1` + `color: primary.main` — 彩色高亮箭头
+  - 增加 `transition: 'opacity 0.2s'` — 平滑过渡动画
+
+### 效果
+- 所有表格列默认都显示灰色排序箭头，用户一眼就知道可以排序
+- 点击排序后箭头变为彩色并指向对应方向
+- 不需要鼠标悬停即可看到图标
+
+### 编译状态
+- 前端 `npx tsc --noEmit` ✅
+
+---
+
+*最后更新：2026-04-22*

@@ -98,7 +98,8 @@ export const k8sAPI = {
     page: number = 1,
     limit: number = 20,
     keyword: string = '',
-    resourceType: string = ''
+    resourceType: string = '',
+    labelSelector: string = ''
   ) => {
     const params = new URLSearchParams()
     if (namespace && namespace !== 'all') {
@@ -109,6 +110,9 @@ export const k8sAPI = {
     }
     if (resourceType) {
       params.set('type', resourceType)
+    }
+    if (labelSelector && labelSelector.trim()) {
+      params.set('label_selector', labelSelector.trim())
     }
     params.set('page', String(page))
     params.set('limit', String(limit))

@@ -14,6 +14,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   Paper,
   Chip,
   Dialog,
@@ -140,6 +141,8 @@ export default function ClusterDetail() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [keyword, setKeyword] = useState('')
+  const [labelSelector, setLabelSelector] = useState('')
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null)
   const [resourceTypeFilter, setResourceTypeFilter] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -188,6 +191,35 @@ export default function ClusterDetail() {
     }
     return result
   }, [stats, permissions])
+
+  // 前端排序处理
+  const sortedItems = useMemo(() => {
+    if (!sortConfig) return items
+    return [...items].sort((a: any, b: any) => {
+      const aVal = a[sortConfig.key]
+      const bVal = b[sortConfig.key]
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return sortConfig.direction === 'asc' ? -1 : 1
+      if (bVal == null) return sortConfig.direction === 'asc' ? 1 : -1
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal
+      }
+      const aStr = String(aVal).toLowerCase()
+      const bStr = String(bVal).toLowerCase()
+      if (aStr < bStr) return sortConfig.direction === 'asc' ? -1 : 1
+      if (aStr > bStr) return sortConfig.direction === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [items, sortConfig])
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (prev && prev.key === key) {
+        return prev.direction === 'asc' ? { key, direction: 'desc' } : null
+      }
+      return { key, direction: 'asc' }
+    })
+  }
 
   // 如果当前激活的类别被过滤掉了，自动切换到概览
   useEffect(() => {
@@ -253,7 +285,7 @@ export default function ClusterDetail() {
   }
 
   // 加载资源列表
-  const loadResources = async (kind: string, currentPage = page, search = keyword, silent = false, typeFilterOverride?: string) => {
+  const loadResources = async (kind: string, currentPage = page, search = keyword, silent = false, typeFilterOverride?: string, labelSelOverride?: string) => {
     if (!kind) return
     if (silent) {
       setSyncing(true)
@@ -265,7 +297,8 @@ export default function ClusterDetail() {
       const ns = namespacedResources.has(kind) ? selectedNamespace : ''
       const supportsTypeFilter = kind === 'services' || kind === 'events'
       const typeFilter = supportsTypeFilter ? (typeFilterOverride !== undefined ? typeFilterOverride : resourceTypeFilter) : ''
-      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search, typeFilter)
+      const labelSel = labelSelOverride !== undefined ? labelSelOverride : labelSelector
+      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search, typeFilter, labelSel)
       if (result.success && result.data) {
         setItems(result.data.items)
         setTotal(result.data.total)
@@ -453,6 +486,7 @@ export default function ClusterDetail() {
       setActiveResource(targetResource)
       setPage(1)
       setKeyword('')
+      setLabelSelector('')
       if (targetResource) {
         loadResources(targetResource, 1, '')
       }
@@ -487,11 +521,23 @@ export default function ClusterDetail() {
     return () => clearTimeout(timer)
   }, [keyword])
 
+  // labelSelector 搜索 debounce
+  useEffect(() => {
+    if (activeCategory === 'overview' || !activeResource) return
+    const timer = setTimeout(() => {
+      setPage(1)
+      loadResources(activeResource, 1, keyword, false, undefined, labelSelector)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [labelSelector])
+
   // 用 ref 保存最新的 page 和 keyword，避免 WebSocket handler 闭包捕获旧值
   const pageRef = useRef(page)
   const keywordRef = useRef(keyword)
+  const labelSelectorRef = useRef(labelSelector)
   useEffect(() => { pageRef.current = page }, [page])
   useEffect(() => { keywordRef.current = keyword }, [keyword])
+  useEffect(() => { labelSelectorRef.current = labelSelector }, [labelSelector])
 
   // WebSocket 推送：收到资源变化推送时自动刷新
   useEffect(() => {
@@ -510,7 +556,7 @@ export default function ClusterDetail() {
         console.log('[WS] resource_change received:', msg.kind, msg.name, msg.action)
         // 延迟 500ms 刷新，给后端 syncObjectToStore 完成留时间
         setTimeout(() => {
-          loadResources(activeResource, pageRef.current, keywordRef.current, true)
+          loadResources(activeResource, pageRef.current, keywordRef.current, true, undefined, labelSelectorRef.current)
         }, 500)
       }
     })
@@ -533,35 +579,37 @@ export default function ClusterDetail() {
     const common = [{ key: 'name', label: '名称', width: '25%' }]
     switch (kind) {
       case 'nodes':
-        return [...common, { key: 'status', label: '状态' }, { key: 'roles', label: '角色' }, { key: 'version', label: '版本' }, { key: 'internal_ip', label: 'IP' }]
+        return [...common, { key: 'status', label: '状态' }, { key: 'roles', label: '角色' }, { key: 'version', label: '版本' }, { key: 'internal_ip', label: 'IP' }, { key: 'cpu', label: 'CPU' }, { key: 'memory', label: '内存' }, { key: 'cpu_usage', label: 'CPU使用率' }, { key: 'memory_usage', label: '内存使用率' }, { key: 'labels', label: '标签' }]
       case 'pods':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'restarts', label: '重启次数' }, { key: 'node', label: '节点' }, { key: 'pod_ip', label: 'IP' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'restarts', label: '重启次数' }, { key: 'node', label: '节点' }, { key: 'pod_ip', label: 'IP' }, { key: 'memory_limit', label: '内存限制' }, { key: 'memory_usage', label: '内存使用' }, { key: 'labels', label: '标签' }]
       case 'deployments':
       case 'statefulsets':
       case 'replicasets':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'replicas', label: '副本' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'replicas', label: '副本' }, { key: 'labels', label: '标签' }]
       case 'daemonsets':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'desired', label: '期望' }, { key: 'ready', label: '就绪' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'desired', label: '期望' }, { key: 'ready', label: '就绪' }, { key: 'labels', label: '标签' }]
       case 'jobs':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'completions', label: '完成度' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'completions', label: '完成度' }, { key: 'labels', label: '标签' }]
       case 'cronjobs':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'schedule', label: '调度' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'schedule', label: '调度' }, { key: 'labels', label: '标签' }]
       case 'services':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'type', label: '类型' }, { key: 'cluster_ip', label: 'ClusterIP' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'type', label: '类型' }, { key: 'cluster_ip', label: 'ClusterIP' }, { key: 'labels', label: '标签' }]
       case 'ingresses':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hosts', label: '域名' }, { key: 'lb_ip', label: 'LB IP' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hosts', label: '域名' }, { key: 'lb_ip', label: 'LB IP' }, { key: 'labels', label: '标签' }]
       case 'persistentvolumes':
-        return [...common, { key: 'status', label: '状态' }, { key: 'capacity', label: '容量' }, { key: 'claim', label: '声明' }]
+        return [...common, { key: 'status', label: '状态' }, { key: 'capacity', label: '容量' }, { key: 'claim', label: '声明' }, { key: 'labels', label: '标签' }]
       case 'persistentvolumeclaims':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'storage_class', label: '存储类' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'storage_class', label: '存储类' }, { key: 'labels', label: '标签' }]
       case 'events':
         return [
+          { key: 'name', label: '名称', width: '15%' },
           { key: 'type', label: '类型' },
           { key: 'reason', label: '原因' },
           { key: 'resource_kind', label: '资源类型' },
           { key: 'object', label: '对象' },
           { key: 'message', label: '消息' },
           { key: 'count', label: '次数' },
+          { key: 'labels', label: '标签' },
         ]
       case 'customresourcedefinitions':
         return [
@@ -570,27 +618,28 @@ export default function ClusterDetail() {
           { key: 'scope', label: '作用域' },
           { key: 'versions', label: '版本' },
           { key: 'established', label: '状态' },
+          { key: 'labels', label: '标签' },
         ]
       case 'horizontalpodautoscalers':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'minReplicas', label: '最小副本' }, { key: 'maxReplicas', label: '最大副本' }, { key: 'currentReplicas', label: '当前副本' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'minReplicas', label: '最小副本' }, { key: 'maxReplicas', label: '最大副本' }, { key: 'currentReplicas', label: '当前副本' }, { key: 'labels', label: '标签' }]
       case 'networkpolicies':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'podSelector', label: 'Pod选择器' }, { key: 'policyTypes', label: '策略类型' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'podSelector', label: 'Pod选择器' }, { key: 'policyTypes', label: '策略类型' }, { key: 'labels', label: '标签' }]
       case 'poddisruptionbudgets':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'minAvailable', label: '最小可用' }, { key: 'maxUnavailable', label: '最大不可用' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'minAvailable', label: '最小可用' }, { key: 'maxUnavailable', label: '最大不可用' }, { key: 'labels', label: '标签' }]
       case 'endpointslices':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'addressType', label: '地址类型' }, { key: 'endpoints', label: '端点数量' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'addressType', label: '地址类型' }, { key: 'endpoints', label: '端点数量' }, { key: 'labels', label: '标签' }]
       case 'replicationcontrollers':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'replicas', label: '副本' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'replicas', label: '副本' }, { key: 'labels', label: '标签' }]
       case 'limitranges':
-        return [...common, { key: 'namespace', label: '命名空间' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'labels', label: '标签' }]
       case 'resourcequotas':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hard', label: '配额限制' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'hard', label: '配额限制' }, { key: 'labels', label: '标签' }]
       case 'leases':
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'holderIdentity', label: '持有者' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'holderIdentity', label: '持有者' }, { key: 'labels', label: '标签' }]
       case 'servicemonitors':
-        return [...common, { key: 'namespace', label: '命名空间' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'labels', label: '标签' }]
       default:
-        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }]
+        return [...common, { key: 'namespace', label: '命名空间' }, { key: 'status', label: '状态' }, { key: 'labels', label: '标签' }]
     }
   }
 
@@ -615,6 +664,47 @@ export default function ClusterDetail() {
     }
     if (key === 'established') {
       return <Chip label={value ? '已注册' : '注册中'} color={value ? 'success' : 'default'} size="small" sx={{ borderRadius: '6px' }} />
+    }
+    if ((key === 'cpu_usage' || key === 'memory_usage') && value && typeof value === 'number') {
+      const percent = value as number
+      if (isNaN(percent)) return '-'
+      const color = percent > 80 ? 'error' : percent > 50 ? 'warning' : 'success'
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 100 }}>
+          <Box sx={{ flex: 1, height: 6, bgcolor: 'action.hover', borderRadius: 3, overflow: 'hidden' }}>
+            <Box sx={{ width: `${Math.min(percent, 100)}%`, height: '100%', bgcolor: `${color}.main`, borderRadius: 3, transition: 'width 0.5s ease' }} />
+          </Box>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: `${color}.main`, minWidth: 40 }}>{percent.toFixed(1)}%</Typography>
+        </Box>
+      )
+    }
+    if (key === 'labels' && value && typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, string>)
+      if (entries.length === 0) return '-'
+      const display = entries.slice(0, 2)
+      const rest = entries.slice(2)
+      return (
+        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {display.map(([k, v]) => (
+            <Chip
+              key={k}
+              label={`${k}${v ? '=' + v : ''}`}
+              size="small"
+              sx={{ borderRadius: '6px', fontSize: 11, maxWidth: 160 }}
+              title={`${k}=${v}`}
+            />
+          ))}
+          {rest.length > 0 && (
+            <Chip
+              label={`+${rest.length}`}
+              size="small"
+              variant="outlined"
+              sx={{ borderRadius: '6px', fontSize: 11 }}
+              title={rest.map(([k, v]) => `${k}=${v}`).join('\n')}
+            />
+          )}
+        </Box>
+      )
     }
     return String(value ?? '-')
   }
@@ -717,6 +807,7 @@ export default function ClusterDetail() {
                           setKeyword('')
                           setResourceTypeFilter('')
                           loadResources(key, 1, '')
+                          setLabelSelector('')
                         }
                       }}
                     >
@@ -734,7 +825,7 @@ export default function ClusterDetail() {
             <Box>
               {/* 子资源 Tabs */}
               {category.resources.length > 1 && (
-                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); setResourceTypeFilter(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
+                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); setLabelSelector(''); setSortConfig(null); setResourceTypeFilter(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
                   {category.resources.filter(r => hasResourcePermission(r, permissions)).map(r => (
                     <Tab key={r} value={r} label={resourceLabels[r] || r} sx={{ textTransform: 'none' }} />
                   ))}
@@ -826,6 +917,13 @@ export default function ClusterDetail() {
                   }}
                   sx={{ minWidth: 240 }}
                 />
+                <TextField
+                  size="small"
+                  placeholder="标签筛选，如 app=nginx"
+                  value={labelSelector}
+                  onChange={(e) => setLabelSelector(e.target.value)}
+                  sx={{ minWidth: 200 }}
+                />
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
                   {syncing && (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -875,7 +973,26 @@ export default function ClusterDetail() {
                     <TableHead>
                       <TableRow>
                         {getColumns(activeResource).map(col => (
-                          <TableCell key={col.key} sx={{ fontWeight: 600 }}>{col.label}</TableCell>
+                          <TableCell key={col.key} sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            <TableSortLabel
+                              active={sortConfig?.key === col.key}
+                              direction={sortConfig?.key === col.key ? sortConfig.direction : 'asc'}
+                              onClick={() => handleSort(col.key)}
+                              sx={{
+                                '& .MuiTableSortLabel-icon': {
+                                  fontSize: 18,
+                                  opacity: 0.4,
+                                  transition: 'opacity 0.2s',
+                                },
+                                '&.Mui-active .MuiTableSortLabel-icon': {
+                                  opacity: 1,
+                                  color: 'primary.main',
+                                },
+                              }}
+                            >
+                              {col.label}
+                            </TableSortLabel>
+                          </TableCell>
                         ))}
                         {(cluster?.permission_scope === 'admin' || cluster?.permission_scope === 'read-write' || activeResource === 'customresourcedefinitions') && (
                           <TableCell sx={{ fontWeight: 600 }} align="right">操作</TableCell>
@@ -883,7 +1000,7 @@ export default function ClusterDetail() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {items.map((item, idx) => (
+                      {sortedItems.map((item, idx) => (
                         <TableRow key={idx} hover>
                           {getColumns(activeResource).map(col => (
                             <TableCell key={col.key}>{renderCell(item, col.key)}</TableCell>
@@ -938,7 +1055,7 @@ export default function ClusterDetail() {
                           )}
                         </TableRow>
                       ))}
-                      {items.length === 0 && (
+                      {sortedItems.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={getColumns(activeResource).length} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                             暂无数据
