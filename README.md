@@ -161,6 +161,82 @@ npm run build
 
 ---
 
+## 离线部署（内网环境）
+
+对于无法连接外网的服务器，提供一键离线安装包：
+
+```bash
+# 1. 将离线包复制到目标服务器并解压
+tar xzf cloudops-offline-ubuntu22.tar.gz -C /opt/
+cd /opt/cloudops-offline
+
+# 2. 执行安装（全自动模式）
+./install.sh --db-password "YourPassword" --yes
+```
+
+### 系统要求
+
+- **操作系统**: Ubuntu 22.04 LTS (x86_64)
+- **内存**: 建议 4GB+
+- **磁盘**: 建议 20GB+
+- **网络**: 无需外网，仅需内网访问
+
+### 安装选项
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `--install-dir` | 安装目录 | `/opt/cloudops` |
+| `--db-password` | 数据库密码 | 自动生成 |
+| `--db-host` | PostgreSQL 地址 | `127.0.0.1` |
+| `--db-port` | PostgreSQL 端口 | `5432` |
+| `--redis-host` | Redis 地址 | `127.0.0.1` |
+| `--redis-port` | Redis 端口 | `6379` |
+| `--frontend-port` | 前端端口 | `18000` |
+| `--backend-port` | 后端端口 | `9000` |
+| `--yes` | 自动确认 | 否 |
+
+### 安装过程
+
+`install.sh` 会自动完成：
+1. 安装系统依赖（PostgreSQL 14、Redis、nginx）
+2. 初始化数据库并创建 admin 用户
+3. 部署后端二进制和前端构建产物
+4. 生成配置文件
+5. 创建 systemd 服务并设置开机自启
+6. 启动所有服务
+
+### 服务说明
+
+| 服务 | 端口 | 说明 | 自启 |
+|------|------|------|------|
+| nginx | `18000` | 前端静态文件 + API/WebSocket 反向代理 | ✅ |
+| cloudops-backend | `9000` | Go 后端 API 服务 | ✅ |
+| postgresql | `5432` | 数据库 | ✅ |
+| redis-server | `6379` | 缓存 | ✅ |
+
+### 服务管理
+
+```bash
+# 查看状态
+systemctl status cloudops-backend nginx postgresql redis-server
+
+# 启停
+systemctl start cloudops-backend nginx
+systemctl stop cloudops-backend nginx
+
+# 日志
+journalctl -u cloudops-backend -f
+journalctl -u nginx -f
+```
+
+### 卸载
+
+```bash
+./uninstall.sh --install-dir /opt/cloudops
+```
+
+---
+
 ## 变更日志
 
 ### v0.1.1 (2026-04-20)
@@ -182,7 +258,8 @@ npm run build
 
 **基础设施**
 - 后端支持 systemd 服务部署，自动重启保障稳定性
-- 离线包同步更新
+- 离线包全面重构：nginx 替代 Node.js 作为前端服务器，预打包全部 DEB 依赖
+- 支持 Ubuntu 22.04 完全离线一键部署
 
 ### v0.1.0
 
