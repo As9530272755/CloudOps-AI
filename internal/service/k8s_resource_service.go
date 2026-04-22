@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/dynamic"
@@ -53,7 +54,7 @@ func (s *K8sResourceService) SearchResources(ctx context.Context, keyword string
 }
 
 // ListResources 列出资源
-func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace, keyword, resourceType string, page, limit int) ([]map[string]interface{}, int, error) {
+func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, kind, namespace, keyword, resourceType, labelSelector string, page, limit int) ([]map[string]interface{}, int, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil {
 		// 异步启动，不阻塞 HTTP 请求
@@ -69,7 +70,7 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	}
 
 	// Redis 缓存：多用户共享，减少 informer 内存扫描压力
-	cacheKey := fmt.Sprintf("k8s:list:%d:%s:%s:%s:%s:%d:%d", clusterID, kind, namespace, keyword, resourceType, page, limit)
+	cacheKey := fmt.Sprintf("k8s:list:%d:%s:%s:%s:%s:%s:%d:%d", clusterID, kind, namespace, keyword, resourceType, labelSelector, page, limit)
 	if redis.Client != nil {
 		cached, err := redis.Client.Get(ctx, cacheKey).Result()
 		if err == nil && cached != "" {
@@ -94,9 +95,9 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	}
 
 	if clusterKinds[kind] {
-		items, total, err = cc.GetClusterResourceList(kind, keyword, resourceType, page, limit)
+		items, total, err = cc.GetClusterResourceList(kind, keyword, resourceType, labelSelector, page, limit)
 	} else {
-		items, total, err = cc.GetNamespacedResourceList(kind, namespace, keyword, resourceType, page, limit)
+		items, total, err = cc.GetNamespacedResourceList(kind, namespace, keyword, resourceType, labelSelector, page, limit)
 	}
 	if err != nil {
 		return nil, 0, err
@@ -105,6 +106,60 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	result := make([]map[string]interface{}, 0, len(items))
 	for _, obj := range items {
 		result = append(result, convertToSummary(obj))
+	}
+
+	// Node 资源补充 metrics 数据（CPU/内存使用率）
+	if kind == "nodes" && len(result) > 0 {
+		metricsMap, _ := s.getNodeMetricsMap(ctx, clusterID)
+		// 构建 name -> *corev1.Node 映射，用于获取 Capacity
+		nodeMap := make(map[string]*corev1.Node)
+		for _, obj := range items {
+			if node, ok := obj.(*corev1.Node); ok {
+				nodeMap[node.Name] = node
+			}
+		}
+		for _, item := range result {
+			if name, ok := item["name"].(string); ok {
+				if m, ok := metricsMap[name]; ok {
+					if node, ok := nodeMap[name]; ok {
+						// 计算 CPU 使用率
+						if cpuStr, ok := m["cpu_usage"].(string); ok {
+							capMilli := node.Status.Capacity.Cpu().MilliValue()
+							if usageQ, err := resource.ParseQuantity(cpuStr); err == nil && capMilli > 0 {
+								item["cpu_usage"] = float64(usageQ.MilliValue()) / float64(capMilli) * 100
+							}
+						}
+						// 计算内存使用率
+						if memStr, ok := m["memory_usage"].(string); ok {
+							capBytes := node.Status.Capacity.Memory().Value()
+							if usageQ, err := resource.ParseQuantity(memStr); err == nil && capBytes > 0 {
+								item["memory_usage"] = float64(usageQ.Value()) / float64(capBytes) * 100
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Pod 资源补充 metrics 数据（内存使用量）
+	if kind == "pods" && len(result) > 0 {
+		metricsMap, _ := s.getPodMetricsMap(ctx, clusterID, namespace)
+		for _, item := range result {
+			if name, ok := item["name"].(string); ok {
+				ns := ""
+				if v, ok := item["namespace"].(string); ok {
+					ns = v
+				}
+				key := ns + "/" + name
+				if m, ok := metricsMap[key]; ok {
+					if usageBytes, ok := m["memory_usage"].(int64); ok && usageBytes > 0 {
+						item["memory_usage"] = formatBytes(usageBytes)
+						item["memory_usage_bytes"] = usageBytes
+					}
+				}
+			}
+		}
 	}
 
 	// 写入 Redis 缓存（TTL 5 秒）
@@ -463,35 +518,51 @@ func (s *K8sResourceService) fallbackGetResource(ctx context.Context, clusterID 
 
 // convertToSummary 将 K8s 对象转换为列表摘要
 func convertToSummary(obj interface{}) map[string]interface{} {
+	var summary map[string]interface{}
 	switch v := obj.(type) {
 	case *corev1.Node:
-		return map[string]interface{}{
+		cpuCores := float64(v.Status.Capacity.Cpu().MilliValue()) / 1000.0
+		memoryBytes := v.Status.Capacity.Memory().Value()
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"status":            nodeStatus(v),
 			"roles":             nodeRoles(v.Labels),
 			"version":           v.Status.NodeInfo.KubeletVersion,
 			"os_image":          v.Status.NodeInfo.OSImage,
 			"internal_ip":       nodeInternalIP(v),
+			"cpu":               fmt.Sprintf("%.1f", cpuCores),
+			"memory":            formatBytes(memoryBytes),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Namespace:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"status":            string(v.Status.Phase),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Pod:
-		return map[string]interface{}{
+		var memLimit int64
+		for _, c := range v.Spec.Containers {
+			if c.Resources.Limits.Memory() != nil {
+				memLimit += c.Resources.Limits.Memory().Value()
+			}
+		}
+		memLimitStr := "-"
+		if memLimit > 0 {
+			memLimitStr = formatBytes(memLimit)
+		}
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"status":            podStatus(v),
 			"restarts":          podRestarts(v),
 			"node":              v.Spec.NodeName,
 			"pod_ip":            v.Status.PodIP,
+			"memory_limit":      memLimitStr,
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *appsv1.Deployment:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"replicas":          fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas),
@@ -499,14 +570,14 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *appsv1.StatefulSet:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"replicas":          fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *appsv1.DaemonSet:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"desired":           v.Status.DesiredNumberScheduled,
@@ -514,14 +585,14 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *appsv1.ReplicaSet:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"replicas":          fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, *v.Spec.Replicas),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *batchv1.Job:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"completions":       fmt.Sprintf("%d/%d", v.Status.Succeeded, *v.Spec.Completions),
@@ -529,7 +600,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *batchv1.CronJob:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"schedule":          v.Spec.Schedule,
@@ -537,7 +608,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Service:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"type":              string(v.Spec.Type),
@@ -551,7 +622,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		if v.Spec.IngressClassName != nil {
 			className = *v.Spec.IngressClassName
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"class":             className,
@@ -560,14 +631,14 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Endpoints:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"endpoints":         len(v.Subsets),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.PersistentVolume:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"capacity":          v.Spec.Capacity.Storage(),
 			"access_modes":      v.Spec.AccessModes,
@@ -576,7 +647,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.PersistentVolumeClaim:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"status":            string(v.Status.Phase),
@@ -585,21 +656,21 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *storagev1.StorageClass:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"provisioner":       v.Provisioner,
 			"reclaim_policy":    *v.ReclaimPolicy,
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.ConfigMap:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"data_keys":         len(v.Data),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Secret:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"type":              string(v.Type),
@@ -607,21 +678,21 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.ServiceAccount:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"secrets":           len(v.Secrets),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *rbacv1.Role:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"rules":             len(v.Rules),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *rbacv1.RoleBinding:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"role":              v.RoleRef.Name,
@@ -629,20 +700,20 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *rbacv1.ClusterRole:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"rules":             len(v.Rules),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *rbacv1.ClusterRoleBinding:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"role":              v.RoleRef.Name,
 			"subjects":          len(v.Subjects),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.Event:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"type":              v.Type,
@@ -665,7 +736,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 				break
 			}
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"group":             v.Spec.Group,
 			"scope":             string(v.Spec.Scope),
@@ -679,7 +750,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		if v.Spec.MinReplicas != nil {
 			minReplicas = *v.Spec.MinReplicas
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"scale_target":      scaleTarget,
@@ -693,7 +764,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		for _, pt := range v.Spec.PolicyTypes {
 			policyTypes = append(policyTypes, string(pt))
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"pod_selector":      v.Spec.PodSelector.String(),
@@ -709,7 +780,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		if v.Spec.MaxUnavailable != nil {
 			maxUnavailable = v.Spec.MaxUnavailable.String()
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"min_available":     minAvailable,
@@ -719,7 +790,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *discoveryv1.EndpointSlice:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"address_type":      string(v.AddressType),
@@ -732,21 +803,21 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		if v.Spec.Replicas != nil {
 			replicas = *v.Spec.Replicas
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"replicas":          fmt.Sprintf("%d/%d", v.Status.ReadyReplicas, replicas),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.LimitRange:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"limits":            len(v.Spec.Limits),
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *corev1.ResourceQuota:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"hard":              len(v.Spec.Hard),
@@ -757,7 +828,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 		if v.Spec.RenewTime != nil {
 			renewTime = v.Spec.RenewTime.Format(time.RFC3339)
 		}
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.Name,
 			"namespace":         v.Namespace,
 			"holder_identity":   v.Spec.HolderIdentity,
@@ -765,7 +836,7 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 			"creationTimestamp": v.CreationTimestamp.Format(time.RFC3339),
 		}
 	case *unstructured.Unstructured:
-		return map[string]interface{}{
+		summary = map[string]interface{}{
 			"name":              v.GetName(),
 			"namespace":         v.GetNamespace(),
 			"creationTimestamp": v.GetCreationTimestamp().Format(time.RFC3339),
@@ -773,6 +844,10 @@ func convertToSummary(obj interface{}) map[string]interface{} {
 	default:
 		return map[string]interface{}{"kind": "unknown"}
 	}
+	if summary != nil {
+		summary["labels"] = getLabels(obj)
+	}
+	return summary
 }
 
 // convertToDetail 详情转换
@@ -1277,4 +1352,111 @@ func convertUnstructuredToTyped(obj *unstructured.Unstructured) (interface{}, er
 	}
 
 	return typedObj, nil
+}
+
+
+// getNodeMetricsMap 通过 metrics-server 获取所有 Node 的 CPU/内存使用率
+func (s *K8sResourceService) getNodeMetricsMap(ctx context.Context, clusterID uint) (map[string]map[string]interface{}, error) {
+	cc := s.k8sManager.GetClusterClient(clusterID)
+	if cc == nil || cc.DynamicClient == nil {
+		return nil, fmt.Errorf("cluster client not available")
+	}
+
+	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes"}
+	list, err := cc.DynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]map[string]interface{})
+	for _, item := range list.Items {
+		name := item.GetName()
+		usage, found, err := unstructured.NestedMap(item.Object, "usage")
+		if !found || err != nil {
+			continue
+		}
+
+		m := make(map[string]interface{})
+		if cpuStr, ok := usage["cpu"].(string); ok {
+			m["cpu_usage"] = cpuStr
+		}
+		if memStr, ok := usage["memory"].(string); ok {
+			m["memory_usage"] = memStr
+		}
+		result[name] = m
+	}
+	return result, nil
+}
+
+// getPodMetricsMap 通过 metrics-server 获取指定 namespace 下所有 Pod 的内存使用量
+func (s *K8sResourceService) getPodMetricsMap(ctx context.Context, clusterID uint, namespace string) (map[string]map[string]interface{}, error) {
+	cc := s.k8sManager.GetClusterClient(clusterID)
+	if cc == nil || cc.DynamicClient == nil {
+		return nil, fmt.Errorf("cluster client not available")
+	}
+
+	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
+	var list *unstructured.UnstructuredList
+	var err error
+
+	if namespace != "" && namespace != "all" {
+		list, err = cc.DynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = cc.DynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]map[string]interface{})
+	for _, item := range list.Items {
+		name := item.GetName()
+		ns := item.GetNamespace()
+		key := ns + "/" + name
+
+		containers, found, err := unstructured.NestedSlice(item.Object, "containers")
+		if !found || err != nil {
+			continue
+		}
+
+		var totalMemBytes int64
+		for _, c := range containers {
+			if container, ok := c.(map[string]interface{}); ok {
+				if usage, ok := container["usage"].(map[string]interface{}); ok {
+					if memStr, ok := usage["memory"].(string); ok {
+						if q, err := resource.ParseQuantity(memStr); err == nil {
+							totalMemBytes += q.Value()
+						}
+					}
+				}
+			}
+		}
+
+		result[key] = map[string]interface{}{
+			"memory_usage": totalMemBytes,
+		}
+	}
+	return result, nil
+}
+
+// formatBytes 将字节数格式化为人类可读字符串
+func formatBytes(bytes int64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+		TB = 1024 * GB
+	)
+	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.1f TiB", float64(bytes)/float64(TB))
+	case bytes >= GB:
+		return fmt.Sprintf("%.1f GiB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1f MiB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1f KiB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }

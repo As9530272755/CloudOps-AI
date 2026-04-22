@@ -293,7 +293,7 @@ func (s *AgentService) execTool(ctx context.Context, tc ai.ToolCall) (string, er
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
 			return "", fmt.Errorf("参数解析失败: %w", err)
 		}
-		pods, total, err := s.k8sSvc.ListResources(ctx, a.ClusterID, "pods", a.Namespace, "", "", 1, 50)
+		pods, total, err := s.k8sSvc.ListResources(ctx, a.ClusterID, "pods", a.Namespace, "", "", "", 1, 50)
 		if err != nil {
 			return "", err
 		}

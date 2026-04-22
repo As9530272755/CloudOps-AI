@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -910,7 +911,7 @@ func (km *K8sManager) HealthCheck(clusterID uint) bool {
 }
 
 // GetNamespacedResourceList 统一获取命名空间级资源（从 Store 内存读取）
-func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string, keyword string, resourceType string, page, limit int) ([]interface{}, int, error) {
+func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string, keyword string, resourceType string, labelSelector string, page, limit int) ([]interface{}, int, error) {
 	var store cache.Store
 	switch kind {
 	case "pods":
@@ -972,6 +973,7 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 	list := store.List()
 	var filtered []interface{}
 	keywordLower := strings.ToLower(keyword)
+	selector := parseLabelSelector(labelSelector)
 	for _, obj := range list {
 		if ns := getNamespace(obj); namespace == "" || namespace == "all" || ns == namespace {
 			if keyword == "" || strings.Contains(strings.ToLower(getName(obj)), keywordLower) {
@@ -987,15 +989,22 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 						continue
 					}
 				}
+				// Label 筛选
+				if !matchLabels(obj, selector) {
+					continue
+				}
 				filtered = append(filtered, obj)
 			}
 		}
 	}
+	sort.Slice(filtered, func(i, j int) bool {
+		return getName(filtered[i]) < getName(filtered[j])
+	})
 	return paginate(filtered, page, limit)
 }
 
 // GetClusterResourceList 统一获取集群级资源（从 Store 内存读取）
-func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, resourceType string, page, limit int) ([]interface{}, int, error) {
+func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, resourceType string, labelSelector string, page, limit int) ([]interface{}, int, error) {
 	var store cache.Store
 	switch kind {
 	case "nodes":
@@ -1019,11 +1028,18 @@ func (cc *ClusterClient) GetClusterResourceList(kind string, keyword string, res
 	list := store.List()
 	var result []interface{}
 	keywordLower := strings.ToLower(keyword)
+	selector := parseLabelSelector(labelSelector)
 	for _, obj := range list {
 		if keyword == "" || strings.Contains(strings.ToLower(getName(obj)), keywordLower) {
+			if !matchLabels(obj, selector) {
+				continue
+			}
 			result = append(result, obj)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return getName(result[i]) < getName(result[j])
+	})
 	return paginate(result, page, limit)
 }
 
@@ -1161,6 +1177,58 @@ func getName(obj interface{}) string {
 	default:
 		return ""
 	}
+}
+
+// getLabels 通用获取资源标签辅助函数（利用 metav1.Object 接口）
+func getLabels(obj interface{}) map[string]string {
+	if o, ok := obj.(metav1.Object); ok {
+		return o.GetLabels()
+	}
+	return nil
+}
+
+// parseLabelSelector 解析标签选择器字符串
+// 支持格式：key=value,key2=value2 或 key=value key2=value2
+// 如果只写 key，表示要求该标签存在（值不限）
+func parseLabelSelector(selector string) map[string]string {
+	result := make(map[string]string)
+	if selector == "" {
+		return result
+	}
+	parts := strings.FieldsFunc(selector, func(r rune) bool { return r == ' ' || r == ',' })
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if idx := strings.Index(part, "="); idx > 0 {
+			key := strings.TrimSpace(part[:idx])
+			value := strings.TrimSpace(part[idx+1:])
+			result[key] = value
+		} else {
+			// 只要求 key 存在
+			result[part] = ""
+		}
+	}
+	return result
+}
+
+// matchLabels 判断对象标签是否匹配选择器
+func matchLabels(obj interface{}, selector map[string]string) bool {
+	if len(selector) == 0 {
+		return true
+	}
+	labels := getLabels(obj)
+	for k, v := range selector {
+		val, ok := labels[k]
+		if !ok {
+			return false
+		}
+		if v != "" && val != v {
+			return false
+		}
+	}
+	return true
 }
 
 // paginate 分页辅助函数
