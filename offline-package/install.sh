@@ -31,7 +31,12 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# 自动检测：如果当前目录下就有 bin/ 和 deps/，说明是离线包根目录模式
+if [[ -f "${SCRIPT_DIR}/bin/cloudops-backend" && -d "${SCRIPT_DIR}/deps" ]]; then
+    PROJECT_ROOT="${SCRIPT_DIR}"
+else
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 DEPS_DIR="${PROJECT_ROOT}/deps"
 
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
@@ -242,6 +247,14 @@ if [[ "$OS_FAMILY" == "debian" ]]; then
         apt-get install -y redis-server
     fi
 
+    # 安装 nginx
+    if [[ -d "${DEPS_DIR}/nginx" ]]; then
+        log_info "安装 nginx..."
+        dpkg -i "${DEPS_DIR}"/nginx/*.deb 2>/dev/null || true
+    else
+        log_warn "未找到 nginx 离线包"
+    fi
+
     install_nodejs_binary
 
 elif [[ "$OS_FAMILY" == "rhel" ]]; then
@@ -339,6 +352,12 @@ if [[ -d "${PROJECT_ROOT}/frontend/dist" ]]; then
     log_info "前端静态文件已部署"
 else
     log_warn "未找到前端构建产物"
+fi
+
+# 前端静态服务器脚本（已弃用，保留文件以备不时之需）
+if [[ -f "${PROJECT_ROOT}/bin/serve-frontend.js" ]]; then
+    mkdir -p "${INSTALL_DIR}/bin"
+    cp "${PROJECT_ROOT}/bin/serve-frontend.js" "${INSTALL_DIR}/bin/"
 fi
 
 # 创建必要的目录
@@ -504,8 +523,36 @@ Environment="JWT_SECRET=${JWT_SECRET}"
 WantedBy=multi-user.target
 EOF
 
-# 前端服务
-cat > /etc/systemd/system/cloudops-frontend.service <<EOF
+# 部署 nginx 配置
+if command -v nginx &> /dev/null; then
+    log_info "部署 nginx 配置..."
+    mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+    
+    # 替换配置模板中的变量
+    sed -e "s|{{INSTALL_DIR}}|${INSTALL_DIR}|g" \
+        -e "s|{{FRONTEND_PORT}}|${FRONTEND_PORT}|g" \
+        -e "s|{{BACKEND_PORT}}|${BACKEND_PORT}|g" \
+        "${PROJECT_ROOT}/config/nginx-cloudops.conf" > /etc/nginx/sites-available/cloudops
+    
+    # 禁用默认站点
+    rm -f /etc/nginx/sites-enabled/default
+    
+    # 启用 CloudOps 站点
+    ln -sf /etc/nginx/sites-available/cloudops /etc/nginx/sites-enabled/cloudops
+    
+    # 测试配置
+    if nginx -t; then
+        log_info "nginx 配置测试通过"
+        systemctl enable nginx
+        systemctl restart nginx
+        sleep 1
+    else
+        log_warn "nginx 配置测试失败，请手动检查"
+    fi
+else
+    log_warn "未找到 nginx，将尝试使用 serve-frontend.js 作为前端服务器"
+    # 降级方案：创建 Node.js 前端服务
+    cat > /etc/systemd/system/cloudops-frontend.service <<EOF
 [Unit]
 Description=CloudOps Frontend
 After=network.target cloudops-backend.service
@@ -524,9 +571,11 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+    systemctl enable cloudops-frontend
+fi
 
 systemctl daemon-reload
-systemctl enable cloudops-backend cloudops-frontend
+systemctl enable cloudops-backend
 log_info "systemd 服务已创建并启用"
 
 # =============================================================================
@@ -535,8 +584,12 @@ log_info "systemd 服务已创建并启用"
 log_step "7/8 设置文件权限..."
 
 chown -R "${RUN_USER}:${RUN_USER}" "${INSTALL_DIR}"
-chmod 750 "${INSTALL_DIR}"
+chmod 751 "${INSTALL_DIR}"
 chmod +x "${INSTALL_DIR}/cloudops-backend"
+
+# 确保 nginx (www-data) 可以读取前端静态文件
+chmod 751 "${INSTALL_DIR}/frontend"
+chmod -R o+rX "${INSTALL_DIR}/frontend/dist"
 
 # =============================================================================
 # STEP 8: 启动服务
@@ -557,8 +610,19 @@ else
     log_warn "后端服务可能未就绪，请检查日志: journalctl -u cloudops-backend -f"
 fi
 
-systemctl start cloudops-frontend
-sleep 2
+# 启动 nginx（如果已安装）
+if command -v nginx &> /dev/null; then
+    systemctl start nginx
+    sleep 1
+    if curl -s "http://127.0.0.1:${FRONTEND_PORT}" > /dev/null 2>&1; then
+        log_info "nginx 前端服务启动成功"
+    else
+        log_warn "nginx 可能未就绪"
+    fi
+else
+    systemctl start cloudops-frontend
+    sleep 2
+fi
 
 # =============================================================================
 # 安装完成报告
@@ -588,10 +652,18 @@ echo -e "${GREEN}配置文件:${NC} ${CONFIG_FILE}"
 echo -e "${GREEN}环境变量:${NC} ${ENV_FILE}"
 echo ""
 echo -e "${GREEN}服务管理:${NC}"
-echo "  启动: systemctl start cloudops-backend cloudops-frontend"
-echo "  停止: systemctl stop cloudops-backend cloudops-frontend"
-echo "  状态: systemctl status cloudops-backend"
-echo "  日志: journalctl -u cloudops-backend -f"
+if command -v nginx &> /dev/null; then
+    echo "  启动后端: systemctl start cloudops-backend"
+    echo "  启动前端: systemctl start nginx"
+    echo "  停止后端: systemctl stop cloudops-backend"
+    echo "  停止前端: systemctl stop nginx"
+    echo "  nginx 配置: /etc/nginx/sites-available/cloudops"
+else
+    echo "  启动: systemctl start cloudops-backend cloudops-frontend"
+    echo "  停止: systemctl stop cloudops-backend cloudops-frontend"
+fi
+    echo "  状态: systemctl status cloudops-backend"
+    echo "  日志: journalctl -u cloudops-backend -f"
 echo ""
 echo -e "${YELLOW}安全提醒:${NC}"
 echo "  1. 首次登录后请立即修改 admin 密码"

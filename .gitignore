@@ -73,3 +73,8 @@ uploads/
 
 # Dev context (internal only)
 CONTEXT.md
+
+# 离线包构建产物
+cloudops-offline-ubuntu22.tar.gz
+offline-package/deps/
+offline-package/frontend/dist/

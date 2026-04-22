@@ -1,52 +1,154 @@
-# CloudOps 离线部署包
+# CloudOps 离线部署指南
 
-## 目录说明
+本文档描述如何在完全离线的 Ubuntu 22.04 服务器上部署 CloudOps。
+
+## 目录结构
 
 ```
-.
+cloudops-offline/
+├── install.sh              # 一键安装脚本
+├── uninstall.sh            # 卸载脚本
+├── README-DEPLOY.md        # 本文件
 ├── bin/
-│   └── cloudops-backend          # Go 后端二进制（已编译，静态链接）
-├── frontend/
-│   └── dist/                     # 前端构建产物（纯静态文件）
-│   ├── node_modules/             # Node.js 运行时依赖（离线必需）
-│   ├── package.json
-│   └── package-lock.json
+│   ├── cloudops-backend    # 后端二进制（Go）
+│   └── serve-frontend.js   # 前端静态文件服务器（Node.js 零依赖）
 ├── config/
-│   └── config.yaml               # 配置文件（需按内网环境修改）
-├── start-all.sh                  # 一键启动脚本
-└── stop-all.sh                   # 一键停止脚本
+│   └── db-commands.sql     # 数据库初始化 SQL（可选）
+├── deps/
+│   ├── nodejs/             # Node.js 22.14.0 预编译二进制
+│   ├── postgresql-14/      # PostgreSQL 14 DEB 依赖包
+│   └── redis-server/       # Redis DEB 依赖包
+├── frontend/
+│   └── dist/               # 前端构建产物（React + Vite）
+└── systemd/                # 预留目录（systemd 服务由 install.sh 动态生成）
 ```
 
-## 环境要求
+## 系统要求
 
-- OS: CentOS 7/8, Rocky Linux 8/9, Ubuntu 20.04/22.04
-- CPU: x86_64
-- RAM: ≥ 4GB（建议 8GB）
-- 磁盘: ≥ 20GB
-- 依赖:
-  - PostgreSQL 14+
-  - Redis 6+（可选）
-  - Node.js 18+（运行前端预览服务）
+- **操作系统**: Ubuntu 22.04 LTS (x86_64)
+- **内存**: 建议 4GB+
+- **磁盘**: 建议 20GB+
+- **网络**: 无需外网，仅需内网访问
+- **权限**: root 用户
 
-## 快速启动
-
-1. 修改 `config/config.yaml` 中的数据库地址和密码
-2. 执行启动脚本:
+## 快速安装
 
 ```bash
-./start-all.sh
+# 1. 将离线包复制到目标服务器
+tar xzf cloudops-offline.tar.gz -C /opt/
+cd /opt/cloudops-offline
+
+# 2. 执行安装（交互式，推荐首次使用）
+./install.sh
+
+# 3. 或使用全自动模式（生产环境推荐）
+./install.sh \
+  --install-dir /opt/cloudops \
+  --db-password "YourStrongPassword" \
+  --jwt-secret "$(openssl rand -hex 32)" \
+  --yes
 ```
 
-3. 浏览器访问 `http://<服务器IP>:18000`
-4. 默认账号: `admin / admin`
+## 安装选项
 
-## 停止服务
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `--install-dir` | 安装目录 | `/opt/cloudops` |
+| `--db-host` | PostgreSQL 地址 | `127.0.0.1` |
+| `--db-port` | PostgreSQL 端口 | `5432` |
+| `--db-password` | 数据库密码 | 自动生成 |
+| `--db-name` | 数据库名称 | `cloudops` |
+| `--db-user` | 数据库用户 | `cloudops` |
+| `--redis-host` | Redis 地址 | `127.0.0.1` |
+| `--redis-port` | Redis 端口 | `6379` |
+| `--jwt-secret` | JWT 密钥 | 自动生成 |
+| `--frontend-port` | 前端端口 | `18000` |
+| `--backend-port` | 后端端口 | `9000` |
+| `-y, --yes` | 自动确认 | 否 |
+
+## 安装过程说明
+
+`install.sh` 会自动完成以下步骤：
+
+1. **安装系统依赖**: 通过 `dpkg -i` 安装 PostgreSQL 14、Redis、Node.js
+2. **初始化数据库**: 创建 `cloudops` 数据库和用户，启动 Redis
+3. **创建运行用户**: `cloudops` 系统用户
+4. **部署应用文件**: 复制后端二进制、前端 dist、静态服务器脚本
+5. **生成配置**: 根据参数生成 `config.yaml` 和 `.env`
+6. **创建 systemd 服务**: `cloudops-backend.service` + `cloudops-frontend.service`
+7. **设置权限**: 文件属主和访问权限
+8. **启动服务**: 自动启动并健康检查
+
+## 服务管理
 
 ```bash
-./stop-all.sh
+# 查看状态
+systemctl status cloudops-backend
+systemctl status cloudops-frontend
+
+# 启停服务
+systemctl start cloudops-backend cloudops-frontend
+systemctl stop cloudops-backend cloudops-frontend
+systemctl restart cloudops-backend
+
+# 查看日志
+journalctl -u cloudops-backend -f
+journalctl -u cloudops-frontend -f
 ```
 
-## 日志查看
+## 访问系统
 
-- `backend.log` — 后端日志
-- `frontend.log` — 前端服务日志
+- **前端页面**: `http://<服务器IP>:18000`
+- **后端 API**: `http://<服务器IP>:9000`
+- **健康检查**: `http://127.0.0.1:9000/health`
+
+默认账号：
+- 用户名: `admin`
+- 密码: `admin`
+
+> ⚠️ **安全提醒**: 首次登录后请立即修改默认密码。
+
+## 卸载
+
+```bash
+./uninstall.sh --install-dir /opt/cloudops
+```
+
+## 常见问题
+
+### Q: dpkg 安装依赖时提示缺少依赖？
+`prepare-deps.sh` 已递归下载所有依赖，通常 `dpkg -i *.deb` 可直接安装。如因顺序问题失败，可尝试：
+```bash
+cd deps/postgresql-14
+for deb in *.deb; do dpkg -i "$deb" || true; done
+dpkg --configure -a
+```
+
+### Q: 前端服务无法启动？
+前端使用 `serve-frontend.js`（Node.js 内置 http 模块），无需 npm 依赖。请确保 Node.js 已正确安装：
+```bash
+node --version
+```
+
+### Q: 如何修改端口？
+重新运行 `install.sh` 并指定 `--frontend-port` / `--backend-port`，或直接修改 `/opt/cloudops/config/config.yaml` 和 `/etc/systemd/system/cloudops-*.service` 后 `systemctl daemon-reload && systemctl restart`。
+
+### Q: 数据库连接失败？
+检查 PostgreSQL 是否启动：
+```bash
+systemctl status postgresql
+sudo -u postgres psql -c "\l"
+```
+
+## 文件清单验证
+
+安装完成后，关键文件应存在：
+
+```bash
+ls -la /opt/cloudops/cloudops-backend
+ls -la /opt/cloudops/config/config.yaml
+ls -la /opt/cloudops/frontend/dist/index.html
+ls -la /opt/cloudops/bin/serve-frontend.js
+ls -la /etc/systemd/system/cloudops-backend.service
+ls -la /etc/systemd/system/cloudops-frontend.service
+```
