@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Box,
   Button,
@@ -129,6 +129,7 @@ GrafanaGridItem.displayName = 'GrafanaGridItem'
 
 export default function Dashboard() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const theme = useTheme()
   const gridRootRef = useRef<HTMLDivElement>(null)
   const gridWrapperRef = useRef<HTMLDivElement>(null)
@@ -454,6 +455,9 @@ export default function Dashboard() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Button variant="outlined" size="small" onClick={() => navigate('/dashboards')}>
+              所有仪表盘
+            </Button>
             <VariableSelector
               variables={dashboardVariables}
               values={variableValues}
