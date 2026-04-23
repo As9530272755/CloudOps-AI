@@ -534,7 +534,73 @@ nohup ./cloudops-backend > backend.log 2>&1 &
 
 > **注意**：`serve-frontend.js`（Node.js 零依赖脚本）已废弃，WebSocket 高并发下会崩溃，生产/离线环境必须使用 **nginx**。
 
-## 十三、常用运维命令
+## 十三、发布流程（代码修改后必做）
+
+> **原则**：每次修改代码后，必须**重新编译 → 重启服务 → 重新打包离线包**，否则运行环境还是旧版本。
+
+### 13.1 开发环境（修改后立即验证）
+
+**前端修改后：**
+```bash
+cd /data/projects/cloudops-v2/frontend
+npm run build              # 生成 dist/
+```
+
+**后端修改后：**
+```bash
+cd /data/projects/cloudops-v2
+go build -o cloudops-backend ./cmd/server
+
+# 重启后端
+pkill -f cloudops-backend
+nohup ./cloudops-backend > backend.log 2>&1 &
+```
+
+### 13.2 更新离线包（保持离线包永远最新）
+
+```bash
+cd /data/projects/cloudops-v2
+
+# 1. 构建后端
+go build -o offline-package/bin/cloudops-backend ./cmd/server
+
+# 2. 构建前端并复制到离线包
+cd frontend
+npm run build
+cd ..
+cp -r frontend/dist/* offline-package/frontend/dist/
+
+# 3. 重新打包
+rm -f cloudops-offline-ubuntu22.tar.gz
+tar czf cloudops-offline-ubuntu22.tar.gz offline-package/
+
+# 4. 推送到 GitHub
+git add -A
+git commit -m "feat/fix: xxx"
+git push origin main
+```
+
+### 13.3 生产环境部署新包
+
+```bash
+# 1. 传包到服务器
+scp cloudops-offline-ubuntu22.tar.gz root@<服务器IP>:/opt/
+
+# 2. 服务器上解压并替换
+ssh root@<服务器IP> '
+  cd /opt
+  tar xzf cloudops-offline-ubuntu22.tar.gz
+  cp offline-package/bin/cloudops-backend /opt/cloudops/
+  cp -r offline-package/frontend/dist/* /opt/cloudops/frontend/dist/
+  cp -r offline-package/data/* /opt/cloudops/data/ 2>/dev/null || true
+  systemctl restart cloudops-backend
+  systemctl restart nginx
+'
+```
+
+---
+
+## 十四、常用运维命令
 
 ```bash
 # 后端编译
