@@ -389,7 +389,8 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 ### 9.1 包结构
 
 ```
-cloudops-offline-ubuntu22.tar.gz (246MB)
+cloudops-offline-ubuntu22-YYYYMMDD-HHMM.tar.gz (约 247MB)
+> **命名规范**：文件名必须包含时间戳（到分钟），如 `cloudops-offline-ubuntu22-20260423-0935.tar.gz`，方便版本追溯和区分
 ├── install.sh              # 一键安装脚本
 ├── uninstall.sh
 ├── README-DEPLOY.md
@@ -580,9 +581,10 @@ ls -la offline-package/upgrade.sh
 # grep -n 'var resp \[\]\|var items \[\]\|var menus \[\]' internal/api/handlers/*.go
 # 如有发现，改为 make([]T, 0)，避免前端 .filter() 在 null 上崩溃
 
-# 5. 重新打包
-rm -f cloudops-offline-ubuntu22.tar.gz
-tar czf cloudops-offline-ubuntu22.tar.gz offline-package/
+# 5. 重新打包（文件名必须带时间戳，到分钟）
+TIMESTAMP=$(date +%Y%m%d-%H%M)
+rm -f cloudops-offline-ubuntu22-*.tar.gz
+tar czf "cloudops-offline-ubuntu22-${TIMESTAMP}.tar.gz" offline-package/
 
 # 5. 推送到 GitHub
 git add -A
@@ -605,12 +607,12 @@ git push origin main
 
 ```bash
 # 1. 传包到服务器
-scp cloudops-offline-ubuntu22.tar.gz root@<服务器IP>:/opt/
+scp cloudops-offline-ubuntu22-20260423-0935.tar.gz root@<服务器IP>:/opt/
 
 # 2. 服务器上解压并执行升级
 ssh root@<服务器IP> '
   cd /opt
-  tar xzf cloudops-offline-ubuntu22.tar.gz
+  tar xzf cloudops-offline-ubuntu22-*.tar.gz
   cd offline-package
   ./upgrade.sh --yes
 '
@@ -776,7 +778,7 @@ systemctl restart nginx
 
 使用预编译的离线包：
 ```bash
-tar xzf cloudops-offline-ubuntu22.tar.gz -C /opt/
+tar xzf cloudops-offline-ubuntu22-*.tar.gz -C /opt/
 cd /opt/cloudops-offline
 ./install.sh --db-password "xxx" --yes
 ```

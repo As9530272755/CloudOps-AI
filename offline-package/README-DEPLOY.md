@@ -34,8 +34,8 @@ cloudops-offline/
 ## 快速安装
 
 ```bash
-# 1. 将离线包复制到目标服务器
-tar xzf cloudops-offline.tar.gz -C /opt/
+# 1. 将离线包复制到目标服务器（文件名含时间戳，如 cloudops-offline-ubuntu22-20260423-0935.tar.gz）
+tar xzf cloudops-offline-ubuntu22-*.tar.gz -C /opt/
 cd /opt/cloudops-offline
 
 # 2. 执行安装（交互式，推荐首次使用）
@@ -86,8 +86,8 @@ cd /opt/cloudops-offline
 请使用专门的升级脚本：
 
 ```bash
-# 1. 将新版本离线包复制到服务器（可以覆盖旧包目录，或解压到新目录）
-tar xzf cloudops-offline-ubuntu22.tar.gz -C /opt/
+# 1. 将新版本离线包复制到服务器（文件名含时间戳）
+tar xzf cloudops-offline-ubuntu22-*.tar.gz -C /opt/
 cd /opt/cloudops-offline
 
 # 2. 执行升级（交互式确认）
