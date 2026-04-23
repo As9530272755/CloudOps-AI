@@ -275,7 +275,7 @@ export function ChartPanel({
     } finally {
       setLoading(false)
     }
-  }, [dataSourceId, query, type, start, end, step])
+  }, [dataSourceId, query, type, start, end, step, variables])
 
   // 初始化 ECharts + ResizeObserver
   useEffect(() => {
