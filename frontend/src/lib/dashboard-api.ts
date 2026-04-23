@@ -68,6 +68,10 @@ export const dashboardAPI = {
     const response = await api.delete(`/dashboards/${id}`)
     return response.data
   },
+  setDefault: async (id: number) => {
+    const response = await api.put(`/dashboards/${id}/default`)
+    return response.data
+  },
   createPanel: async (dashboardId: number, data: CreatePanelRequest) => {
     const response = await api.post(`/dashboards/${dashboardId}/panels`, data)
     return response.data

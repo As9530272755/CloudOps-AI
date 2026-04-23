@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useParams } from 'react-router-dom'
 import {
   Box,
   Button,
@@ -127,6 +128,7 @@ const GrafanaGridItem = React.forwardRef<HTMLDivElement, GrafanaGridItemProps>((
 GrafanaGridItem.displayName = 'GrafanaGridItem'
 
 export default function Dashboard() {
+  const { id } = useParams<{ id: string }>()
   const theme = useTheme()
   const gridRootRef = useRef<HTMLDivElement>(null)
   const gridWrapperRef = useRef<HTMLDivElement>(null)
@@ -181,7 +183,12 @@ export default function Dashboard() {
 
   const loadDashboard = useCallback(async () => {
     try {
-      const result = await dashboardAPI.getDefault()
+      let result
+      if (id) {
+        result = await dashboardAPI.get(Number(id))
+      } else {
+        result = await dashboardAPI.getDefault()
+      }
       if (result.success) {
         setDashboard(result.data)
         setPanels(result.data.panels || [])
@@ -190,7 +197,7 @@ export default function Dashboard() {
       setDashboard(null)
       setPanels([])
     }
-  }, [])
+  }, [id])
 
   useEffect(() => {
     loadDashboard()
@@ -203,7 +210,7 @@ export default function Dashboard() {
   }, [refreshInterval])
 
   const ensureDashboard = async () => {
-    if (dashboard) return
+    if (dashboard || id) return
     try {
       const result = await dashboardAPI.create({
         title: '首页',
@@ -568,6 +575,7 @@ export default function Dashboard() {
         onClose={() => setEditorOpen(false)}
         onSave={handleSavePanel}
         initialData={editingPanel}
+        variables={variableValues}
       />
 
       <Dialog open={varEditorOpen} onClose={() => setVarEditorOpen(false)} maxWidth="md" fullWidth>

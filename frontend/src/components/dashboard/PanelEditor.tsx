@@ -26,12 +26,13 @@ interface PanelEditorProps {
   onClose: () => void
   onSave: (data: CreatePanelRequest) => void
   initialData?: Partial<CreatePanelRequest>
+  variables?: Record<string, string>
 }
 
 // 24-column default (Grafana style)
 const DEFAULT_POSITION = JSON.stringify({ x: 0, y: 0, w: 12, h: 8 })
 
-export default function PanelEditor({ open, onClose, onSave, initialData }: PanelEditorProps) {
+export default function PanelEditor({ open, onClose, onSave, initialData, variables }: PanelEditorProps) {
   const theme = useTheme()
   const [dataSources, setDataSources] = useState<DataSource[]>([])
   const [title, setTitle] = useState(initialData?.title || '')
@@ -160,9 +161,20 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
         {/* Left: panel preview */}
         <Box sx={{ flex: 1, minWidth: 0, p: 3, display: 'flex', flexDirection: 'column' }}>
           <Paper sx={{ flex: 1, minHeight: 0, borderRadius: 2, border: '1px dashed', borderColor: 'divider', p: 2, display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-              实时预览
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                实时预览
+              </Typography>
+              {variables && Object.keys(variables).length > 0 && (
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                  {Object.entries(variables).map(([k, v]) => (
+                    <Typography key={k} variant="caption" sx={{ bgcolor: 'action.selected', px: 0.8, py: 0.2, borderRadius: 1 }}>
+                      {k}={v}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+            </Box>
             <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {dataSourceId && query ? (
                 <ChartPanel
@@ -173,6 +185,7 @@ export default function PanelEditor({ open, onClose, onSave, initialData }: Pane
                   options={parsedOptions}
                   width={0}
                   height={0}
+                  variables={variables}
                 />
               ) : (
                 <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.secondary' }}>

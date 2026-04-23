@@ -166,6 +166,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				dashboards.GET("/default", r.dashboardHandler.GetDefaultDashboard)
 				dashboards.GET("/:id", r.dashboardHandler.GetDashboard)
 				dashboards.PUT("/:id", r.dashboardHandler.UpdateDashboard)
+				dashboards.PUT("/:id/default", r.dashboardHandler.SetDefaultDashboard)
 				dashboards.DELETE("/:id", r.dashboardHandler.DeleteDashboard)
 				// 面板
 				dashboards.POST("/:id/panels", r.dashboardHandler.CreatePanel)

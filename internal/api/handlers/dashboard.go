@@ -117,6 +117,22 @@ func (h *DashboardHandler) DeleteDashboard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "deleted"})
 }
 
+// SetDefaultDashboard 设置默认仪表盘
+func (h *DashboardHandler) SetDefaultDashboard(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+
+	tenantID, _ := c.Get("tenant_id")
+	if err := h.dbService.SetDefaultDashboard(c.Request.Context(), tenantID.(uint), uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已设为默认仪表盘"})
+}
+
 // CreatePanel 创建面板
 func (h *DashboardHandler) CreatePanel(c *gin.Context) {
 	dashboardID, err := strconv.Atoi(c.Param("id"))

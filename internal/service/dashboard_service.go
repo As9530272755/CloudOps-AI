@@ -92,6 +92,19 @@ func (s *DashboardService) UpdateDashboard(ctx context.Context, tenantID, id uin
 	return &d, nil
 }
 
+// SetDefaultDashboard 设置默认仪表盘
+func (s *DashboardService) SetDefaultDashboard(ctx context.Context, tenantID, id uint) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Dashboard{}).Where("tenant_id = ?", tenantID).Update("is_default", false).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Dashboard{}).Where("id = ? AND tenant_id = ?", id, tenantID).Update("is_default", true).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // DeleteDashboard 删除仪表盘（级联删除 panels）
 func (s *DashboardService) DeleteDashboard(ctx context.Context, tenantID, id uint) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

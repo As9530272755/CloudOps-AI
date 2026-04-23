@@ -5,6 +5,7 @@ import { usePermission } from './hooks/usePermission'
 import MainLayout from './components/layout/MainLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import DashboardList from './pages/DashboardList'
 import Clusters from './pages/Clusters'
 import ClusterDetail from './pages/ClusterDetail'
 import Inspection from './pages/Inspection'
@@ -88,6 +89,8 @@ function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="dashboards" element={<ModuleRoute module="module:dashboard"><DashboardList /></ModuleRoute>} />
+        <Route path="dashboards/:id" element={<ModuleRoute module="module:dashboard"><Dashboard /></ModuleRoute>} />
         <Route path="clusters" element={<ModuleRoute module="module:cluster:manage"><Clusters /></ModuleRoute>} />
         <Route path="clusters/:clusterId" element={<ModuleRoute module="module:cluster:manage"><ClusterDetail /></ModuleRoute>} />
         <Route path="clusters/:clusterId/*" element={<ModuleRoute module="module:cluster:manage"><ClusterDetail /></ModuleRoute>} />
