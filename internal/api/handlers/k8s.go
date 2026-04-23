@@ -110,7 +110,7 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 
 	// namespace 级用户查询 namespaces 资源时，过滤结果
 	if isNsScoped && kind == "namespaces" {
-		var filtered []map[string]interface{}
+		filtered := make([]map[string]interface{}, 0)
 		for _, item := range items {
 			if name, ok := item["name"].(string); ok && allowedSet[name] {
 				filtered = append(filtered, item)
@@ -269,7 +269,7 @@ func (h *K8sHandler) GetNamespaces(c *gin.Context) {
 		for _, a := range allowed {
 			allowedSet[a.Namespace] = true
 		}
-		var filtered []string
+		filtered := make([]string, 0)
 		for _, ns := range items {
 			if allowedSet[ns] {
 				filtered = append(filtered, ns)

@@ -152,7 +152,7 @@ func (h *InspectionHandler) ListTasks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	var resp []taskResp
+	resp := make([]taskResp, 0)
 	for _, t := range tasks {
 		resp = append(resp, toTaskResp(t))
 	}
@@ -257,7 +257,7 @@ func (h *InspectionHandler) ListJobs(c *gin.Context) {
 		model.InspectionJob
 		TaskName string `json:"task_name"`
 	}
-	var items []jobItem
+	items := make([]jobItem, 0)
 	for _, j := range jobs {
 		item := jobItem{InspectionJob: j}
 		if j.TaskID == 0 {
@@ -286,7 +286,7 @@ func (h *InspectionHandler) GetJob(c *gin.Context) {
 	var results []model.InspectionResult
 	h.inspectionService.DB().Where("job_id = ?", id).Where("cluster_id IN (?)", h.inspectionService.DB().Model(&model.Cluster{}).Select("id")).Find(&results)
 
-	var resp []inspectionResultResp
+	resp := make([]inspectionResultResp, 0)
 	for _, r := range results {
 		resp = append(resp, toInspectionResultResp(r))
 	}

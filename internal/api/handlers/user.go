@@ -407,7 +407,7 @@ func (h *UserHandler) GetMyMenus(c *gin.Context) {
 		Items []MenuItem `json:"items"`
 	}
 
-	var menus []MenuGroup
+	menus := make([]MenuGroup, 0)
 
 	// 概览
 	if has("module:dashboard") {
