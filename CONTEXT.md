@@ -465,6 +465,21 @@ cloudops-offline-ubuntu22-YYYYMMDD-HHMM.tar.gz (约 247MB)
 
 ---
 
+### 10.4 仪表盘功能
+
+**多仪表盘支持**：
+- 路由 `/dashboards` → 仪表盘列表页（新建/删除/设为首页）
+- 路由 `/dashboards/:id` → 指定仪表盘详情页
+- 路由 `/` → 默认仪表盘（`is_default=true`）
+- 后端 API：`PUT /dashboards/:id/default` 设置默认仪表盘
+
+**变量实时预览**：
+- `PanelEditor` 接收 `variables` prop，顶部显示当前变量值 Chip（如 `cluster=ks`）
+- 编辑面板时，PromQL 中的 `$var` 按当前仪表盘变量值实时替换并查询
+- `ChartPanel` 的 `loadData` 依赖数组包含 `variables`，切换变量后自动刷新
+
+---
+
 ## 十一、已知限制与外部依赖
 
 | 限制 | 说明 |
@@ -690,6 +705,10 @@ redis-cli ping
 | `frontend/src/hooks/usePermission.ts` | 权限查询 hook |
 | `internal/api/handlers/terminal.go` | Web 终端 handler（chroot + Namespace 沙箱） |
 | `offline-package/install.sh` | 离线安装脚本（首次部署） |
+| `frontend/src/pages/DashboardList.tsx` | 仪表盘列表页（多仪表盘管理） |
+| `frontend/src/pages/Dashboard.tsx` | 仪表盘详情页（支持 `/dashboards/:id`） |
+| `frontend/src/components/dashboard/PanelEditor.tsx` | 面板编辑器（支持变量实时预览） |
+| `frontend/src/components/charts/ChartPanel.tsx` | 图表渲染组件（支持变量切换自动刷新） |
 | `offline-package/upgrade.sh` | 离线升级脚本（保留配置和数据） |
 | `offline-package/config/nginx-cloudops.conf` | nginx 配置模板 |
 | `scripts/prepare-deps.sh` | 联网预下载依赖脚本 |
