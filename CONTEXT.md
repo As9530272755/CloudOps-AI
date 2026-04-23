@@ -586,10 +586,13 @@ TIMESTAMP=$(date +%Y%m%d-%H%M)
 rm -f cloudops-offline-ubuntu22-*.tar.gz
 tar czf "cloudops-offline-ubuntu22-${TIMESTAMP}.tar.gz" offline-package/
 
-# 5. 推送到 GitHub
+# 5. 提交源码到 GitHub（离线包不上传到 git，超过 100MB 限制）
 git add -A
 git commit -m "feat/fix: xxx"
 git push origin main
+
+# 6. 离线包单独分发给用户（通过 scp / 网盘 / GitHub Release 等方式）
+# 离线包文件名: cloudops-offline-ubuntu22-${TIMESTAMP}.tar.gz
 ```
 
 ### 13.3 生产环境部署/升级场景判断
