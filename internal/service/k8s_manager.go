@@ -1230,21 +1230,42 @@ func parseLabelSelector(selector string) map[string]string {
 
 // matchLabels 判断对象标签是否匹配选择器
 // 支持模糊匹配（大小写不敏感）：
-//   app=      → 匹配所有包含 app 标签的资源
-//   app=f     → 匹配 app 标签值包含 "f" 的资源（如 fluent-bit）
-//   app=nginx → 精确匹配 app=nginx
+//   app       → key 模糊匹配：app、app.kubernetes.io/component 等
+//   app.      → key 模糊匹配：app.kubernetes.io/component、app.kubernetes.io/managed-by 等
+//   app=      → key 精确匹配（只要求 key 存在）
+//   app=f     → key 精确匹配 + value 包含 "f"（如 fluent-bit）
+//   app=nginx → key 精确匹配 + value 包含 "nginx"
 func matchLabels(obj interface{}, selector map[string]string) bool {
 	if len(selector) == 0 {
 		return true
 	}
 	labels := getLabels(obj)
 	for k, v := range selector {
-		val, ok := labels[k]
-		if !ok {
-			return false
-		}
-		if v != "" && !strings.Contains(strings.ToLower(val), strings.ToLower(v)) {
-			return false
+		if v == "" {
+			// 无 value：先精确匹配 key，失败后再模糊匹配 key
+			if _, ok := labels[k]; ok {
+				continue // 精确匹配成功
+			}
+			// 精确匹配失败，尝试 key 模糊匹配（包含）
+			matched := false
+			for labelKey := range labels {
+				if strings.Contains(strings.ToLower(labelKey), strings.ToLower(k)) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		} else {
+			// 有 value：key 精确匹配 + value 模糊匹配（包含）
+			val, ok := labels[k]
+			if !ok {
+				return false
+			}
+			if !strings.Contains(strings.ToLower(val), strings.ToLower(v)) {
+				return false
+			}
 		}
 	}
 	return true
