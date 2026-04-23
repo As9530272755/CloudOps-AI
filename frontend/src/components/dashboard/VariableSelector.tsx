@@ -65,7 +65,13 @@ export default function VariableSelector({ variables, values, onChange }: Variab
         if (v.defaultValue) {
           next[v.name] = v.defaultValue
         } else if (opts.length > 0) {
-          next[v.name] = opts[0]
+          const firstOpt = opts[0]
+          if (firstOpt === 'All' && v.includeAll) {
+            const allOpts = opts.filter((o) => o !== 'All')
+            next[v.name] = allOpts.join('|')
+          } else {
+            next[v.name] = firstOpt
+          }
         } else if (v.type === 'text') {
           next[v.name] = ''
         }
@@ -78,7 +84,12 @@ export default function VariableSelector({ variables, values, onChange }: Variab
   }, [variables, optionsMap])
 
   const handleChange = (name: string, value: string | string[]) => {
-    const val = Array.isArray(value) ? value.join('|') : value
+    let val = Array.isArray(value) ? value.join('|') : value
+    // "All" 选项展开为所有实际值的正则匹配格式
+    if (val === 'All') {
+      const allOpts = (optionsMap[name] || []).filter((o) => o !== 'All')
+      val = allOpts.join('|')
+    }
     onChange({ ...values, [name]: val })
   }
 
