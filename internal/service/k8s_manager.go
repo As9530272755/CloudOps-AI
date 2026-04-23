@@ -1229,6 +1229,10 @@ func parseLabelSelector(selector string) map[string]string {
 }
 
 // matchLabels 判断对象标签是否匹配选择器
+// 支持模糊匹配（大小写不敏感）：
+//   app=      → 匹配所有包含 app 标签的资源
+//   app=f     → 匹配 app 标签值包含 "f" 的资源（如 fluent-bit）
+//   app=nginx → 精确匹配 app=nginx
 func matchLabels(obj interface{}, selector map[string]string) bool {
 	if len(selector) == 0 {
 		return true
@@ -1239,7 +1243,7 @@ func matchLabels(obj interface{}, selector map[string]string) bool {
 		if !ok {
 			return false
 		}
-		if v != "" && val != v {
+		if v != "" && !strings.Contains(strings.ToLower(val), strings.ToLower(v)) {
 			return false
 		}
 	}

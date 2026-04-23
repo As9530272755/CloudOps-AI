@@ -475,6 +475,7 @@ cloudops-offline-ubuntu22.tar.gz (246MB)
 | SelfSubjectRulesReview | 只探测 default namespace 权限，全局权限通过 ClusterRole 推断 |
 | 日志后端历史数据 | 曾被物理删除，用户需手动重新配置 |
 | namespace 级用户"全部命名空间" | 已修复：后端将授权 NS 列表逗号拼接后过滤，不再只返回 default |
+| 标签筛选模糊匹配 | 已修复：`matchLabels` 从精确匹配改为大小写不敏感的包含匹配，`app=f` 可匹配 `app=fluent-bit` |
 
 ---
 
