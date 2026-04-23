@@ -12,12 +12,17 @@ import {
   useTheme,
   Snackbar,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material'
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Save as SaveIcon,
   Refresh as RefreshIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material'
 import ReactGridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -27,6 +32,9 @@ import { dashboardAPI, Dashboard as DashboardModel, DashboardPanel, CreatePanelR
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ChartPanel } from '../components/charts/ChartPanel'
 import PanelEditor from '../components/dashboard/PanelEditor'
+import VariableSelector, { VariableValues } from '../components/dashboard/VariableSelector'
+import VariableEditor from '../components/dashboard/VariableEditor'
+import { DashboardVariable } from '../components/charts/types'
 
 // === Grafana-style grid constants (from DashboardGrid.tsx) ===
 const GRID_CELL_HEIGHT = 30
@@ -131,6 +139,21 @@ export default function Dashboard() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<Partial<DashboardPanel> | undefined>(undefined)
+  const [variableValues, setVariableValues] = useState<VariableValues>({})
+  const [varEditorOpen, setVarEditorOpen] = useState(false)
+  const [tempVariables, setTempVariables] = useState<DashboardVariable[]>([])
+
+  // 从 URL 读取变量值
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const vars: VariableValues = {}
+    params.forEach((value, key) => {
+      if (key.startsWith('var-')) {
+        vars[key.replace('var-', '')] = value
+      }
+    })
+    setVariableValues(vars)
+  }, [])
 
   useEffect(() => {
     if (!gridRootRef.current) return
@@ -145,6 +168,16 @@ export default function Dashboard() {
   }, [panels.length, editMode])
 
   const queryRange = useMemo(() => getQueryRange(timeRange), [timeRange])
+
+  const dashboardVariables = useMemo((): DashboardVariable[] => {
+    if (!dashboard?.config) return []
+    try {
+      const cfg = JSON.parse(dashboard.config)
+      return Array.isArray(cfg.variables) ? cfg.variables : []
+    } catch {
+      return []
+    }
+  }, [dashboard?.config])
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -310,6 +343,41 @@ export default function Dashboard() {
     loadDashboard()
   }
 
+  const handleVariableChange = (values: VariableValues) => {
+    setVariableValues(values)
+    // 同步到 URL
+    const params = new URLSearchParams(window.location.search)
+    Object.entries(values).forEach(([k, v]) => {
+      params.set(`var-${k}`, v)
+    })
+    const newUrl = `${window.location.pathname}?${params.toString()}`
+    window.history.replaceState({}, '', newUrl)
+  }
+
+  const handleOpenVarEditor = () => {
+    setTempVariables([...dashboardVariables])
+    setVarEditorOpen(true)
+  }
+
+  const handleSaveVariables = async () => {
+    if (!dashboard) return
+    try {
+      const cfg = dashboard.config ? JSON.parse(dashboard.config) : {}
+      cfg.variables = tempVariables
+      await dashboardAPI.update(dashboard.id, {
+        title: dashboard.title,
+        description: dashboard.description,
+        config: JSON.stringify(cfg),
+        is_default: dashboard.is_default,
+      })
+      setVarEditorOpen(false)
+      loadDashboard()
+      showSnack('变量设置已保存')
+    } catch (err: any) {
+      showSnack(err.message || '保存失败', 'error')
+    }
+  }
+
   const handleAddPanel = () => {
     setEditingPanel(undefined)
     setEditorOpen(true)
@@ -348,6 +416,7 @@ export default function Dashboard() {
             start={queryRange.start}
             end={queryRange.end}
             step={queryRange.step}
+            variables={variableValues}
             showMenu={editMode}
             onEdit={() => handleEditPanel(panel)}
             onDelete={() => handleDeletePanel(panel)}
@@ -378,6 +447,11 @@ export default function Dashboard() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <VariableSelector
+              variables={dashboardVariables}
+              values={variableValues}
+              onChange={handleVariableChange}
+            />
             <ToggleButtonGroup
               size="small"
               value={timeRange}
@@ -421,9 +495,14 @@ export default function Dashboard() {
               {editMode ? '保存布局' : '编辑'}
             </Button>
             {editMode && (
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddPanel}>
-                添加面板
-              </Button>
+              <>
+                <Button variant="outlined" startIcon={<TuneIcon />} onClick={handleOpenVarEditor}>
+                  变量设置
+                </Button>
+                <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddPanel}>
+                  添加面板
+                </Button>
+              </>
             )}
           </Box>
         </CardContent>
@@ -490,6 +569,17 @@ export default function Dashboard() {
         onSave={handleSavePanel}
         initialData={editingPanel}
       />
+
+      <Dialog open={varEditorOpen} onClose={() => setVarEditorOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>仪表盘变量设置</DialogTitle>
+        <DialogContent>
+          <VariableEditor variables={tempVariables} onChange={setTempVariables} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setVarEditorOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={handleSaveVariables}>保存</Button>
+        </DialogActions>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmOpen}

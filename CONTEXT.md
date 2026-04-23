@@ -389,7 +389,7 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 ### 9.1 包结构
 
 ```
-cloudops-offline-ubuntu22.tar.gz (245MB)
+cloudops-offline-ubuntu22.tar.gz (246MB)
 ├── install.sh              # 一键安装脚本
 ├── uninstall.sh
 ├── README-DEPLOY.md
@@ -444,6 +444,23 @@ cloudops-offline-ubuntu22.tar.gz (245MB)
 - 数字按数值排序
 - 字符串忽略大小写排序
 - `null` 值始终排在末尾
+
+### 10.3 侧边栏分组折叠
+
+**组件**：`frontend/src/components/layout/MainLayout.tsx`
+
+**功能**：
+- 每个菜单分组（如 KUBERNETES、运维、智能、系统）可独立展开/折叠
+- 点击分组标题右侧的 ▼/▶ 图标切换折叠状态
+- 当前路由所在分组自动展开
+- 用户手动折叠状态持久化到 `localStorage`（key: `sidebar_collapsed_groups`）
+- 使用 MUI `Collapse` 组件实现平滑展开/折叠动画
+
+**实现要点**：
+- 分组标题使用 `ListItemButton` 包裹，可点击
+- 菜单项使用 `Collapse in={expanded}>` 包裹，控制显隐
+- `isGroupActive` 函数检测当前路由是否在分组下
+- 优先尊重用户手动折叠选择，其次自动展开当前路由分组
 
 ---
 

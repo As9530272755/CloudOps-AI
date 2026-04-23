@@ -19,6 +19,7 @@ import {
   Toolbar,
   Tooltip,
   CircularProgress,
+  Collapse,
 } from '@mui/material'
 
 import {
@@ -38,11 +39,13 @@ import {
   MenuOpen as MenuOpenIcon,
   DeviceHub as NetworkTraceIcon,
   Logout as LogoutIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material'
 import { useProfile } from '../../lib/api'
 import { useColorMode } from '../../context/ColorModeContext'
 import { usePermission } from '../../hooks/usePermission'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { wsManager } from '../../lib/ws'
 
 const DRAWER_WIDTH = 260
@@ -62,6 +65,9 @@ const iconMap: Record<string, React.ReactNode> = {
   settings: <SettingsIcon />,
 }
 
+// localStorage key
+const COLLAPSED_GROUPS_KEY = 'sidebar_collapsed_groups'
+
 export default function MainLayout() {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'))
@@ -80,6 +86,47 @@ export default function MainLayout() {
   const handleNavigate = (path: string) => {
     navigate(path)
     if (isMobile) setOpen(false)
+  }
+
+  // 分组折叠状态：从 localStorage 读取
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSED_GROUPS_KEY)
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  // 判断分组是否应该展开（当前路由在该分组下时自动展开）
+  const isGroupActive = useCallback(
+    (group: { items: { path: string }[] }) => {
+      return group.items.some(
+        (item) =>
+          location.pathname === item.path ||
+          (item.path !== '/' && location.pathname.startsWith(item.path))
+      )
+    },
+    [location.pathname]
+  )
+
+  // 切换分组折叠状态
+  const toggleGroup = (groupName: string) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [groupName]: !prev[groupName] }
+      localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  // 判断分组是否展开
+  const isGroupExpanded = (groupName: string, group: { items: { path: string }[] }) => {
+    // 如果用户手动折叠了，尊重用户选择
+    if (collapsedGroups[groupName] !== undefined) {
+      return !collapsedGroups[groupName]
+    }
+    // 默认：当前路由在该分组下时自动展开
+    return isGroupActive(group)
   }
 
   const [wsState, setWsState] = useState(wsManager.getConnectionState())
@@ -140,65 +187,93 @@ export default function MainLayout() {
             <CircularProgress size={24} />
           </Box>
         )}
-        {menus.map((group) => (
-          <Box key={group.group} sx={{ mb: 2 }}>
-            <Typography
-              variant="overline"
-              sx={{
-                px: 2,
-                py: 0.75,
-                display: 'block',
-                color: 'text.secondary',
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-              }}
-            >
-              {group.group}
-            </Typography>
-            <List sx={{ p: 0 }}>
-              {group.items.map((item) => {
-                const selected =
-                  location.pathname === item.path ||
-                  (item.path !== '/' && location.pathname.startsWith(item.path))
-                return (
-                  <ListItem key={item.path} disablePadding sx={{ mb: 0.25 }}>
-                    <ListItemButton
-                      selected={selected}
-                      onClick={() => handleNavigate(item.path)}
-                      sx={{
-                        py: 1,
-                        px: 2,
-                        borderRadius: '10px',
-                        color: selected ? 'text.primary' : 'text.secondary',
-                        bgcolor: selected ? 'action.selected' : 'transparent',
-                        '&:hover': {
-                          bgcolor: 'action.hover',
-                        },
-                      }}
-                    >
-                      <ListItemIcon
-                        sx={{
-                          minWidth: 34,
-                          color: selected ? 'text.primary' : 'text.secondary',
-                        }}
-                      >
-                        {iconMap[item.icon] || <DashboardIcon />}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={item.label}
-                        primaryTypographyProps={{
-                          fontSize: '0.875rem',
-                          fontWeight: selected ? 600 : 500,
-                        }}
-                      />
-                    </ListItemButton>
-                  </ListItem>
-                )
-              })}
-            </List>
-          </Box>
-        ))}
+        {menus.map((group) => {
+          const expanded = isGroupExpanded(group.group, group)
+          const groupHasActiveItem = isGroupActive(group)
+
+          return (
+            <Box key={group.group} sx={{ mb: 1 }}>
+              {/* 分组标题 - 可点击折叠 */}
+              <ListItemButton
+                onClick={() => toggleGroup(group.group)}
+                sx={{
+                  py: 0.75,
+                  px: 2,
+                  borderRadius: '10px',
+                  color: groupHasActiveItem ? 'text.primary' : 'text.secondary',
+                  '&:hover': { bgcolor: 'action.hover' },
+                }}
+              >
+                <Typography
+                  variant="overline"
+                  sx={{
+                    flex: 1,
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {group.group}
+                </Typography>
+                <Box sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
+                  {expanded ? (
+                    <ExpandLessIcon sx={{ fontSize: 18 }} />
+                  ) : (
+                    <ExpandMoreIcon sx={{ fontSize: 18 }} />
+                  )}
+                </Box>
+              </ListItemButton>
+
+              {/* 分组菜单项 - 可折叠 */}
+              <Collapse in={expanded} timeout="auto" unmountOnExit>
+                <List sx={{ p: 0, pt: 0.5 }}>
+                  {group.items.map((item) => {
+                    const selected =
+                      location.pathname === item.path ||
+                      (item.path !== '/' && location.pathname.startsWith(item.path))
+                    return (
+                      <ListItem key={item.path} disablePadding sx={{ mb: 0.25 }}>
+                        <Tooltip title={item.label} placement="right" arrow>
+                          <ListItemButton
+                            selected={selected}
+                            onClick={() => handleNavigate(item.path)}
+                            sx={{
+                              py: 1,
+                              px: 2,
+                              borderRadius: '10px',
+                              color: selected ? 'text.primary' : 'text.secondary',
+                              bgcolor: selected ? 'action.selected' : 'transparent',
+                              '&:hover': {
+                                bgcolor: 'action.hover',
+                              },
+                            }}
+                          >
+                            <ListItemIcon
+                              sx={{
+                                minWidth: 34,
+                                color: selected ? 'text.primary' : 'text.secondary',
+                              }}
+                            >
+                              {iconMap[item.icon] || <DashboardIcon />}
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={item.label}
+                              primaryTypographyProps={{
+                                fontSize: '0.875rem',
+                                fontWeight: selected ? 600 : 500,
+                              }}
+                            />
+                          </ListItemButton>
+                        </Tooltip>
+                      </ListItem>
+                    )
+                  })}
+                </List>
+              </Collapse>
+            </Box>
+          )
+        })}
       </Box>
 
       <Divider sx={{ mx: 3, borderColor: 'divider' }} />

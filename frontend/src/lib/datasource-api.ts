@@ -29,6 +29,7 @@ export interface ProxyQueryRequest {
   end?: string
   step?: string
   extra_labels?: Record<string, string>
+  variables?: Record<string, string>
 }
 
 export interface ProxyQueryResponse {
@@ -68,6 +69,10 @@ export const datasourceAPI = {
   },
   getMetrics: async (id: number, match?: string) => {
     const response = await api.get(`/datasources/${id}/metrics`, { params: { match } })
+    return response.data
+  },
+  queryVariables: async (id: number, query: string, label?: string) => {
+    const response = await api.post(`/datasources/${id}/variables`, { query, label })
     return response.data
   },
 }

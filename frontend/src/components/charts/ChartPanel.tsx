@@ -211,6 +211,7 @@ export function ChartPanel({
   onDelete,
   onDuplicate,
   showMenu = false,
+  variables,
 }: {
   title: string
   type: ChartType
@@ -226,6 +227,7 @@ export function ChartPanel({
   onDelete?: () => void
   onDuplicate?: () => void
   showMenu?: boolean
+  variables?: Record<string, string>
 }) {
   const theme = useTheme()
   const isDark = theme.palette.mode === 'dark'
@@ -249,7 +251,7 @@ export function ChartPanel({
       const endTs = end ?? Math.floor(Date.now() / 1000)
       const startTs = start ?? (endTs - 3600 * 24)
       const stepSec = step ?? 300
-      const result = await datasourceAPI.query(dataSourceId, { query, start: String(startTs), end: String(endTs), step: String(stepSec) })
+      const result = await datasourceAPI.query(dataSourceId, { query, start: String(startTs), end: String(endTs), step: String(stepSec), variables })
       if (!result.success) {
         setError(result.error || result.message || 'Query failed')
         return

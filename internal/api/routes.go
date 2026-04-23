@@ -154,6 +154,7 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				ds.POST("/:id/test", r.dsHandler.TestConnection)
 				ds.GET("/:id/metrics", r.dsHandler.GetMetrics)
 				ds.POST("/:id/query", r.dsHandler.ProxyQuery)
+				ds.POST("/:id/variables", r.dsHandler.QueryVariableValues)
 			}
 
 			// 仪表盘管理

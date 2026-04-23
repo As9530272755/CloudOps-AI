@@ -1,5 +1,18 @@
 export type ChartType = 'line' | 'bar' | 'pie' | 'gauge' | 'stat' | 'table' | 'area' | 'heatmap' | 'scatter' | 'text'
 
+export interface DashboardVariable {
+  name: string
+  label: string
+  type: 'query' | 'custom' | 'text'
+  query?: string
+  labelName?: string
+  dataSourceId?: number
+  options?: string[]
+  multi?: boolean
+  includeAll?: boolean
+  defaultValue?: string
+}
+
 export interface PanelPosition {
   x: number
   y: number

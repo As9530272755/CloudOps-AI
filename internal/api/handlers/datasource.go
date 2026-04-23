@@ -183,3 +183,33 @@ func (h *DatasourceHandler) ProxyQuery(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": result})
 }
+
+// QueryVariableValues 查询变量可选值
+func (h *DatasourceHandler) QueryVariableValues(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+
+	var req service.VariableQueryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	tenantID, _ := c.Get("tenant_id")
+	ds, err := h.dsService.GetDataSource(c.Request.Context(), tenantID.(uint), uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "datasource not found"})
+		return
+	}
+
+	values, err := h.dsService.QueryVariableValues(c.Request.Context(), ds, req.Query, req.Label)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": values})
+}

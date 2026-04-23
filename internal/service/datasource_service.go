@@ -149,6 +149,32 @@ type ProxyQueryRequest struct {
 	End         string            `json:"end"`
 	Step        string            `json:"step"`
 	ExtraLabels map[string]string `json:"extra_labels,omitempty"`
+	Variables   map[string]string `json:"variables,omitempty"`
+}
+
+// VariableQueryRequest 变量查询请求
+type VariableQueryRequest struct {
+	Query      string `json:"query" binding:"required"`
+	Label      string `json:"label"`
+	DataSource uint   `json:"data_source_id"`
+}
+
+// replaceVariables 替换 PromQL 中的变量
+// 支持语法: $var, [[var]], ${var}
+func replaceVariables(query string, vars map[string]string) string {
+	if len(vars) == 0 {
+		return query
+	}
+	result := query
+	for name, value := range vars {
+		// ${var}
+		result = strings.ReplaceAll(result, "${"+name+"}", value)
+		// [[var]]
+		result = strings.ReplaceAll(result, "[["+name+"]]", value)
+		// $var
+		result = strings.ReplaceAll(result, "$"+name, value)
+	}
+	return result
 }
 
 // ProxyQueryResponse 代理查询响应
@@ -229,7 +255,10 @@ func (s *DatasourceService) ProxyPrometheusQuery(ctx context.Context, ds *model.
 
 	endpoint := "/api/v1/query"
 	params := url.Values{}
-	params.Set("query", req.Query)
+
+	// 变量替换
+	query := replaceVariables(req.Query, req.Variables)
+	params.Set("query", query)
 
 	if req.Start != "" && req.End != "" {
 		endpoint = "/api/v1/query_range"
@@ -290,6 +319,103 @@ func (s *DatasourceService) ProxyPrometheusQuery(ctx context.Context, ds *model.
 		}, nil
 	}
 	return &result, nil
+}
+
+// QueryVariableValues 查询变量的可选值列表
+// 执行 PromQL 查询，从结果中提取指定 label 的唯一值
+func (s *DatasourceService) QueryVariableValues(ctx context.Context, ds *model.DataSource, query, label string) ([]string, error) {
+	if ds.Type != "prometheus" {
+		return nil, fmt.Errorf("unsupported datasource type: %s", ds.Type)
+	}
+
+	// 执行即时查询
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("time", fmt.Sprintf("%d", time.Now().Unix()))
+
+	targetURL := ds.URL + "/api/v1/query?" + params.Encode()
+
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 附加自定义 headers
+	if ds.Config != "" {
+		var cfg map[string]interface{}
+		if json.Unmarshal([]byte(ds.Config), &cfg) == nil {
+			if headers, ok := cfg["headers"].(map[string]interface{}); ok {
+				for k, v := range headers {
+					httpReq.Header.Set(k, fmt.Sprintf("%v", v))
+				}
+			}
+		}
+	}
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+			} `json:"result"`
+		} `json:"data"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	if result.Status != "success" {
+		return nil, fmt.Errorf("prometheus error: %s", result.Error)
+	}
+
+	// 提取唯一值
+	valueSet := make(map[string]struct{})
+	for _, r := range result.Data.Result {
+		if label != "" {
+			if v, ok := r.Metric[label]; ok && v != "" {
+				valueSet[v] = struct{}{}
+			}
+		} else {
+			// 如果没有指定 label，取第一个 label 的值（__name__ 除外）
+			for k, v := range r.Metric {
+				if k != "__name__" && v != "" {
+					valueSet[v] = struct{}{}
+					break
+				}
+			}
+		}
+	}
+
+	values := make([]string, 0, len(valueSet))
+	for v := range valueSet {
+		values = append(values, v)
+	}
+
+	// 排序
+	for i := 0; i < len(values); i++ {
+		for j := i + 1; j < len(values); j++ {
+			if values[i] > values[j] {
+				values[i], values[j] = values[j], values[i]
+			}
+		}
+	}
+
+	return values, nil
 }
 
 // StartHealthMonitor 启动数据源健康检查（每 30 秒一次）
