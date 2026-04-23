@@ -476,6 +476,7 @@ cloudops-offline-ubuntu22.tar.gz (246MB)
 | 日志后端历史数据 | 曾被物理删除，用户需手动重新配置 |
 | namespace 级用户"全部命名空间" | 已修复：后端将授权 NS 列表逗号拼接后过滤，不再只返回 default |
 | 标签筛选模糊匹配 | 已修复：`matchLabels` 从精确匹配改为大小写不敏感的包含匹配，`app=f` 可匹配 `app=fluent-bit` |
+| Go nil slice JSON 序列化 | **规范**：后端返回 slice 的 handler 必须用 `make([]T, 0)` 初始化，不能用 `var []T`。nil slice 序列化为 `null`，前端 `.filter()` 会崩溃白屏。已全局修复 inspection/k8s/user 等 handler |
 
 ---
 
@@ -575,7 +576,11 @@ cp -r frontend/dist/* offline-package/frontend/dist/
 # 3. 确认 upgrade.sh 存在（如果不存在需从仓库复制回来）
 ls -la offline-package/upgrade.sh
 
-# 4. 重新打包
+# 4. 编码规范检查：新增 handler 时防止 nil slice 返回 null
+# grep -n 'var resp \[\]\|var items \[\]\|var menus \[\]' internal/api/handlers/*.go
+# 如有发现，改为 make([]T, 0)，避免前端 .filter() 在 null 上崩溃
+
+# 5. 重新打包
 rm -f cloudops-offline-ubuntu22.tar.gz
 tar czf cloudops-offline-ubuntu22.tar.gz offline-package/
 
