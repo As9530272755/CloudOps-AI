@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/cloudops/platform/internal/service"
@@ -93,7 +94,11 @@ func (h *K8sHandler) ListResources(c *gin.Context) {
 			return
 		}
 		if namespace == "" || namespace == "all" {
-			namespace = allowed[0].Namespace
+			var nsList []string
+			for _, a := range allowed {
+				nsList = append(nsList, a.Namespace)
+			}
+			namespace = strings.Join(nsList, ",")
 		}
 	}
 

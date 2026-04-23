@@ -18,7 +18,7 @@ DB_PASSWORD=""
 REDIS_HOST="127.0.0.1"
 REDIS_PORT="6379"
 JWT_SECRET=""
-RUN_USER="cloudops"
+RUN_USER="root"
 FRONTEND_PORT="18000"
 BACKEND_PORT="9000"
 
@@ -358,6 +358,21 @@ fi
 if [[ -f "${PROJECT_ROOT}/bin/serve-frontend.js" ]]; then
     mkdir -p "${INSTALL_DIR}/bin"
     cp "${PROJECT_ROOT}/bin/serve-frontend.js" "${INSTALL_DIR}/bin/"
+fi
+
+# 复制 kubectl 二进制（Web 终端必需）
+if [[ -f "${PROJECT_ROOT}/data/kubectl" ]]; then
+    cp "${PROJECT_ROOT}/data/kubectl" "${INSTALL_DIR}/data/"
+    chmod +x "${INSTALL_DIR}/data/kubectl"
+    log_info "kubectl 二进制已部署"
+else
+    log_warn "未找到 kubectl 二进制文件，Web 终端功能将不可用"
+fi
+
+# 复制 kubectl 命令补全脚本
+if [[ -f "${PROJECT_ROOT}/data/kubectl-completion.bash" ]]; then
+    cp "${PROJECT_ROOT}/data/kubectl-completion.bash" "${INSTALL_DIR}/data/"
+    log_info "kubectl 命令补全脚本已部署"
 fi
 
 # 创建必要的目录

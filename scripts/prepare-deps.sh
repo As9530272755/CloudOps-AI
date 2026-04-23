@@ -93,6 +93,23 @@ mkdir -p "${OUTPUT_DIR}"
 cd "${OUTPUT_DIR}"
 
 # =============================================================================
+# 复制 kubectl 二进制（Web 终端必需）
+# =============================================================================
+log_info "复制 kubectl 二进制..."
+mkdir -p data
+if [[ -f "${PROJECT_ROOT}/data/kubectl" ]]; then
+    cp "${PROJECT_ROOT}/data/kubectl" data/
+    chmod +x data/kubectl
+    log_info "kubectl 已复制到 ${OUTPUT_DIR}/data/"
+else
+    log_warn "未找到 ${PROJECT_ROOT}/data/kubectl，Web 终端功能将不可用"
+fi
+if [[ -f "${PROJECT_ROOT}/data/kubectl-completion.bash" ]]; then
+    cp "${PROJECT_ROOT}/data/kubectl-completion.bash" data/
+    log_info "kubectl-completion.bash 已复制"
+fi
+
+# =============================================================================
 # 下载 Node.js 预编译二进制（通用，不依赖系统包管理器）
 # =============================================================================
 log_info "下载 Node.js ${NODE_VERSION} 预编译二进制..."

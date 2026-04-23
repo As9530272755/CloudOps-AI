@@ -974,8 +974,23 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 	var filtered []interface{}
 	keywordLower := strings.ToLower(keyword)
 	selector := parseLabelSelector(labelSelector)
+
+	// 支持逗号分隔的多个 namespace（权限系统传入的授权 NS 列表）
+	var allowedNsSet map[string]bool
+	if namespace != "" && namespace != "all" && strings.Contains(namespace, ",") {
+		allowedNsSet = make(map[string]bool)
+		for _, ns := range strings.Split(namespace, ",") {
+			allowedNsSet[strings.TrimSpace(ns)] = true
+		}
+	}
+
 	for _, obj := range list {
-		if ns := getNamespace(obj); namespace == "" || namespace == "all" || ns == namespace {
+		ns := getNamespace(obj)
+		match := namespace == "" || namespace == "all" || ns == namespace
+		if !match && allowedNsSet != nil {
+			match = allowedNsSet[ns]
+		}
+		if match {
 			if keyword == "" || strings.Contains(strings.ToLower(getName(obj)), keywordLower) {
 				// Service 类型筛选
 				if kind == "services" && resourceType != "" {

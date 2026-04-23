@@ -24,6 +24,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// getDataDir 返回 CloudOps data 目录路径
+// 优先级：1. CLOUDOPS_DATA_DIR 环境变量 2. 可执行文件同级 data/ 目录 3. 开发环境默认路径
+func getDataDir() string {
+	if dir := os.Getenv("CLOUDOPS_DATA_DIR"); dir != "" {
+		return dir
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Join(filepath.Dir(exe), "data")
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	// fallback to development path
+	return "/data/projects/cloudops-v2/data"
+}
+
 var terminalUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -126,7 +142,8 @@ func (h *TerminalHandler) Terminal(c *gin.Context) {
 
 	// 从内嵌资源复制 kubectl 命令补全脚本到集群家目录
 	kubectlCompPath := filepath.Join(homeDir, ".kubectl-completion.bash")
-	if compData, err := os.ReadFile("/data/projects/cloudops-v2/data/kubectl-completion.bash"); err == nil {
+	dataDir := getDataDir()
+	if compData, err := os.ReadFile(filepath.Join(dataDir, "kubectl-completion.bash")); err == nil {
 		_ = os.WriteFile(kubectlCompPath, compData, 0644)
 	}
 
@@ -235,7 +252,7 @@ export BASHRC_LOADED=1
 	_ = os.Symlink("/proc/self/fd", filepath.Join(sandboxRoot, "dev/fd"))
 
 	// 复制 kubectl 到 chroot 内（避免 bind mount 文件需要目标文件预先存在的限制）
-	if src, err := os.Open("/data/projects/cloudops-v2/data/kubectl"); err == nil {
+	if src, err := os.Open(filepath.Join(dataDir, "kubectl")); err == nil {
 		defer src.Close()
 		dstPath := filepath.Join(sandboxRoot, "usr/local/bin/kubectl")
 		if dst, err := os.Create(dstPath); err == nil {
