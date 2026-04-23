@@ -79,6 +79,55 @@ cd /opt/cloudops-offline
 7. **设置权限**: 文件属主和访问权限
 8. **启动服务**: 自动启动并健康检查
 
+## 升级
+
+如果服务器上已部署旧版本，**不要重新运行 `install.sh`**，因为 `install.sh` 会重新生成 `config.yaml`（覆盖数据库密码、JWT secret 等配置，导致用户登录失效）。
+
+请使用专门的升级脚本：
+
+```bash
+# 1. 将新版本离线包复制到服务器（可以覆盖旧包目录，或解压到新目录）
+tar xzf cloudops-offline-ubuntu22.tar.gz -C /opt/
+cd /opt/cloudops-offline
+
+# 2. 执行升级（交互式确认）
+./upgrade.sh
+
+# 3. 或使用自动确认模式
+./upgrade.sh --yes
+```
+
+### `upgrade.sh` 与 `install.sh` 的区别
+
+| 行为 | `install.sh` | `upgrade.sh` |
+|------|-------------|--------------|
+| 安装系统依赖 | ✓ | ✗（假设已安装） |
+| 初始化数据库 | ✓ | ✗（保留现有数据） |
+| 生成 config.yaml | ✓（覆盖） | ✗（保留现有配置） |
+| 替换后端二进制 | ✓ | ✓ |
+| 替换前端 dist | ✓ | ✓ |
+| 更新 kubectl/data | ✓ | ✓ |
+| 数据库结构更新 | ✓（AutoMigrate） | ✓（AutoMigrate，后端启动时自动执行） |
+| 备份旧版本 | ✗ | ✓（备份到 `backup/YYYYMMDD_HHMMSS/`） |
+
+### 回滚
+
+如果升级后出现问题，可从备份目录回滚：
+
+```bash
+BACKUP_DIR="/opt/cloudops/backup/20250101_120000"  # 替换为实际备份目录
+
+# 停止服务
+systemctl stop cloudops-backend
+
+# 恢复旧版本
+cp "${BACKUP_DIR}/cloudops-backend" /opt/cloudops/
+cp -r "${BACKUP_DIR}/dist" /opt/cloudops/frontend/
+
+# 重启服务
+systemctl start cloudops-backend
+```
+
 ## 服务管理
 
 ```bash

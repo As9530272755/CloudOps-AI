@@ -580,22 +580,38 @@ git commit -m "feat/fix: xxx"
 git push origin main
 ```
 
-### 13.3 生产环境部署新包
+### 13.3 生产环境升级（已有旧版本）
+
+**不要重新运行 `install.sh`**，因为 `install.sh` 会重新生成 `config.yaml`，覆盖数据库密码和 JWT secret，导致所有用户登录失效。
+
+使用离线包自带的 `upgrade.sh`：
 
 ```bash
 # 1. 传包到服务器
 scp cloudops-offline-ubuntu22.tar.gz root@<服务器IP>:/opt/
 
-# 2. 服务器上解压并替换
+# 2. 服务器上解压并执行升级
 ssh root@<服务器IP> '
   cd /opt
   tar xzf cloudops-offline-ubuntu22.tar.gz
-  cp offline-package/bin/cloudops-backend /opt/cloudops/
-  cp -r offline-package/frontend/dist/* /opt/cloudops/frontend/dist/
-  cp -r offline-package/data/* /opt/cloudops/data/ 2>/dev/null || true
-  systemctl restart cloudops-backend
-  systemctl restart nginx
+  cd offline-package
+  ./upgrade.sh --yes
 '
+```
+
+`upgrade.sh` 行为：
+- 停止现有服务
+- 备份当前版本到 `backup/YYYYMMDD_HHMMSS/`
+- 替换后端二进制、前端 dist、data 目录
+- **保留 `config.yaml` 和数据库**
+- 启动服务，后端自动执行 AutoMigrate 更新表结构
+
+如需手动回滚：
+```bash
+BACKUP_DIR="/opt/cloudops/backup/20250101_120000"
+cp "${BACKUP_DIR}/cloudops-backend" /opt/cloudops/
+cp -r "${BACKUP_DIR}/dist" /opt/cloudops/frontend/
+systemctl restart cloudops-backend
 ```
 
 ---
@@ -651,7 +667,8 @@ redis-cli ping
 | `frontend/src/lib/ws.ts` | WebSocket 客户端 |
 | `frontend/src/hooks/usePermission.ts` | 权限查询 hook |
 | `internal/api/handlers/terminal.go` | Web 终端 handler（chroot + Namespace 沙箱） |
-| `offline-package/install.sh` | 离线安装脚本 |
+| `offline-package/install.sh` | 离线安装脚本（首次部署） |
+| `offline-package/upgrade.sh` | 离线升级脚本（保留配置和数据） |
 | `offline-package/config/nginx-cloudops.conf` | nginx 配置模板 |
 | `scripts/prepare-deps.sh` | 联网预下载依赖脚本 |
 | `internal/api/handlers/k8s.go` | 资源列表接口（含 namespace 级权限过滤） |
