@@ -558,6 +558,8 @@ nohup ./cloudops-backend > backend.log 2>&1 &
 
 ### 13.2 更新离线包（保持离线包永远最新）
 
+> **关键**：打包的是整个 `offline-package/` 目录，因此 `upgrade.sh`、`install.sh`、前端 dist、后端二进制会一并包含在 `tar.gz` 中。
+
 ```bash
 cd /data/projects/cloudops-v2
 
@@ -570,21 +572,31 @@ npm run build
 cd ..
 cp -r frontend/dist/* offline-package/frontend/dist/
 
-# 3. 重新打包
+# 3. 确认 upgrade.sh 存在（如果不存在需从仓库复制回来）
+ls -la offline-package/upgrade.sh
+
+# 4. 重新打包
 rm -f cloudops-offline-ubuntu22.tar.gz
 tar czf cloudops-offline-ubuntu22.tar.gz offline-package/
 
-# 4. 推送到 GitHub
+# 5. 推送到 GitHub
 git add -A
 git commit -m "feat/fix: xxx"
 git push origin main
 ```
 
-### 13.3 生产环境升级（已有旧版本）
+### 13.3 生产环境部署/升级场景判断
 
-**不要重新运行 `install.sh`**，因为 `install.sh` 会重新生成 `config.yaml`，覆盖数据库密码和 JWT secret，导致所有用户登录失效。
+| 场景 | 使用脚本 | 原因 |
+|------|---------|------|
+| 服务器**从未安装过** CloudOps | `install.sh` | 需要安装依赖、初始化数据库、生成配置 |
+| 服务器**已有旧版本** | `upgrade.sh` | 只替换二进制和前端，**保留 config.yaml 和数据库** |
 
-使用离线包自带的 `upgrade.sh`：
+> ⚠️ **绝对不要**在已有旧版本的服务器上重新运行 `install.sh`，因为它会重新生成 `config.yaml`，覆盖数据库密码和 JWT secret，导致所有用户登录失效。
+
+#### 使用 `upgrade.sh` 升级
+
+`upgrade.sh` 已包含在离线包中，随 `tar.gz` 一起分发：
 
 ```bash
 # 1. 传包到服务器
