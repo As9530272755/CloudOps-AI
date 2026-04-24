@@ -1,7 +1,7 @@
 # CloudOps-v2 项目知识库
 
 > 本文档是项目核心知识沉淀，用于指导后续开发和维护。非开发日记，不包含逐日变更记录。
-> 最后更新：2026-04-23
+> 最后更新：2026-04-24
 
 ---
 
@@ -63,35 +63,52 @@ HTTP Request → Gin Router → Middleware → Handler → Service → DB/Redis/
 - 24 个 informer — 全量注册，非按需
 
 **关键参数：**
-- `NewSharedInformerFactory(client, 60*time.Second)` — 60 秒 resync 周期（原 10 分钟）
-- `WaitForCacheSync` 超时 120 秒（覆盖全部 24 个 informer）
+- `NewSharedInformerFactory(client, 0)` — **resyncPeriod = 0**，不自动 resync（原 60 秒）。Watch 断开后自动 LIST+WATCH 恢复，resync 对 20+ 集群场景会导致大量无意义 LIST 和 WS 广播风暴
+- `WaitForCacheSync` 超时 120 秒（覆盖全部 33 个 informer）
+- **并发启动锁**：`starting map[uint]chan struct{}` + `startMu`，防止同一集群并发启动导致 goroutine 泄露
 
 **写操作后同步：**
-- `CreateResource`/`UpdateResource`/`DeleteResource` 成功后调用 `syncObjectToStore`
+- `CreateResource` 成功后 **异步** `go syncObjectToStore`（解决 K8s 最终一致性：Create 返回 200 后 Get 可能短暂 NotFound，指数退避重试最多 5 次）
+- `UpdateResource`/`DeleteResource` 成功后 **同步** 调用 `syncObjectToStore`
 - `syncObjectToStore` 通过 dynamic client `Get` 最新对象，调用 `store.Update()`（增量同步，非 Replace）
-- 失败后指数退避重试（最多 5 次，总等待约 3 秒）
-- 成功后广播 WebSocket `resource_change` 消息 + 清除 Redis 列表缓存
+- 成功后广播 WebSocket `resource_change` 消息
+
+**列表查询优化：**
+- **Namespace 索引查询**：`GetNamespacedResourceList` 对非 `"all"` namespace 使用 `indexer.ByIndex(cache.NamespaceIndex, namespace)`，4000+ Pod 时从 O(N) 降到 O(命名空间内对象数)，性能提升 10-100 倍
+- **Redis 列表缓存已移除**：Informer 内存查询已是纳秒级，无需额外 Redis 缓存层（避免 5s TTL 过期 + SCAN 清除的复杂度）
 
 ### 2.3 WebSocket 推送架构
 
 ```
 后端 Hub (internal/pkg/ws/hub.go)
+  ├── broadcast 通道缓冲：4096（避免高频事件下阻塞 informer）
+  ├── Client send 通道缓冲：256
+  ├── 最大连接数：10000
+  ├── ping/pong keepalive：30s 心跳 / 45s 读超时
   ├── Client 订阅：clusterID + kinds 过滤
   ├── 资源变化广播：syncObjectToStore → ResourceChangeMessage
+  │   ├── Event 资源：**已禁用 WS 广播**（4000+ Pod 集群 Event 产生频率极高，每秒几十条，23 集群同时广播会压垮 WS 通道）
+  │   └── Node update：**5 秒节流**（同一 Node 5 秒内只广播一次 update，避免 status 频繁更新洪泛）
   ├── 集群状态广播：probeClusterHealth 状态变化 → cluster_status_change
   └── 前端接收：即时刷新对应资源列表
 ```
 
 **前端策略：**
-- 资源页：WebSocket 实时推送 + 30 秒轮询兜底
+- 资源页：WebSocket 实时推送（3 秒防抖）+ 30 秒轮询兜底
 - 集群列表页：WebSocket 状态推送，彻底移除轮询
 - 概览页：不订阅 WebSocket
 
+**前端 WS 客户端优化（`frontend/src/lib/ws.ts`）：**
+- `connecting` 锁防止并发创建多个 WebSocket 连接
+- `subscribe()` 100ms 防抖，避免 React 严格模式 cleanup+mount 竞态，以及用户快速切换资源类型时的连续重建
+- `disconnect()` 清空所有 handler 后再 `close()`，防止旧连接事件误触发重连
+- 生产环境移除所有 `console.log`（`import.meta.env.DEV` tree-shaking）
+
 ### 2.4 Redis 缓存策略
 
-- **列表缓存**：`k8s:list:${clusterID}:${kind}:${namespace}:${keyword}:${page}:${limit}`，TTL 5 秒
-- **写操作后**：立即 `SCAN` + `DEL` 清除匹配的列表缓存 key
-- **多用户共享**：同参数请求命中同一缓存
+- **列表缓存：已移除**。Informer 内存 Store 查询已是纳秒级，无需 Redis 列表缓存（避免 5s TTL 过期 + SCAN 清除的复杂度和延迟）
+- **会话缓存**：JWT token 黑名单等会话数据仍使用 Redis
+- **probePermissionScope 缓存**：1 小时内存缓存，避免每次健康检查都重复探测权限范围
 
 ---
 
@@ -251,6 +268,13 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 
 ## 五、K8s 资源管理
 
+### 5.0 API 限流
+
+`internal/api/middleware/ratelimit.go` — 基于令牌桶的 IP 级别限流：
+- **限流阈值**：60 req/min per IP
+- **清理**：每 5 分钟清理过期 visitor
+- **响应**：超限返回 `429 Too Many Requests`
+
 ### 5.1 支持的资源类型（33 种）
 
 | 分类 | 资源类型 |
@@ -271,8 +295,13 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 
 **后端 `ListResources`：**
 - 参数：`clusterID`, `kind`, `namespace`, `keyword`, `page`, `limit`, `labelSelector`, `resourceType`
-- 从 informer store `List()` 读取 -> 过滤（namespace/keyword/label/type）-> 稳定排序（按名称）-> 分页
+- 从 informer store 读取 -> 过滤（namespace/keyword/label/type）-> 稳定排序（按名称）-> 分页
+- **Namespace 索引加速**：非 `"all"` 时使用 `indexer.ByIndex(cache.NamespaceIndex, namespace)`，O(N) → O(命名空间内对象数)
 - Label 选择器格式：`key=value`（精确匹配）或 `key`（仅要求存在），多条件空格/逗号分隔（AND 关系）
+- 分页上限：500
+
+**Metrics 查询分页：**
+- `getPodMetricsMap` / `getNodeMetricsMap`：`Limit: 1000`，防止 namespace=all 时全集群拉取 OOM
 
 **前端展示：**
 - 全部 33 种资源表格均展示 `labels` 列（最多 2 个 Chip，超出 `+N` 悬浮提示）
@@ -319,10 +348,14 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 ### 6.2 健康检查机制
 
 - **内存缓存**：`healthCache`（map + RWMutex），连续 3 次失败标记 offline
-- **自适应周期**：健康 30s / 异常 5s / offline 60s
-- **并发探测**：每个集群独立 goroutine，`ServerVersion()` 用 goroutine + select 实现 10 秒超时
+- **探测周期**：固定 5 秒 ticker（不再自适应，简化逻辑）
+- **并发探测**：每个集群独立 goroutine，**移除 `wg.Wait()` 阻塞**（避免单个集群探测超时拖慢全部）
+- **打散**：jitter 随机延迟，避免所有集群同时探测
+- **过滤**：只检查 `is_active = true` 的集群
 - **离线拦截**：`ClusterStateMiddleware` 对 offline 集群直接返回 503
 - **巡检预检**：`inspectCluster` 开头检查 `IsClusterHealthy`，offline 直接返回 failed
+- **probePermissionScope 缓存**：1 小时内存缓存，避免每次 healthy 都重复探测权限范围
+- **testClusterConnection 分页**：连接测试时 Pod 列表使用 `Limit: 500`，避免大集群添加时 OOM
 
 ### 6.3 WebSocket 状态推送
 
@@ -554,15 +587,29 @@ cloudops-offline-ubuntu22-YYYYMMDD-HHMM.tar.gz (约 247MB)
 |------|------|
 | metrics-server | 不支持 informer watch，每次请求实时查询 REST API |
 | nginx 离线包体积 | 比 Node.js 版大 65MB（含 109 个 DEB 依赖） |
-| informer 内存占用 | 全量缓存 33 种资源类型，大规模集群需关注内存 |
+| informer 内存占用 | 全量缓存 33 种资源类型，23 集群 × 4000 Pod ≈ 12-18GB，建议服务器内存 **64GB** |
 | 前端排序 | 客户端排序，仅对当前页数据生效 |
 | SelfSubjectRulesReview | 只探测 default namespace 权限，全局权限通过 ClusterRole 推断 |
 | 日志后端历史数据 | 曾被物理删除，用户需手动重新配置 |
 | namespace 级用户"全部命名空间" | 已修复：后端将授权 NS 列表逗号拼接后过滤，不再只返回 default |
 | 标签筛选模糊匹配 | 已修复：`matchLabels` 从精确匹配改为大小写不敏感的包含匹配，`app=f` 可匹配 `app=fluent-bit` |
 | Go nil slice JSON 序列化 | **规范**：后端返回 slice 的 handler 必须用 `make([]T, 0)` 初始化，不能用 `var []T`。nil slice 序列化为 `null`，前端 `.filter()` 会崩溃白屏。已全局修复 inspection/k8s/user 等 handler |
+| Event 非实时 | Event 已禁用 WS 广播，靠 30s 轮询兜底 |
+| 前端表格未虚拟化 | `ClusterDetail.tsx` 仍为全量 DOM 渲染，每页 50 行已缓解压力，但 `react-virtuoso` 尚未集成到表格 |
+| RBAC 重复查询 | `handlers/k8s.go` 同一请求内 `GetUserEffectiveRole` 调用两次（中等影响） |
+| 主 bundle 体积 | Monaco Editor 内联后 main chunk 约 5MB，gzip 后 1.3MB |
 
 ---
+
+### 12.1 数据库连接池
+
+`internal/pkg/database/database.go`：
+```go
+sqlDB, _ := db.DB()
+sqlDB.SetMaxOpenConns(100)
+sqlDB.SetMaxIdleConns(20)
+sqlDB.SetConnMaxLifetime(30 * time.Minute)
+```
 
 ## 十二、启动方式
 

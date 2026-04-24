@@ -5,7 +5,7 @@
   <a href="./README.ko.md">한국어</a>
 </p>
 
-# CloudOps AI v0.1.1
+# CloudOps AI v0.1.2
 
 > 云原生智能运维管理平台 —— 基于 Kubernetes 的一站式容器运维与 AI 助手解决方案
 
@@ -239,6 +239,43 @@ journalctl -u nginx -f
 
 ## 变更日志
 
+### v0.1.2 (2026-04-24) — 大规模集群专项优化
+
+**性能优化（23 集群 × 4000+ Pod 验证）**
+- Informer `resyncPeriod` 从 60s 改为 **0**，消除 600 次/分钟无意义 LIST 请求对 API Server 的压力
+- 新增 **Informer 并发启动锁**，防止同一集群并发启动导致 goroutine 泄露
+- **Namespace 索引查询**：非 `"all"` 时使用 `indexer.ByIndex`，列表查询从 O(N) 降到 O(命名空间内对象数)，性能提升 10-100 倍
+- **移除 Redis 列表缓存**：Informer 内存查询已是纳秒级，简化架构
+- **Metrics 查询分页**：`Limit: 1000`，防止 namespace=all 时全集群拉取 OOM
+- **连接测试分页**：Pod 计数使用 `Limit: 500`，避免大集群添加时 OOM
+- **Node update 5 秒节流**：同一 Node 5 秒内只广播一次 WS update，避免 status 频繁更新洪泛
+- **Event WS 广播禁用**：4000+ Pod 集群每秒产生几十条 Event，23 集群同时广播会压垮 WS 通道；Event 列表靠 30s 轮询兜底
+
+**稳定性优化**
+- **健康检查移除 `wg.Wait()` 阻塞**：单个集群探测超时不再拖慢全部
+- **健康检查 jitter 打散**：避免所有集群同时探测
+- **probePermissionScope 1 小时缓存**：避免每次 healthy 都重复探测权限
+- **数据库连接池**：`MaxOpenConns=100`, `MaxIdleConns=20`, `ConnMaxLifetime=30m`
+- **API 限流**：60 req/min per IP，防止突发流量压垮服务
+
+**WebSocket 优化**
+- broadcast 通道缓冲 4096，client send 缓冲 256
+- ping/pong keepalive（30s 心跳 / 45s 读超时）
+- 最大连接数 10000
+- 前端 `connecting` 锁 + `subscribe` 100ms 防抖，防止连接频繁重建
+- 生产环境移除所有 `console.log`
+
+**前端优化**
+- **Monaco Editor 本地加载**：YAML 弹窗从几十秒 CDN 超时降至 1-3 秒
+- **每页条数限制**：limit 最大 50，减少 DOM 渲染压力
+- **Labels 简化**：显示 1 个标签 + 剩余数量
+- **Tabs value 合法性检查**：防止切换类别时 MUI 报错
+- **refreshTimersRef**：集中管理写操作后的延迟刷新定时器，组件卸载时清理
+- **Terminal button 嵌套修复**：避免 HTML button 嵌套导致 React 崩溃
+
+**数据模型**
+- `ClusterMetadata.HealthStatus` 添加 `gorm:"index"`
+
 ### v0.1.1 (2026-04-20)
 
 **巡检中心修复**
@@ -266,24 +303,3 @@ journalctl -u nginx -f
 - 初始版本发布
 - 多集群管理、AI 助手、巡检中心、日志管理、网络追踪等核心功能
 
----
-
-## 文档导航
-
-| 文档 | 说明 |
-|------|------|
-| [docs/installation.md](docs/installation.md) | 完整安装与部署指南 |
-| [docs/architecture.md](docs/architecture.md) | 系统架构与技术选型 |
-| [docs/api.md](docs/api.md) | RESTful API 接口文档 |
-| [docs/ai-integration.md](docs/ai-integration.md) | AI 平台对接与配置说明 |
-| [docs/install-offline.md](docs/install-offline.md) | 离线安装指南 |
-
----
-
-## 贡献与反馈
-
-欢迎提交 Issue 和 PR。如有问题，请联系项目维护者。
-
-## License
-
-[MIT](LICENSE)
