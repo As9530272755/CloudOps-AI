@@ -252,6 +252,9 @@ export default function ClusterDetail() {
     } catch {}
   }
 
+  // 标记是否已初始化过 namespace（防止异步 loadNamespaces 完成后覆盖用户手动选择）
+  const nsInitializedRef = useRef(false)
+
   // 加载命名空间
   const loadNamespaces = async () => {
     setNsError('')
@@ -259,13 +262,17 @@ export default function ClusterDetail() {
       const result = await k8sAPI.getNamespaces(id)
       if (result.success && result.data) {
         setNamespaces(result.data)
-        if (result.data.length === 1) {
-          // namespace 级用户只有一个授权 NS，直接选中
-          setSelectedNamespace(result.data[0])
-        } else if (result.data.includes('default')) {
-          setSelectedNamespace('default')
-        } else {
-          setSelectedNamespace(result.data[0] || 'all')
+        // 只在首次加载时设置默认 namespace；用户手动切换后不再覆盖
+        if (!nsInitializedRef.current) {
+          nsInitializedRef.current = true
+          if (result.data.length === 1) {
+            // namespace 级用户只有一个授权 NS，直接选中
+            setSelectedNamespace(result.data[0])
+          } else if (result.data.includes('default')) {
+            setSelectedNamespace('default')
+          } else {
+            setSelectedNamespace(result.data[0] || 'all')
+          }
         }
       } else {
         setNsError(result.error || '命名空间加载失败')
