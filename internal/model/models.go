@@ -457,6 +457,25 @@ type InspectionRule struct {
 
 func (InspectionRule) TableName() string { return "inspection_rules" }
 
+// TerminalAuditLog Web终端审计日志模型
+type TerminalAuditLog struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	UserID      uint      `gorm:"index" json:"user_id"`
+	Username    string    `gorm:"size:50" json:"username"`
+	ClusterID   uint      `gorm:"index" json:"cluster_id"`
+	ClusterName string    `gorm:"size:100" json:"cluster_name"`
+	SessionID   string    `gorm:"size:64;index" json:"session_id"`
+	ActionType  string    `gorm:"size:20;not null" json:"action_type"` // login | command | logout
+	Command     string    `gorm:"type:text" json:"command"`            // ActionType=command 时记录
+	WorkingDir  string    `gorm:"size:255" json:"working_dir"`         // 命令执行时的工作目录
+	IPAddress   string    `gorm:"size:50" json:"ip_address"`
+	CreatedAt   time.Time `gorm:"index" json:"created_at"`
+}
+
+func (TerminalAuditLog) TableName() string {
+	return "terminal_audit_logs"
+}
+
 // SystemSetting 系统配置表
 type SystemSetting struct {
 	Key       string `gorm:"primaryKey;size:128" json:"key"`

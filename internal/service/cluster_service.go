@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -216,8 +217,14 @@ func (s *ClusterService) DeleteCluster(ctx context.Context, userID uint, tenantI
 		return err
 	}
 
-	// 清理该集群的终端家目录（仅在用户手动删除时执行）
-	homeDir := filepath.Join("/tmp/cloudops-home", fmt.Sprintf("cluster-%d", clusterID))
+	// 清理该集群的终端家目录（按集群名称命名）
+	safeName := strings.ReplaceAll(cluster.Name, "/", "-")
+	safeName = strings.ReplaceAll(safeName, "\\", "-")
+	safeName = strings.TrimSpace(safeName)
+	if safeName == "" {
+		safeName = "unknown"
+	}
+	homeDir := filepath.Join("/tmp/cloudops-home", safeName)
 	_ = os.RemoveAll(homeDir)
 
 	// 清理巡检任务中引用的该集群ID

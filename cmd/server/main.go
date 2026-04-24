@@ -47,6 +47,7 @@ func main() {
 	if err := db.AutoMigrate(
 		&model.AuditLog{},
 		&model.ClusterPermission{},
+		&model.TerminalAuditLog{},
 	); err != nil {
 		log.Printf("⚠️ 数据库迁移警告: %v", err)
 	}

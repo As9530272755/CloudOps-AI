@@ -14,10 +14,16 @@ import {
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import AddIcon from '@mui/icons-material/Add'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
+import DownloadIcon from '@mui/icons-material/Download'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import { Terminal as XTerm } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import { clusterAPI } from '../lib/cluster-api'
+import TerminalUploadDialog from '../components/TerminalUploadDialog'
+import TerminalDownloadDialog from '../components/TerminalDownloadDialog'
+import TerminalAuditLogDialog from '../components/TerminalAuditLogDialog'
 
 interface TerminalCluster {
   id: number
@@ -42,6 +48,9 @@ export default function TerminalPage() {
   const [selectedCluster, setSelectedCluster] = useState<number | ''>('')
   const [sessions, setSessions] = useState<Session[]>([])
   const [activeTab, setActiveTab] = useState<string | null>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
   const token = localStorage.getItem('access_token') || ''
 
   // 加载集群列表（只保留 healthy 状态的集群）
@@ -184,6 +193,9 @@ export default function TerminalPage() {
     }
   }
 
+  const activeSession = sessions.find((s) => s.id === activeTab)
+  const activeClusterId = activeSession ? activeSession.clusterId : Number(selectedCluster)
+
   return (
     <Box sx={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', p: 0 }}>
       {/* Header */}
@@ -218,6 +230,36 @@ export default function TerminalPage() {
             disabled={!selectedCluster || !token || clusters.length === 0}
           >
             新建连接
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setUploadOpen(true)}
+            disabled={!activeClusterId}
+          >
+            上传
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={() => setDownloadOpen(true)}
+            disabled={!activeClusterId}
+          >
+            下载
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<VisibilityIcon />}
+            onClick={() => setAuditLogOpen(true)}
+            disabled={!activeClusterId}
+          >
+            审计日志
           </Button>
         </Box>
       </Box>
@@ -271,7 +313,7 @@ export default function TerminalPage() {
               color: 'text.secondary',
             }}
           >
-            <Typography>请选择集群并点击“新建连接”打开终端</Typography>
+            <Typography>请选择集群并点击"新建连接"打开终端</Typography>
           </Box>
         )}
 
@@ -295,6 +337,23 @@ export default function TerminalPage() {
           />
         ))}
       </Box>
+
+      {/* Dialogs */}
+      <TerminalUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        clusterId={activeClusterId}
+      />
+      <TerminalDownloadDialog
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        clusterId={activeClusterId}
+      />
+      <TerminalAuditLogDialog
+        open={auditLogOpen}
+        onClose={() => setAuditLogOpen(false)}
+        clusterId={activeClusterId}
+      />
     </Box>
   )
 }

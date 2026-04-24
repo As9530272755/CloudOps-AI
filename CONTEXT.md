@@ -384,6 +384,74 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 
 ---
 
+## 八-A、Web 终端
+
+### A.1 架构
+
+```
+用户浏览器 → WebSocket → Terminal Handler → chroot + Namespace 沙盒 → bash
+                                   ↓
+                            DEBUG trap 审计 → .audit.log → Go 轮询 → PostgreSQL
+```
+
+**安全隔离：**
+- `chroot` 到临时沙盒目录
+- `CLONE_NEWPID | CLONE_NEWUSER | CLONE_NEWIPC | CLONE_NEWNS` Namespace 隔离
+- 系统目录只读 bind mount
+- 用户家目录独立隔离
+
+### A.2 用户数据隔离
+
+| 层级 | 路径 |
+|------|------|
+| 集群根目录 | `/tmp/cloudops-home/{safe-cluster-name}` |
+| A 用户家目录 | `/tmp/cloudops-home/{cluster-name}/{user-id-a}/` |
+| B 用户家目录 | `/tmp/cloudops-home/{cluster-name}/{user-id-b}/` |
+| 共享目录 | `/tmp/cloudops-home/{cluster-name}/.shared/` |
+
+- 每个用户独立的 `.bashrc`、`.kubeconfig`、`.bash_profile`
+- 删除集群时自动清理整个集群目录
+
+### A.3 共享文件
+
+- 集群级共享目录 `.shared` 挂载到沙盒内 `/root/共享`
+- 所有用户可读写
+- **删除保护**：普通用户的 `.bashrc` 中注入 `rm`/`rmdir` 拦截函数，阻止删除共享目录中的文件；admin 用户不受限制
+
+### A.4 审计日志（100% 命令覆盖）
+
+**原理：** bash `DEBUG trap` 在每条命令执行前触发，记录到 `.audit.log`
+
+**覆盖范围：**
+- 手动输入的命令
+- 脚本中执行的每一行
+- 管道中的每个子命令
+- 函数调用、eval、source
+
+**数据模型：** `terminal_audit_logs`
+
+| 字段 | 说明 |
+|------|------|
+| user_id / username | 操作用户 |
+| cluster_id / cluster_name | 操作集群 |
+| session_id | WebSocket 会话标识 |
+| action_type | login / command / logout |
+| command | 执行的命令文本 |
+| working_dir | 命令执行时的工作目录 |
+
+### A.5 文件上传下载
+
+**后端 API：**
+- `POST /api/v1/terminal/upload` — multipart 上传，参数 cluster_id + path + file
+- `GET /api/v1/terminal/download` — 文件下载，参数 cluster_id + path
+- `GET /api/v1/terminal/files` — 列出目录内容（文件浏览器）
+
+**前端：**
+- 上传弹窗：文件浏览器选择目标目录 + 本地文件选择器
+- 下载弹窗：文件浏览器浏览目录 + 点击文件下载
+
+---
+
 ## 九、离线部署包
 
 ### 9.1 包结构
@@ -703,7 +771,7 @@ redis-cli ping
 | `frontend/src/lib/k8s-api.ts` | K8s API 封装 |
 | `frontend/src/lib/ws.ts` | WebSocket 客户端 |
 | `frontend/src/hooks/usePermission.ts` | 权限查询 hook |
-| `internal/api/handlers/terminal.go` | Web 终端 handler（chroot + Namespace 沙箱） |
+| `internal/api/handlers/terminal.go` | Web 终端 handler（chroot + Namespace 沙箱 + 审计日志 + 上传下载） |
 | `offline-package/install.sh` | 离线安装脚本（首次部署） |
 | `frontend/src/pages/DashboardList.tsx` | 仪表盘列表页（多仪表盘管理） |
 | `frontend/src/pages/Dashboard.tsx` | 仪表盘详情页（支持 `/dashboards/:id`） |

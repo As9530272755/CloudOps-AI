@@ -249,6 +249,12 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 			v1.GET("/settings/site", r.settingHandler.GetSiteConfig)
 			protected.PUT("/settings/site", middleware.ModulePermissionMiddleware(r.db, "module:system:settings"), r.settingHandler.UpdateSiteConfig)
 			protected.POST("/settings/site/logo", middleware.ModulePermissionMiddleware(r.db, "module:system:settings"), r.settingHandler.UploadLogo)
+
+			// Web 终端文件上传下载与审计日志
+			protected.POST("/terminal/upload", r.terminalHandler.UploadFile)
+			protected.GET("/terminal/download", r.terminalHandler.DownloadFile)
+			protected.GET("/terminal/files", r.terminalHandler.ListFiles)
+			protected.GET("/terminal/audit-logs", r.terminalHandler.ListAuditLogs)
 		}
 	}
 

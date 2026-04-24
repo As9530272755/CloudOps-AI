@@ -30,7 +30,7 @@ CloudOps Platform is a cloud-native O&M management platform for multi-cluster Ku
 - **Log Management**: Multi-backend architecture per cluster (supports ES / OpenSearch / Loki simultaneously), scenario-based log retrieval (Ingress / CoreDNS / LB / All Logs), with keyword highlighting, level statistics, time distribution charts, and AI intelligent analysis
 - **Global Resource Search**: Real-time fuzzy search across clusters for K8s resources, supporting multi-dimensional filtering by resource type, cluster, namespace, and labels, with label display in results
 - **System Customization**: Administrators can dynamically modify platform name, description, and logo in system settings, with hot reload across the entire site after saving
-- **Web Terminal**: Direct browser access to pod container terminals
+- **Web Terminal**: Secure sandbox terminal in browser with chroot + Linux Namespace isolation; per-user home directory isolation; cluster-level shared file directory; 100% command audit via bash DEBUG trap; file upload/download with file browser
 - **Multi-Tenant Isolation**: User-role-permission system based on RBAC, supporting tenant-level resource isolation
 
 ---
