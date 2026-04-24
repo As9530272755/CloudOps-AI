@@ -303,6 +303,11 @@ storageclasses->storageclass, customresourcedefinitions->customresourcedefinitio
 **Metrics 查询分页：**
 - `getPodMetricsMap` / `getNodeMetricsMap`：`Limit: 1000`，防止 namespace=all 时全集群拉取 OOM
 
+**前端请求竞态防护（`ClusterDetail.tsx`）：**
+- **AbortController**：`loadResources` 使用 `AbortController` 取消前一个未完成的请求，切换 namespace/资源类型时旧请求不会覆盖新结果
+- **请求去重**：`pendingRequestKey`（`${id}-${kind}-${ns}-${page}-${limit}-${search}-${typeFilter}-${labelSel}`），同一参数的请求正在执行中时跳过重复调用
+- **取消静默处理**：catch 中 `err.name === 'AbortError'` 时直接 return，不报错、不更新状态
+
 **前端展示：**
 - 全部 33 种资源表格均展示 `labels` 列（最多 2 个 Chip，超出 `+N` 悬浮提示）
 - 全部列支持表头点击排序（数字/字符串/null 处理）
