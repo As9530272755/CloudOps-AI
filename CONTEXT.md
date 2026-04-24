@@ -695,38 +695,60 @@ nohup ./cloudops-backend > backend.log 2>&1 &
 
 ### 13.2 更新离线包（保持离线包永远最新）
 
-> **关键**：打包的是整个 `offline-package/` 目录，因此 `upgrade.sh`、`install.sh`、前端 dist、后端二进制会一并包含在 `tar.gz` 中。
+> **核心原则：先构建前后端，再复制产物到 offline-package，最后打包 tar.gz。绝对不要先打包再构建！**
+
+> **血泪教训**：多次因 Vite 构建缓存未清除，导致离线包中的前端代码是旧版本。用户部署后出现线上 bug，排查困难。
+
+**推荐方式：使用自动化脚本（防呆）**
+
+```bash
+cd /data/projects/cloudops-v2
+./scripts/build-release.sh
+```
+
+脚本会自动完成：后端构建 → 清除 Vite 缓存 → 前端构建 → 验证构建产物时间晚于源码 → 复制到 offline-package → 生成 tar.gz。
+
+**手动方式（不推荐，仅供理解流程）：**
 
 ```bash
 cd /data/projects/cloudops-v2
 
-# 1. 构建后端
-go build -o offline-package/bin/cloudops-backend ./cmd/server
+# 1. 构建后端（输出到项目根目录，不是 offline-package！）
+go build -o cloudops-backend ./cmd/server
 
-# 2. 构建前端并复制到离线包
-cd frontend
-npm run build
-cd ..
-cp -r frontend/dist/* offline-package/frontend/dist/
+# 2. 清除前端缓存 + 构建（⚠️ 必须清除，否则 Vite 可能复用旧缓存！）
+rm -rf frontend/dist frontend/node_modules/.vite
+cd frontend && npm run build && cd ..
 
-# 3. 确认 upgrade.sh 存在（如果不存在需从仓库复制回来）
+# 3. 验证：构建产物时间必须晚于源码修改时间
+#    如果构建产物时间早于源码，说明缓存未清干净！
+stat -c "%y" frontend/src/pages/ClusterDetail.tsx   # 源码时间
+stat -c "%y" frontend/dist/assets/index-*.js         # 产物时间
+#    产物时间必须 >= 源码时间，否则重跑步骤 2
+
+# 4. 复制最新产物到 offline-package（替换旧产物）
+rm -rf offline-package/frontend/dist
+cp -r frontend/dist offline-package/frontend/dist
+cp cloudops-backend offline-package/bin/cloudops-backend
+
+# 5. 确认 upgrade.sh 存在
 ls -la offline-package/upgrade.sh
 
-# 4. 编码规范检查：新增 handler 时防止 nil slice 返回 null
+# 6. 编码规范检查：新增 handler 时防止 nil slice 返回 null
 # grep -n 'var resp \[\]\|var items \[\]\|var menus \[\]' internal/api/handlers/*.go
 # 如有发现，改为 make([]T, 0)，避免前端 .filter() 在 null 上崩溃
 
-# 5. 重新打包（文件名必须带时间戳，到分钟）
+# 7. 重新打包（文件名必须带时间戳，到分钟）
 TIMESTAMP=$(date +%Y%m%d-%H%M)
 rm -f cloudops-offline-ubuntu22-*.tar.gz
-tar czf "cloudops-offline-ubuntu22-${TIMESTAMP}.tar.gz" offline-package/
+tar czf "cloudops-offline-ubuntu22-${TIMESTAMP}.tar.gz" --exclude='*.tar.gz' --exclude='.git' offline-package/
 
-# 5. 提交源码到 GitHub（离线包不上传到 git，超过 100MB 限制）
+# 8. 提交源码到 GitHub（离线包不上传到 git，超过 100MB 限制）
 git add -A
 git commit -m "feat/fix: xxx"
 git push origin main
 
-# 6. 离线包单独分发给用户（通过 scp / 网盘 / GitHub Release 等方式）
+# 9. 离线包单独分发给用户（通过 scp / 网盘 / GitHub Release 等方式）
 # 离线包文件名: cloudops-offline-ubuntu22-${TIMESTAMP}.tar.gz
 ```
 
