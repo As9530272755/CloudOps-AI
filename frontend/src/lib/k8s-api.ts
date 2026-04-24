@@ -99,7 +99,8 @@ export const k8sAPI = {
     limit: number = 20,
     keyword: string = '',
     resourceType: string = '',
-    labelSelector: string = ''
+    labelSelector: string = '',
+    signal?: AbortSignal
   ) => {
     const params = new URLSearchParams()
     if (namespace && namespace !== 'all') {
@@ -116,7 +117,7 @@ export const k8sAPI = {
     }
     params.set('page', String(page))
     params.set('limit', String(limit))
-    const response = await api.get(`/clusters/${clusterId}/resources/${kind}?${params.toString()}`)
+    const response = await api.get(`/clusters/${clusterId}/resources/${kind}?${params.toString()}`, { signal })
     return response.data as ResourceListResult
   },
 

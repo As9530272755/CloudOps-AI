@@ -295,8 +295,32 @@ export default function ClusterDetail() {
   }
 
   // 加载资源列表
+  // AbortController：切换 namespace/资源类型时取消前一个未完成的请求，防止竞态
+  const abortControllerRef = useRef<AbortController | null>(null)
+  // 请求去重：同一参数的请求正在执行中时，跳过重复调用
+  const pendingRequestKeyRef = useRef<string>('')
+
   const loadResources = async (kind: string, currentPage = page, search = keyword, silent = false, typeFilterOverride?: string, labelSelOverride?: string) => {
     if (!kind) return
+
+    const ns = namespacedResources.has(kind) ? selectedNamespace : ''
+    const supportsTypeFilter = kind === 'services' || kind === 'events'
+    const typeFilter = supportsTypeFilter ? (typeFilterOverride !== undefined ? typeFilterOverride : resourceTypeFilter) : ''
+    const labelSel = labelSelOverride !== undefined ? labelSelOverride : labelSelector
+
+    // 请求去重 key（包含所有影响查询结果的参数）
+    const requestKey = `${id}-${kind}-${ns}-${currentPage}-${limit}-${search}-${typeFilter}-${labelSel}`
+    if (pendingRequestKeyRef.current === requestKey) {
+      return // 同一参数的请求正在执行中，跳过
+    }
+
+    // 取消前一个未完成的请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    abortControllerRef.current = new AbortController()
+    pendingRequestKeyRef.current = requestKey
+
     if (silent) {
       setSyncing(true)
     } else {
@@ -304,11 +328,7 @@ export default function ClusterDetail() {
     }
     setError('')
     try {
-      const ns = namespacedResources.has(kind) ? selectedNamespace : ''
-      const supportsTypeFilter = kind === 'services' || kind === 'events'
-      const typeFilter = supportsTypeFilter ? (typeFilterOverride !== undefined ? typeFilterOverride : resourceTypeFilter) : ''
-      const labelSel = labelSelOverride !== undefined ? labelSelOverride : labelSelector
-      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search, typeFilter, labelSel)
+      const result = await k8sAPI.getResources(id, kind, ns, currentPage, limit, search, typeFilter, labelSel, abortControllerRef.current.signal)
       if (result.success && result.data) {
         setItems(result.data.items)
         setTotal(result.data.total)
@@ -317,6 +337,10 @@ export default function ClusterDetail() {
         if (!silent) setItems([])
       }
     } catch (err: any) {
+      if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
+        // 请求被主动取消，静默忽略
+        return
+      }
       const status = err.response?.status
       const backendError = err.response?.data?.error
       if (status === 403) {
@@ -326,6 +350,7 @@ export default function ClusterDetail() {
       }
       if (!silent) setItems([])
     } finally {
+      pendingRequestKeyRef.current = ''
       if (silent) {
         setSyncing(false)
       } else {
