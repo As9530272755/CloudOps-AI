@@ -560,8 +560,36 @@ func (km *K8sManager) buildConfig(clusterID uint) (*rest.Config, error) {
 	return config, nil
 }
 
+// wsBroadcastThrottle 记录每个资源最后一次广播 update 的时间，用于节流高频资源（如 Node status 更新）
+var wsBroadcastThrottle sync.Map // key: "clusterID/kind/name" -> value: time.Time
+
+// shouldThrottleUpdate 判断是否需要节流该资源的 update 广播。
+// 对 Node 等资源，K8s 会频繁更新 status（CPU/内存/条件），导致每秒几十条 WS 消息。
+// 前端表格展示不需要每秒钟的精确变化，5 秒节流即可。
+func shouldThrottleUpdate(clusterID uint, kind, name string, interval time.Duration) bool {
+	if interval <= 0 {
+		return false
+	}
+	key := fmt.Sprintf("%d/%s/%s", clusterID, kind, name)
+	now := time.Now()
+	if last, ok := wsBroadcastThrottle.Load(key); ok {
+		if lastTime, ok := last.(time.Time); ok && now.Sub(lastTime) < interval {
+			return true // 需要节流，跳过广播
+		}
+	}
+	wsBroadcastThrottle.Store(key, now)
+	return false
+}
+
 // addResourceEventHandler 为 informer 添加事件处理器，在资源变化时广播 WebSocket
 func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint, kind string, cc *ClusterClient) {
+	// Node status 更新频率极高（CPU/内存/条件每几秒变一次），
+	// 59 个节点同时广播会每秒产生几十条 WS 消息，前端表格 5 秒刷新一次即可。
+	var throttleInterval time.Duration
+	if kind == "nodes" {
+		throttleInterval = 5 * time.Second
+	}
+
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if !cc.SyncReady {
@@ -571,8 +599,6 @@ func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint,
 			if !ok {
 				return
 			}
-			// 生产环境避免高频日志；仅在构建时启用调试日志
-			// log.Printf("[informer] %s/%s added in cluster %d", kind, metaObj.GetName(), clusterID)
 			invalidateListCache(context.Background(), clusterID, kind)
 			ws.Broadcast(ws.ResourceChangeMessage{
 				Type:      "resource_change",
@@ -591,7 +617,9 @@ func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint,
 			if !ok {
 				return
 			}
-			// log.Printf("[informer] %s/%s updated in cluster %d", kind, metaObj.GetName(), clusterID)
+			if shouldThrottleUpdate(clusterID, kind, metaObj.GetName(), throttleInterval) {
+				return
+			}
 			invalidateListCache(context.Background(), clusterID, kind)
 			ws.Broadcast(ws.ResourceChangeMessage{
 				Type:      "resource_change",
@@ -610,7 +638,6 @@ func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint,
 			if !ok {
 				return
 			}
-			// log.Printf("[informer] %s/%s deleted in cluster %d", kind, metaObj.GetName(), clusterID)
 			invalidateListCache(context.Background(), clusterID, kind)
 			ws.Broadcast(ws.ResourceChangeMessage{
 				Type:      "resource_change",

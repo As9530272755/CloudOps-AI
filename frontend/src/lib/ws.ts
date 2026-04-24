@@ -21,6 +21,12 @@ class WsManager {
   private maxReconnectDelay = 30000
   private connectionState: ConnectionState = 'disconnected'
 
+  // 连接锁：防止并发创建多个 WebSocket
+  private connecting = false
+
+  // subscribe 防抖：避免 React StrictMode 或快速切换资源类型时频繁重建连接
+  private subscribeTimer: ReturnType<typeof setTimeout> | null = null
+
   // 当前订阅参数
   private currentClusterID: number | null = null
   private currentKinds: string[] | null = null
@@ -33,12 +39,26 @@ class WsManager {
     this.currentClusterID = clusterID
     this.currentKinds = kinds
 
-    if (needReconnect) {
+    if (!needReconnect) {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.connect()
+      }
+      return
+    }
+
+    // 清除上一次的 subscribe 防抖定时器
+    if (this.subscribeTimer) {
+      clearTimeout(this.subscribeTimer)
+      this.subscribeTimer = null
+    }
+
+    // 延迟 100ms 执行 reconnect，避免 React 严格模式 cleanup + mount 的竞态
+    // 以及用户快速切换资源类型时的连续重建
+    this.subscribeTimer = setTimeout(() => {
+      this.subscribeTimer = null
       this.disconnect()
       this.connect()
-    } else if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.connect()
-    }
+    }, 100)
   }
 
   private buildUrl(): string {
@@ -74,16 +94,17 @@ class WsManager {
 
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return
+    if (this.connecting) return
+    this.connecting = true
 
     const url = this.buildUrl()
-    if (import.meta.env.DEV) console.log('[WS] connecting to', url)
     this.setState('connecting')
 
     try {
       this.ws = new WebSocket(url)
 
       this.ws.onopen = () => {
-        if (import.meta.env.DEV) console.log('[WS] connected')
+        this.connecting = false
         this.setState('connected')
         this.reconnectDelay = 3000
       }
@@ -99,16 +120,17 @@ class WsManager {
       }
 
       this.ws.onclose = () => {
-        if (import.meta.env.DEV) console.log('[WS] disconnected, reconnecting...')
+        this.connecting = false
         this.setState('disconnected')
         this.scheduleReconnect()
       }
 
-      this.ws.onerror = (err) => {
-        if (import.meta.env.DEV) console.error('[WS] error:', err)
+      this.ws.onerror = () => {
+        this.connecting = false
         this.ws?.close()
       }
     } catch {
+      this.connecting = false
       this.setState('disconnected')
       this.scheduleReconnect()
     }
@@ -134,6 +156,12 @@ class WsManager {
   }
 
   disconnect() {
+    // 清除 subscribe 防抖定时器
+    if (this.subscribeTimer) {
+      clearTimeout(this.subscribeTimer)
+      this.subscribeTimer = null
+    }
+    // 清除重连定时器
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -152,6 +180,7 @@ class WsManager {
         ws.close()
       }
     }
+    this.connecting = false
     this.setState('disconnected')
   }
 }
