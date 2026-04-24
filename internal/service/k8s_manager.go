@@ -737,7 +737,10 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	addResourceEventHandler(factory.Rbac().V1().RoleBindings().Informer(), clusterID, "rolebindings", cc)
 	addResourceEventHandler(factory.Rbac().V1().ClusterRoles().Informer(), clusterID, "clusterroles", cc)
 	addResourceEventHandler(factory.Rbac().V1().ClusterRoleBindings().Informer(), clusterID, "clusterrolebindings", cc)
-	addResourceEventHandler(factory.Core().V1().Events().Informer(), clusterID, "events", cc)
+	// Event informer 禁用 WS 广播：4000+ Pod 集群 Event 产生频率极高，
+	// 每秒可能产生几十条 Event，23 集群同时广播会压垮 WS 通道。
+	// EventStore 仍保留用于列表查询，但不触发前端实时刷新。
+	// addResourceEventHandler(factory.Core().V1().Events().Informer(), clusterID, "events", cc)
 	addResourceEventHandler(factory.Autoscaling().V2().HorizontalPodAutoscalers().Informer(), clusterID, "horizontalpodautoscalers", cc)
 	addResourceEventHandler(factory.Networking().V1().NetworkPolicies().Informer(), clusterID, "networkpolicies", cc)
 	addResourceEventHandler(factory.Policy().V1().PodDisruptionBudgets().Informer(), clusterID, "poddisruptionbudgets", cc)
@@ -1014,7 +1017,21 @@ func (cc *ClusterClient) GetNamespacedResourceList(kind string, namespace string
 		return nil, 0, fmt.Errorf("unsupported namespaced resource kind: %s", kind)
 	}
 
-	list := store.List()
+	// 利用 informer 内置的 namespace 索引直接获取指定 namespace 下的对象，
+	// 避免遍历整个 store（4000+ Pod 时从 O(N) 降到 O(namespace 内对象数)，性能提升 10-100 倍）
+	var list []interface{}
+	if namespace != "" && namespace != "all" && !strings.Contains(namespace, ",") {
+		if indexer, ok := store.(cache.Indexer); ok {
+			items, err := indexer.ByIndex(cache.NamespaceIndex, namespace)
+			if err == nil {
+				list = items
+			}
+		}
+	}
+	if list == nil {
+		list = store.List()
+	}
+
 	var filtered []interface{}
 	keywordLower := strings.ToLower(keyword)
 	selector := parseLabelSelector(labelSelector)

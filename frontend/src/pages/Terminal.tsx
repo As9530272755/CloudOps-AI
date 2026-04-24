@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   FormControl,
-  IconButton,
   InputLabel,
   MenuItem,
   Select,
@@ -282,16 +281,26 @@ export default function TerminalPage() {
                   <Typography variant="caption" sx={{ fontWeight: activeTab === s.id ? 600 : 400 }}>
                     {s.clusterName}
                   </Typography>
-                  <IconButton
-                    size="small"
+                  {/* 不能用 IconButton（button 元素），因为 Tab 内部也是 button，HTML 不允许 button 嵌套 */}
+                  <Box
+                    component="span"
                     onClick={(e) => {
                       e.stopPropagation()
                       closeSession(s.id)
                     }}
-                    sx={{ p: 0.2, ml: 0.5 }}
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      p: 0.2,
+                      ml: 0.5,
+                      cursor: 'pointer',
+                      borderRadius: '50%',
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+                    }}
                   >
                     <CloseIcon fontSize="inherit" />
-                  </IconButton>
+                  </Box>
                 </Box>
               }
               sx={{ textTransform: 'none', minHeight: 36, px: 1 }}

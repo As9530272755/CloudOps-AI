@@ -116,9 +116,10 @@ func (r *Router) RegisterRoutes(engine *gin.Engine) {
 				clusters.POST("/test-and-probe", r.clusterHandler.TestAndProbeCluster)
 			}
 
-			// K8s 资源管理（需要 NS 权限校验 + 集群状态校验）
+			// K8s 资源管理（需要 NS 权限校验 + 集群状态校验 + API 限流）
 			k8sCluster := protected.Group("/clusters/:id")
 			k8sCluster.Use(middleware.ClusterStateMiddleware(r.clusterService))
+			k8sCluster.Use(middleware.RateLimitMiddleware())
 			{
 				k8sCluster.GET("/namespaces", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetNamespaces)
 				k8sCluster.GET("/stats", middleware.NSPermissionMiddleware(r.db), r.k8sHandler.GetClusterStats)

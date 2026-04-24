@@ -138,8 +138,20 @@ class WsManager {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    this.ws?.close()
-    this.ws = null
+    if (this.ws) {
+      const ws = this.ws
+      this.ws = null
+      // 彻底移除所有 handler，防止旧连接事件误触发
+      ws.onopen = null
+      ws.onmessage = null
+      ws.onerror = null
+      ws.onclose = null
+      // 只在 OPEN 或 CLOSING 状态下 close；CONNECTING 时直接丢弃引用，
+      // 避免浏览器报 "WebSocket is closed before the connection is established"
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close()
+      }
+    }
     this.setState('disconnected')
   }
 }

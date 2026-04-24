@@ -708,8 +708,8 @@ export default function ClusterDetail() {
     if (key === 'labels' && value && typeof value === 'object') {
       const entries = Object.entries(value as Record<string, string>)
       if (entries.length === 0) return '-'
-      const display = entries.slice(0, 2)
-      const rest = entries.slice(2)
+      const display = entries.slice(0, 1)
+      const rest = entries.slice(1)
       return (
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
           {display.map(([k, v]) => (
@@ -852,7 +852,12 @@ export default function ClusterDetail() {
             <Box>
               {/* 子资源 Tabs */}
               {category.resources.length > 1 && (
-                <Tabs value={activeResource} onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); setLabelSelector(''); setSortConfig(null); setResourceTypeFilter(''); loadResources(v, 1, ''); }} sx={{ mb: 2 }}>
+                <Tabs
+                  // 切换类别时 activeResource 可能还不在当前 category 中，用 false 避免 MUI 报错
+                  value={category.resources.filter(r => hasResourcePermission(r, permissions)).includes(activeResource) ? activeResource : false}
+                  onChange={(_, v) => { setActiveResource(v); setPage(1); setKeyword(''); setLabelSelector(''); setSortConfig(null); setResourceTypeFilter(''); loadResources(v, 1, ''); }}
+                  sx={{ mb: 2 }}
+                >
                   {category.resources.filter(r => hasResourcePermission(r, permissions)).map(r => (
                     <Tab key={r} value={r} label={resourceLabels[r] || r} sx={{ textTransform: 'none' }} />
                   ))}
@@ -1103,7 +1108,6 @@ export default function ClusterDetail() {
                       <MenuItem value={10}>10</MenuItem>
                       <MenuItem value={20}>20</MenuItem>
                       <MenuItem value={50}>50</MenuItem>
-                      <MenuItem value={100}>100</MenuItem>
                     </Select>
                   </FormControl>
                 </Box>

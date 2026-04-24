@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/cloudops/platform/internal/model"
 	"github.com/cloudops/platform/internal/pkg/config"
@@ -62,6 +63,15 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	// 初始化默认数据
 	if err = initDefaultData(db); err != nil {
 		return nil, fmt.Errorf("初始化默认数据失败: %w", err)
+	}
+
+	// 连接池调优：23 集群 × 4000 Pod 高并发场景下，默认连接池容易打满
+	sqlDB, err := db.DB()
+	if err == nil {
+		sqlDB.SetMaxOpenConns(100)        // 最大打开连接数
+		sqlDB.SetMaxIdleConns(20)         // 最大空闲连接数
+		sqlDB.SetConnMaxLifetime(30 * time.Minute) // 连接最大生命周期
+		log.Println("✅ 数据库连接池已调优 (max_open=100, max_idle=20)")
 	}
 
 	DB = db
