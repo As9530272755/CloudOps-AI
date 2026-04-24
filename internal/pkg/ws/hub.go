@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -48,6 +49,21 @@ type Client struct {
 
 var globalHub *Hub
 
+const (
+	// 最大 WebSocket 连接数（防止连接耗尽）
+	maxClients = 10000
+	// broadcast 通道缓冲（避免高频事件下阻塞 informer）
+	broadcastBufferSize = 4096
+	// 单个客户端 send 通道缓冲
+	clientSendBufferSize = 256
+	// 写超时
+	writeWait = 10 * time.Second
+	// 心跳周期
+	pingPeriod = 30 * time.Second
+	// 读超时（pingPeriod 的倍数 + 余量）
+	pongWait = 45 * time.Second
+)
+
 func init() {
 	globalHub = NewHub()
 	go globalHub.Run()
@@ -57,7 +73,7 @@ func init() {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		broadcast:  make(chan ResourceChangeMessage, 256),
+		broadcast:  make(chan ResourceChangeMessage, broadcastBufferSize),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 	}
@@ -72,6 +88,13 @@ func shouldSendToClient(c *Client, msg ResourceChangeMessage) bool {
 		return false
 	}
 	return true
+}
+
+// clientCount 返回当前连接数
+func (h *Hub) clientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
 }
 
 // Run 启动 Hub 事件循环
@@ -98,7 +121,7 @@ func (h *Hub) Run() {
 				select {
 				case client.send <- message:
 				default:
-					// 客户端 send 通道满，跳过
+					// 客户端 send 通道满，跳过（由 writePump 负责清理慢连接）
 				}
 			}
 			h.mu.RUnlock()
@@ -119,6 +142,13 @@ func Broadcast(msg ResourceChangeMessage) {
 
 // ServeWs 处理 WebSocket 升级请求
 func ServeWs(w http.ResponseWriter, r *http.Request) {
+	// 连接数限制
+	if globalHub.clientCount() >= maxClients {
+		log.Printf("WebSocket rejected: max clients reached (%d)", maxClients)
+		http.Error(w, "Too many WebSocket connections", http.StatusServiceUnavailable)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade failed: %v", err)
@@ -146,7 +176,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	client := &Client{
 		hub:       globalHub,
 		conn:      conn,
-		send:      make(chan ResourceChangeMessage, 64),
+		send:      make(chan ResourceChangeMessage, clientSendBufferSize),
 		clusterID: clusterID,
 		kinds:     kindsMap,
 	}
@@ -156,12 +186,19 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	go client.readPump()
 }
 
-// readPump 读取客户端消息（保持连接活跃）
+// readPump 读取客户端消息（保持连接活跃 + 检测断开）
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
 	}()
+
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	for {
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
@@ -173,18 +210,36 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump 向客户端写入消息
+// writePump 向客户端写入消息（含心跳）
 func (c *Client) writePump() {
+	ticker := time.NewTicker(pingPeriod)
 	defer func() {
+		ticker.Stop()
 		c.conn.Close()
 	}()
-	for msg := range c.send {
-		data, err := json.Marshal(msg)
-		if err != nil {
-			continue
-		}
-		if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			break
+
+	for {
+		select {
+		case msg, ok := <-c.send:
+			if !ok {
+				// channel closed
+				c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			data, err := json.Marshal(msg)
+			if err != nil {
+				continue
+			}
+			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }

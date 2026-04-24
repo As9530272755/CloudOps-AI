@@ -160,6 +160,8 @@ export default function ClusterDetail() {
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
   const [editorYaml, setEditorYaml] = useState('')
   const preRef = useRef<HTMLPreElement>(null)
+  // 存储 create/update/delete 后的延迟刷新 timer，防止组件卸载后 setState
+  const refreshTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   // CRD Custom Resource 列表弹窗状态
   const [crListOpen, setCrListOpen] = useState(false)
@@ -229,6 +231,14 @@ export default function ClusterDetail() {
       setActiveResource('')
     }
   }, [filteredCategories, activeCategory])
+
+  // 组件卸载时清除所有延迟刷新 timer，防止 setState on unmounted component
+  useEffect(() => {
+    return () => {
+      refreshTimersRef.current.forEach(clearTimeout)
+      refreshTimersRef.current = []
+    }
+  }, [])
 
   // 加载集群基本信息
   const loadCluster = async () => {
@@ -334,7 +344,8 @@ export default function ClusterDetail() {
         setSnackbar({ open: true, message: '删除成功', severity: 'success' })
         loadResources(activeResource, page)
         // 延迟 2 秒再刷新一次，等待后端缓存同步完成
-        setTimeout(() => loadResources(activeResource, page), 2000)
+        const t = setTimeout(() => loadResources(activeResource, page), 2000)
+        refreshTimersRef.current.push(t)
       } else {
         setSnackbar({ open: true, message: result.error || '删除失败', severity: 'error' })
       }
@@ -358,7 +369,8 @@ export default function ClusterDetail() {
           setEditorYaml('')
           loadResources(activeResource, page)
           // 延迟 2 秒再刷新一次，等待后端缓存同步完成
-          setTimeout(() => loadResources(activeResource, page), 2000)
+          const t = setTimeout(() => loadResources(activeResource, page), 2000)
+          refreshTimersRef.current.push(t)
         } else {
           setSnackbar({ open: true, message: result.error || '创建失败', severity: 'error' })
         }
@@ -371,7 +383,8 @@ export default function ClusterDetail() {
           setEditorYaml('')
           loadResources(activeResource, page)
           // 延迟 2 秒再刷新一次，等待后端缓存同步完成
-          setTimeout(() => loadResources(activeResource, page), 2000)
+          const t = setTimeout(() => loadResources(activeResource, page), 2000)
+          refreshTimersRef.current.push(t)
         } else {
           setSnackbar({ open: true, message: result.error || '更新失败', severity: 'error' })
         }
@@ -539,7 +552,10 @@ export default function ClusterDetail() {
   useEffect(() => { keywordRef.current = keyword }, [keyword])
   useEffect(() => { labelSelectorRef.current = labelSelector }, [labelSelector])
 
-  // WebSocket 推送：收到资源变化推送时自动刷新
+  // WebSocket 防抖刷新定时器
+  const wsDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // WebSocket 推送：收到资源变化推送时自动刷新（带 3 秒防抖）
   useEffect(() => {
     // 概览页不订阅具体资源变化（概览数据通过轮询兜底）
     if (activeCategory === 'overview' || !activeResource) {
@@ -553,14 +569,25 @@ export default function ClusterDetail() {
     const unsubscribe = wsManager.onMessage((msg) => {
       // 显式转字符串比较，消除类型隐患
       if (String(msg.cluster_id) === String(id) && msg.kind === activeResource) {
-        console.log('[WS] resource_change received:', msg.kind, msg.name, msg.action)
-        // 延迟 500ms 刷新，给后端 syncObjectToStore 完成留时间
-        setTimeout(() => {
+        // 生产环境禁用 console.log，避免高频 WS 消息导致浏览器卡顿
+        // 清除上一次的防抖定时器
+        if (wsDebounceTimer.current) {
+          clearTimeout(wsDebounceTimer.current)
+        }
+        // 3 秒防抖：高频变化时只刷新一次，避免并发请求堆积
+        wsDebounceTimer.current = setTimeout(() => {
+          wsDebounceTimer.current = null
           loadResources(activeResource, pageRef.current, keywordRef.current, true, undefined, labelSelectorRef.current)
-        }, 500)
+        }, 3000)
       }
     })
-    return unsubscribe
+    return () => {
+      if (wsDebounceTimer.current) {
+        clearTimeout(wsDebounceTimer.current)
+        wsDebounceTimer.current = null
+      }
+      unsubscribe()
+    }
   }, [id, activeCategory, activeResource])
 
   // 自动轮询刷新（每 30 秒，作为 WebSocket 断线兜底）
@@ -1000,8 +1027,8 @@ export default function ClusterDetail() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {sortedItems.map((item, idx) => (
-                        <TableRow key={idx} hover>
+                      {sortedItems.map((item) => (
+                        <TableRow key={item.uid || `${item.namespace}/${item.name}`} hover>
                           {getColumns(activeResource).map(col => (
                             <TableCell key={col.key}>{renderCell(item, col.key)}</TableCell>
                           ))}

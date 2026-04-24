@@ -39,14 +39,18 @@ type ClusterService struct {
 	k8sManager  *K8sManager
 	healthCache map[uint]*ClusterHealthState
 	healthMu    sync.RWMutex
+	// permissionScopeCache 缓存权限探测结果，避免 healthy 集群重复探测
+	permissionScopeCache map[uint]time.Time
+	permissionScopeMu    sync.RWMutex
 }
 
 // NewClusterService 创建集群服务
 func NewClusterService(db *gorm.DB, k8sManager *K8sManager) *ClusterService {
 	return &ClusterService{
-		db:          db,
-		k8sManager:  k8sManager,
-		healthCache: make(map[uint]*ClusterHealthState),
+		db:                   db,
+		k8sManager:           k8sManager,
+		healthCache:          make(map[uint]*ClusterHealthState),
+		permissionScopeCache: make(map[uint]time.Time),
 	}
 }
 
@@ -262,6 +266,24 @@ func (s *ClusterService) DeleteCluster(ctx context.Context, userID uint, tenantI
 	return nil
 }
 
+// countListPaged 分页拉取统计资源总数，避免大集群全量 LIST 导致 OOM
+func countListPaged(ctx context.Context, listFunc func(metav1.ListOptions) (int, string, error)) int {
+	total := 0
+	var continueToken string
+	for {
+		count, ct, err := listFunc(metav1.ListOptions{Limit: 500, Continue: continueToken})
+		if err != nil {
+			break
+		}
+		total += count
+		continueToken = ct
+		if continueToken == "" {
+			break
+		}
+	}
+	return total
+}
+
 // testClusterConnection 测试集群连接
 func (s *ClusterService) testClusterConnection(clusterID uint) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -285,18 +307,36 @@ func (s *ClusterService) testClusterConnection(clusterID uint) {
 
 	duration := time.Since(start).Milliseconds()
 
-	// 获取集群信息
-	nodes, _ := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	pods, _ := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
-	namespaces, _ := client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	// 获取集群信息（分页拉取，避免大集群全量 LIST 导致 OOM）
+	nodeCount := countListPaged(ctx, func(opt metav1.ListOptions) (int, string, error) {
+		list, err := client.CoreV1().Nodes().List(ctx, opt)
+		if err != nil {
+			return 0, "", err
+		}
+		return len(list.Items), list.Continue, nil
+	})
+	podCount := countListPaged(ctx, func(opt metav1.ListOptions) (int, string, error) {
+		list, err := client.CoreV1().Pods("").List(ctx, opt)
+		if err != nil {
+			return 0, "", err
+		}
+		return len(list.Items), list.Continue, nil
+	})
+	nsCount := countListPaged(ctx, func(opt metav1.ListOptions) (int, string, error) {
+		list, err := client.CoreV1().Namespaces().List(ctx, opt)
+		if err != nil {
+			return 0, "", err
+		}
+		return len(list.Items), list.Continue, nil
+	})
 
 	// 更新元数据
 	metadata := model.ClusterMetadata{
 		ClusterID:      clusterID,
 		Version:        version.GitVersion,
-		NodeCount:      len(nodes.Items),
-		PodCount:       len(pods.Items),
-		NamespaceCount: len(namespaces.Items),
+		NodeCount:      nodeCount,
+		PodCount:       podCount,
+		NamespaceCount: nsCount,
 		HealthStatus:   "healthy",
 		LastSyncedAt:   &[]time.Time{time.Now()}[0],
 	}
@@ -448,17 +488,17 @@ func stricterPermissionScope(a, b string) string {
 
 // StartHealthMonitor 启动集群健康检查
 // 正常集群每 30 秒探测一次，异常集群每 5 秒探测一次，offline 集群每 60 秒探测一次
+// 使用独立 goroutine + jitter 避免 thundering herd
 func (s *ClusterService) StartHealthMonitor() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			var list []model.Cluster
-			if err := s.db.Find(&list).Error; err != nil {
+			if err := s.db.Where("is_active = ?", true).Find(&list).Error; err != nil {
 				continue
 			}
 
-			var wg sync.WaitGroup
 			for _, c := range list {
 				// 根据内存缓存状态决定探测间隔
 				s.healthMu.RLock()
@@ -478,13 +518,15 @@ func (s *ClusterService) StartHealthMonitor() {
 					continue // 跳过，未到探测时间
 				}
 
-				wg.Add(1)
+				// 每个探测独立 goroutine + 随机 jitter（0-3s），避免所有集群同时探测
 				go func(clusterID uint) {
-					defer wg.Done()
+					// nolint:gosec // jitter 不需要加密安全
+					jitter := time.Duration(int64(float64(3*time.Second) * (float64(clusterID%100) / 100.0)))
+					time.Sleep(jitter)
 					s.probeClusterHealth(clusterID)
 				}(c.ID)
 			}
-			wg.Wait()
+			// 不再 wg.Wait()：探测真正异步，单个超时不会阻塞整个循环
 		}
 	}()
 }
@@ -562,13 +604,21 @@ func (s *ClusterService) probeClusterHealth(clusterID uint) {
 			}
 		}
 
-		// 补充探测 permission_scope（仅 unknown 或空值时）
+		// 补充探测 permission_scope（仅 unknown 或空值时，且每小时最多探测一次）
 		var cluster model.Cluster
 		if err := s.db.Where("id = ?", clusterID).First(&cluster).Error; err == nil {
 			if cluster.PermissionScope == "unknown" || cluster.PermissionScope == "" || cluster.PermissionScope == "read-only" {
-				if client, err := s.GetK8sClient(context.Background(), clusterID); err == nil {
-					scope := s.probePermissionScope(context.Background(), client)
-					s.db.Model(&model.Cluster{}).Where("id = ?", clusterID).Update("permission_scope", scope)
+				s.permissionScopeMu.RLock()
+				lastProbe, probed := s.permissionScopeCache[clusterID]
+				s.permissionScopeMu.RUnlock()
+				if !probed || time.Since(lastProbe) > 1*time.Hour {
+					if client, err := s.GetK8sClient(context.Background(), clusterID); err == nil {
+						scope := s.probePermissionScope(context.Background(), client)
+						s.db.Model(&model.Cluster{}).Where("id = ?", clusterID).Update("permission_scope", scope)
+						s.permissionScopeMu.Lock()
+						s.permissionScopeCache[clusterID] = time.Now()
+						s.permissionScopeMu.Unlock()
+					}
 				}
 			}
 		}

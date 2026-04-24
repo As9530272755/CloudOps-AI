@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -93,16 +92,19 @@ type ClusterClient struct {
 
 // K8sManager K8s客户端与Informer管理器
 type K8sManager struct {
-	clients map[uint]*ClusterClient
-	mu      sync.RWMutex
-	db      *gorm.DB
+	clients  map[uint]*ClusterClient
+	mu       sync.RWMutex
+	db       *gorm.DB
+	starting map[uint]chan struct{} // 防止同一集群并发启动
+	startMu  sync.Mutex
 }
 
 // NewK8sManager 创建管理器
 func NewK8sManager(db *gorm.DB) *K8sManager {
 	m := &K8sManager{
-		clients: make(map[uint]*ClusterClient),
-		db:      db,
+		clients:  make(map[uint]*ClusterClient),
+		starting: make(map[uint]chan struct{}),
+		db:       db,
 	}
 	return m
 }
@@ -224,19 +226,26 @@ func (km *K8sManager) SearchGlobalResources(keyword string, limit int, kindFilte
 		}
 	}
 
+	// 预先批量查询所有集群名称，避免 N+1 查询
+	clusterNames := make(map[uint]string)
+	if len(clients) > 0 {
+		var clusters []model.Cluster
+		if err := km.db.Find(&clusters).Error; err == nil {
+			for _, c := range clusters {
+				name := c.DisplayName
+				if name == "" {
+					name = c.Name
+				}
+				clusterNames[c.ID] = name
+			}
+		}
+	}
+
 	for id, cc := range clients {
 		if clusterFilter != 0 && id != clusterFilter {
 			continue
 		}
-		// fetch cluster name
-		var clusterName string
-		var cluster model.Cluster
-		if err := km.db.First(&cluster, id).Error; err == nil {
-			clusterName = cluster.DisplayName
-			if clusterName == "" {
-				clusterName = cluster.Name
-			}
-		}
+		clusterName := clusterNames[id]
 
 		appendFromStore(cc, "pods", cc.PodStore, func(obj interface{}) (SearchResult, bool) {
 			v := obj.(*corev1.Pod)
@@ -562,7 +571,8 @@ func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint,
 			if !ok {
 				return
 			}
-			log.Printf("[informer] %s/%s added in cluster %d", kind, metaObj.GetName(), clusterID)
+			// 生产环境避免高频日志；仅在构建时启用调试日志
+			// log.Printf("[informer] %s/%s added in cluster %d", kind, metaObj.GetName(), clusterID)
 			invalidateListCache(context.Background(), clusterID, kind)
 			ws.Broadcast(ws.ResourceChangeMessage{
 				Type:      "resource_change",
@@ -581,7 +591,7 @@ func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint,
 			if !ok {
 				return
 			}
-			log.Printf("[informer] %s/%s updated in cluster %d", kind, metaObj.GetName(), clusterID)
+			// log.Printf("[informer] %s/%s updated in cluster %d", kind, metaObj.GetName(), clusterID)
 			invalidateListCache(context.Background(), clusterID, kind)
 			ws.Broadcast(ws.ResourceChangeMessage{
 				Type:      "resource_change",
@@ -600,7 +610,7 @@ func addResourceEventHandler(informer cache.SharedIndexInformer, clusterID uint,
 			if !ok {
 				return
 			}
-			log.Printf("[informer] %s/%s deleted in cluster %d", kind, metaObj.GetName(), clusterID)
+			// log.Printf("[informer] %s/%s deleted in cluster %d", kind, metaObj.GetName(), clusterID)
 			invalidateListCache(context.Background(), clusterID, kind)
 			ws.Broadcast(ws.ResourceChangeMessage{
 				Type:      "resource_change",
@@ -637,8 +647,11 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 	}
 
 	stopCh := make(chan struct{})
-	factory := informers.NewSharedInformerFactory(client, 60*time.Second)
-	apiextFactory := apiextensionsinformers.NewSharedInformerFactory(apiextClient, 60*time.Second)
+	// resyncPeriod 设为 0：不自动 resync。Informer 的 watch 机制本身会保持连接，
+	// 断开后自动重新 LIST+WATCH。resync 的唯一作用是触发所有 handler 重新处理本地缓存，
+	// 对 20+ 集群场景会导致大量无意义的 LIST 请求和 WebSocket 广播风暴。
+	factory := informers.NewSharedInformerFactory(client, 0)
+	apiextFactory := apiextensionsinformers.NewSharedInformerFactory(apiextClient, 0)
 
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
@@ -798,13 +811,24 @@ func (km *K8sManager) createClusterClient(ctx context.Context, clusterID uint) (
 }
 
 // StartCluster 启动指定集群的Client和Informer（冷启动，会替换旧的）
+// 使用 starting 锁防止同一集群并发启动导致 goroutine 泄露
 func (km *K8sManager) StartCluster(ctx context.Context, clusterID uint) error {
-	km.mu.Lock()
-	if existing, ok := km.clients[clusterID]; ok {
-		close(existing.StopCh)
-		delete(km.clients, clusterID)
+	km.startMu.Lock()
+	if ch, ok := km.starting[clusterID]; ok {
+		km.startMu.Unlock()
+		<-ch // 等待已有启动完成
+		return nil
 	}
-	km.mu.Unlock()
+	done := make(chan struct{})
+	km.starting[clusterID] = done
+	km.startMu.Unlock()
+
+	defer func() {
+		km.startMu.Lock()
+		delete(km.starting, clusterID)
+		close(done)
+		km.startMu.Unlock()
+	}()
 
 	cc, err := km.createClusterClient(ctx, clusterID)
 	if err != nil {
@@ -813,6 +837,9 @@ func (km *K8sManager) StartCluster(ctx context.Context, clusterID uint) error {
 	}
 
 	km.mu.Lock()
+	if existing, ok := km.clients[clusterID]; ok {
+		close(existing.StopCh)
+	}
 	km.clients[clusterID] = cc
 	km.mu.Unlock()
 
@@ -821,6 +848,23 @@ func (km *K8sManager) StartCluster(ctx context.Context, clusterID uint) error {
 
 // RefreshCluster 热升级刷新：零停机重建 Informer
 func (km *K8sManager) RefreshCluster(clusterID uint) error {
+	km.startMu.Lock()
+	if ch, ok := km.starting[clusterID]; ok {
+		km.startMu.Unlock()
+		<-ch // 等待正在进行的启动/刷新完成
+		return nil
+	}
+	done := make(chan struct{})
+	km.starting[clusterID] = done
+	km.startMu.Unlock()
+
+	defer func() {
+		km.startMu.Lock()
+		delete(km.starting, clusterID)
+		close(done)
+		km.startMu.Unlock()
+	}()
+
 	// 1. 在后台创建新的 ClusterClient（旧的继续服务）
 	cc, err := km.createClusterClient(context.Background(), clusterID)
 	if err != nil {

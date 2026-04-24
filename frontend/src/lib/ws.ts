@@ -76,14 +76,14 @@ class WsManager {
     if (this.ws?.readyState === WebSocket.OPEN) return
 
     const url = this.buildUrl()
-    console.log('[WS] connecting to', url)
+    if (import.meta.env.DEV) console.log('[WS] connecting to', url)
     this.setState('connecting')
 
     try {
       this.ws = new WebSocket(url)
 
       this.ws.onopen = () => {
-        console.log('[WS] connected')
+        if (import.meta.env.DEV) console.log('[WS] connected')
         this.setState('connected')
         this.reconnectDelay = 3000
       }
@@ -99,13 +99,13 @@ class WsManager {
       }
 
       this.ws.onclose = () => {
-        console.log('[WS] disconnected, reconnecting...')
+        if (import.meta.env.DEV) console.log('[WS] disconnected, reconnecting...')
         this.setState('disconnected')
         this.scheduleReconnect()
       }
 
       this.ws.onerror = (err) => {
-        console.error('[WS] error:', err)
+        if (import.meta.env.DEV) console.error('[WS] error:', err)
         this.ws?.close()
       }
     } catch {

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -32,7 +31,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	authorizationv1 "k8s.io/api/authorization/v1"
 
-	"github.com/cloudops/platform/internal/pkg/redis"
 	"github.com/cloudops/platform/internal/pkg/ws"
 )
 
@@ -67,21 +65,6 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 	cc.SyncMu.RUnlock()
 	if !ready {
 		return nil, 0, fmt.Errorf("集群缓存正在同步，请稍后重试")
-	}
-
-	// Redis 缓存：多用户共享，减少 informer 内存扫描压力
-	cacheKey := fmt.Sprintf("k8s:list:%d:%s:%s:%s:%s:%s:%d:%d", clusterID, kind, namespace, keyword, resourceType, labelSelector, page, limit)
-	if redis.Client != nil {
-		cached, err := redis.Client.Get(ctx, cacheKey).Result()
-		if err == nil && cached != "" {
-			var cachedResult struct {
-				Items []map[string]interface{} `json:"items"`
-				Total int                      `json:"total"`
-			}
-			if jsonErr := json.Unmarshal([]byte(cached), &cachedResult); jsonErr == nil {
-				return cachedResult.Items, cachedResult.Total, nil
-			}
-		}
 	}
 
 	var items []interface{}
@@ -160,15 +143,6 @@ func (s *K8sResourceService) ListResources(ctx context.Context, clusterID uint, 
 				}
 			}
 		}
-	}
-
-	// 写入 Redis 缓存（TTL 5 秒）
-	if redis.Client != nil {
-		cacheData, _ := json.Marshal(struct {
-			Items []map[string]interface{} `json:"items"`
-			Total int                      `json:"total"`
-		}{Items: result, Total: total})
-		_ = redis.Client.Set(ctx, cacheKey, string(cacheData), 5*time.Second)
 	}
 
 	return result, total, nil
@@ -1007,16 +981,10 @@ var clusterLevelKinds = map[string]bool{
 	"customresourcedefinitions": true, "namespaces": true,
 }
 
-// invalidateListCache 清除指定集群+资源类型的列表缓存，确保写操作后前端立即看到最新数据
+// invalidateListCache 已废弃：Redis 列表缓存已移除，Informer 内存查询本身足够快。
+// 保留空函数以避免 addResourceEventHandler 中的调用报错。
 func invalidateListCache(ctx context.Context, clusterID uint, kind string) {
-	if redis.Client == nil {
-		return
-	}
-	pattern := fmt.Sprintf("k8s:list:%d:%s:*", clusterID, kind)
-	iter := redis.Client.Scan(ctx, 0, pattern, 0).Iterator()
-	for iter.Next(ctx) {
-		_ = redis.Client.Del(ctx, iter.Val())
-	}
+	// no-op: informer store queries are fast enough; no Redis cache to invalidate.
 }
 
 // getDynamicClient 获取指定集群的 dynamic client
@@ -1131,9 +1099,7 @@ func (s *K8sResourceService) UpdateResource(ctx context.Context, clusterID uint,
 		return nil, err
 	}
 	// 主动同步缓存：增量更新单个对象
-	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "update")
-	// 清除 Redis 列表缓存
-	invalidateListCache(context.Background(), clusterID, kind)
+	s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "update")
 	return result.Object, nil
 }
 
@@ -1168,9 +1134,7 @@ func (s *K8sResourceService) DeleteResource(ctx context.Context, clusterID uint,
 		return err
 	}
 	// 主动同步缓存：从 store 中删除单个对象
-	go s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "delete")
-	// 清除 Redis 列表缓存
-	invalidateListCache(context.Background(), clusterID, kind)
+	s.syncObjectToStore(context.Background(), clusterID, kind, namespace, name, "delete")
 	return nil
 }
 
@@ -1356,6 +1320,7 @@ func convertUnstructuredToTyped(obj *unstructured.Unstructured) (interface{}, er
 
 
 // getNodeMetricsMap 通过 metrics-server 获取所有 Node 的 CPU/内存使用率
+
 func (s *K8sResourceService) getNodeMetricsMap(ctx context.Context, clusterID uint) (map[string]map[string]interface{}, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil || cc.DynamicClient == nil {
@@ -1363,32 +1328,42 @@ func (s *K8sResourceService) getNodeMetricsMap(ctx context.Context, clusterID ui
 	}
 
 	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes"}
-	list, err := cc.DynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
 	result := make(map[string]map[string]interface{})
-	for _, item := range list.Items {
-		name := item.GetName()
-		usage, found, err := unstructured.NestedMap(item.Object, "usage")
-		if !found || err != nil {
-			continue
-		}
 
-		m := make(map[string]interface{})
-		if cpuStr, ok := usage["cpu"].(string); ok {
-			m["cpu_usage"] = cpuStr
+	var continueToken string
+	for {
+		list, err := cc.DynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{
+			Limit:    1000,
+			Continue: continueToken,
+		})
+		if err != nil {
+			return nil, err
 		}
-		if memStr, ok := usage["memory"].(string); ok {
-			m["memory_usage"] = memStr
+		for _, item := range list.Items {
+			name := item.GetName()
+			usage, found, err := unstructured.NestedMap(item.Object, "usage")
+			if !found || err != nil {
+				continue
+			}
+			m := make(map[string]interface{})
+			if cpuStr, ok := usage["cpu"].(string); ok {
+				m["cpu_usage"] = cpuStr
+			}
+			if memStr, ok := usage["memory"].(string); ok {
+				m["memory_usage"] = memStr
+			}
+			result[name] = m
 		}
-		result[name] = m
+		continueToken = list.GetContinue()
+		if continueToken == "" {
+			break
+		}
 	}
 	return result, nil
 }
 
-// getPodMetricsMap 通过 metrics-server 获取指定 namespace 下所有 Pod 的内存使用量
+// getPodMetricsMap 通过 metrics-server 获取指定 namespace 下 Pod 的内存使用量。
+// 当 namespace == "all" 时，使用分页拉取避免单次返回几万个 pod metrics 导致 OOM/超时。
 func (s *K8sResourceService) getPodMetricsMap(ctx context.Context, clusterID uint, namespace string) (map[string]map[string]interface{}, error) {
 	cc := s.k8sManager.GetClusterClient(clusterID)
 	if cc == nil || cc.DynamicClient == nil {
@@ -1396,44 +1371,61 @@ func (s *K8sResourceService) getPodMetricsMap(ctx context.Context, clusterID uin
 	}
 
 	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace != "" && namespace != "all" {
-		list, err = cc.DynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = cc.DynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	result := make(map[string]map[string]interface{})
-	for _, item := range list.Items {
-		name := item.GetName()
-		ns := item.GetNamespace()
-		key := ns + "/" + name
 
-		containers, found, err := unstructured.NestedSlice(item.Object, "containers")
-		if !found || err != nil {
-			continue
-		}
+	parseItems := func(list *unstructured.UnstructuredList) {
+		for _, item := range list.Items {
+			name := item.GetName()
+			ns := item.GetNamespace()
+			key := ns + "/" + name
 
-		var totalMemBytes int64
-		for _, c := range containers {
-			if container, ok := c.(map[string]interface{}); ok {
-				if usage, ok := container["usage"].(map[string]interface{}); ok {
-					if memStr, ok := usage["memory"].(string); ok {
-						if q, err := resource.ParseQuantity(memStr); err == nil {
-							totalMemBytes += q.Value()
+			containers, found, err := unstructured.NestedSlice(item.Object, "containers")
+			if !found || err != nil {
+				continue
+			}
+
+			var totalMemBytes int64
+			for _, c := range containers {
+				if container, ok := c.(map[string]interface{}); ok {
+					if usage, ok := container["usage"].(map[string]interface{}); ok {
+						if memStr, ok := usage["memory"].(string); ok {
+							if q, err := resource.ParseQuantity(memStr); err == nil {
+								totalMemBytes += q.Value()
+							}
 						}
 					}
 				}
 			}
-		}
 
-		result[key] = map[string]interface{}{
-			"memory_usage": totalMemBytes,
+			result[key] = map[string]interface{}{
+				"memory_usage": totalMemBytes,
+			}
+		}
+	}
+
+	if namespace != "" && namespace != "all" {
+		list, err := cc.DynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		parseItems(list)
+		return result, nil
+	}
+
+	// namespace == "all": 分页拉取，每批最多 1000 个
+	var continueToken string
+	for {
+		list, err := cc.DynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{
+			Limit:    1000,
+			Continue: continueToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		parseItems(list)
+		continueToken = list.GetContinue()
+		if continueToken == "" {
+			break
 		}
 	}
 	return result, nil
